@@ -8,6 +8,7 @@ import { API, useAuth } from '@/App';
 import { toast } from 'sonner';
 import { Users, ShoppingCart, TrendingUp, MapPin, Globe, Mail, Euro, Eye, Clock, Package, Calendar, AlertTriangle, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const CustomerInsights = () => {
   const { token } = useAuth();
@@ -79,8 +80,53 @@ const CustomerInsights = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-gray-500">Loading customer insights...</div>
+        <div className="space-y-6">
+          {/* Header Skeleton */}
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+
+          {/* Summary Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-24 mb-3" />
+                    <Skeleton className="h-8 w-32" />
+                  </div>
+                  <Skeleton className="w-10 h-10 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Chart Cards Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Skeleton className="w-5 h-5 rounded" />
+                    <Skeleton className="h-6 w-40" />
+                  </div>
+                  <Skeleton className="h-8 w-32 rounded" />
+                </div>
+                <Skeleton className="h-64 w-full rounded" />
+              </div>
+            ))}
+          </div>
+
+          {/* Additional Section Skeleton */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <Skeleton className="h-6 w-48 mb-4" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-32 w-full rounded" />
+              ))}
+            </div>
+          </div>
         </div>
       </Layout>
     );
@@ -398,7 +444,7 @@ const CustomerInsights = () => {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customer Insights</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Customer Deep Intelligence</h1>
           <p className="text-gray-600 text-sm mt-1">Deep dive into customer behavior and Shopify analytics</p>
         </div>
 

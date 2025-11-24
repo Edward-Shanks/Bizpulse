@@ -15,6 +15,8 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   TrendingUp,
   AlertCircle,
   Trello,
@@ -28,16 +30,35 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [businessCompassOpen, setBusinessCompassOpen] = React.useState(false);
+
+  // Check if any Business Compass sub-item is active
+  const businessCompassPaths = ['/compass', '/brands', '/customers', '/categories', '/sales-analysis'];
+  const isBusinessCompassActive = businessCompassPaths.includes(location.pathname);
+
+  // Auto-open Business Compass dropdown if a sub-item is active
+  React.useEffect(() => {
+    if (isBusinessCompassActive && !businessCompassOpen) {
+      setBusinessCompassOpen(true);
+    }
+  }, [location.pathname, isBusinessCompassActive, businessCompassOpen]);
 
   const menuItems = [
     { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
     { path: '/kanban', icon: Trello, label: 'Strategic Kanban' },
-    { path: '/compass', icon: LayoutDashboard, label: 'Business Compass' },
-    { path: '/customers', icon: Users, label: 'Customers' },
-    { path: '/customer-insights', icon: BarChart3, label: 'Customer Insights' },
-    { path: '/brands', icon: Tag, label: 'Brands' },
-    { path: '/categories', icon: Layers, label: 'Categories' },
-    { path: '/sales-analysis', icon: TrendingUp, label: 'Sales Analysis' },
+    {
+      path: '/compass',
+      icon: LayoutDashboard,
+      label: 'Business Compass',
+      hasSubmenu: true,
+      submenu: [
+        { path: '/brands', icon: Tag, label: 'Brands' },
+        { path: '/customers', icon: Users, label: 'Customers' },
+        { path: '/categories', icon: Layers, label: 'Categories' },
+        { path: '/sales-analysis', icon: TrendingUp, label: 'Sales Analysis' },
+      ]
+    },
+    { path: '/customer-insights', icon: BarChart3, label: 'Customer Deep Intelligence' },
     { path: '/root-cause-analysis', icon: AlertCircle, label: 'Marketing & RCA' },
     { path: '/projects', icon: FolderKanban, label: 'Projects' },
     { path: '/reports', icon: FileText, label: 'Reports' },
@@ -110,29 +131,79 @@ const Layout = ({ children }) => {
             )}
 
             {/* Menu Items */}
-            <nav className="flex-1 px-3 py-2">
+            <nav className="flex-1 px-3 py-2 overflow-y-auto">
               {menuItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
+                const hasSubmenu = item.hasSubmenu && item.submenu;
+                const isParentActive = hasSubmenu && item.submenu.some(sub => sub.path === location.pathname);
+                
+                // For Business Compass, check if it or any sub-item is active
+                const isItemActive = isActive || (item.path === '/compass' && isBusinessCompassActive);
                 
                 return (
-                  <button
-                    key={item.path}
-                    onClick={() => navigate(item.path)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all ${
-                      isActive
-                        ? 'bg-amber-50 text-amber-900 font-medium'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    style={isActive ? { borderLeft: '3px solid #f59e0b' } : {}}
-                  >
-                    <Icon 
-                      className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-amber-600' : 'text-gray-500'}`} 
-                    />
-                    {!sidebarCollapsed && (
-                      <span className="text-sm">{item.label}</span>
+                  <div key={item.path}>
+                    <button
+                      onClick={() => {
+                        if (hasSubmenu) {
+                          // Toggle dropdown - clicking anywhere on Business Compass toggles it
+                          setBusinessCompassOpen(!businessCompassOpen);
+                        } else {
+                          navigate(item.path);
+                        }
+                      }}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all ${
+                        isItemActive || isParentActive
+                          ? 'bg-amber-50 text-amber-900 font-medium'
+                          : 'text-gray-700 hover:bg-gray-50'
+                      }`}
+                      style={(isItemActive || isParentActive) ? { borderLeft: '3px solid #f59e0b' } : {}}
+                    >
+                      <Icon 
+                        className={`w-5 h-5 flex-shrink-0 ${isItemActive || isParentActive ? 'text-amber-600' : 'text-gray-500'}`} 
+                      />
+                      {!sidebarCollapsed && (
+                        <>
+                          <span className="text-sm flex-1 text-left">{item.label}</span>
+                          {hasSubmenu && (
+                            businessCompassOpen ? (
+                              <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                            )
+                          )}
+                        </>
+                      )}
+                    </button>
+                    
+                    {/* Submenu Items */}
+                    {hasSubmenu && !sidebarCollapsed && businessCompassOpen && (
+                      <div className="ml-4 mb-1 space-y-1">
+                        {item.submenu.map((subItem) => {
+                          const SubIcon = subItem.icon;
+                          const isSubActive = location.pathname === subItem.path;
+                          
+                          return (
+                            <button
+                              key={subItem.path}
+                              onClick={() => navigate(subItem.path)}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+                                isSubActive
+                                  ? 'bg-amber-50 text-amber-900 font-medium'
+                                  : 'text-gray-600 hover:bg-gray-50'
+                              }`}
+                              style={isSubActive ? { borderLeft: '3px solid #f59e0b' } : {}}
+                            >
+                              <SubIcon 
+                                className={`w-4 h-4 flex-shrink-0 ${isSubActive ? 'text-amber-600' : 'text-gray-400'}`} 
+                              />
+                              <span className="text-sm">{subItem.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </nav>

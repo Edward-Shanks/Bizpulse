@@ -37,6 +37,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Kanban = () => {
   const { token } = useAuth();
@@ -869,6 +870,69 @@ const Kanban = () => {
         {/* Strategic Kanban Content */}
         {activeTab === 'strategic-kanban' && (
           <>
+            {loadingRecommendations ? (
+              <>
+                {/* Header Skeleton */}
+                <div className="mb-6">
+                  <Skeleton className="h-8 w-64 mb-2" />
+                  <Skeleton className="h-4 w-96" />
+                </div>
+
+                {/* KPI Banner Skeleton */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="professional-card p-5">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Skeleton className="w-5 h-5 rounded" />
+                        <Skeleton className="h-4 w-32" />
+                      </div>
+                      <Skeleton className="h-10 w-24 mb-2" />
+                      <Skeleton className="h-3 w-full mb-2" />
+                      <Skeleton className="h-2 w-full rounded-full" />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Kanban Board Skeleton */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {['Recommended', 'Live'].map((column, colIdx) => (
+                    <div key={colIdx} className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="w-3 h-3 rounded-full" />
+                        <Skeleton className="h-6 w-32" />
+                        <Skeleton className="h-4 w-12" />
+                      </div>
+                      <div className="space-y-4">
+                        {[1, 2, 3].map((i) => (
+                          <div key={i} className="professional-card p-5">
+                            <div className="mb-3">
+                              <Skeleton className="h-6 w-3/4 mb-2" />
+                              <Skeleton className="h-4 w-full mb-1" />
+                              <Skeleton className="h-4 w-5/6" />
+                            </div>
+                            <div className="flex items-center gap-2 mb-3">
+                              <Skeleton className="h-6 w-20 rounded-full" />
+                              <Skeleton className="h-6 w-24 rounded-full" />
+                              <Skeleton className="h-6 w-24 rounded-full ml-auto" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              <Skeleton className="h-4 w-full" />
+                              <Skeleton className="h-4 w-full" />
+                            </div>
+                            <Skeleton className="h-16 w-full rounded-lg mb-3" />
+                            <div className="flex gap-2">
+                              <Skeleton className="h-9 flex-1 rounded" />
+                              <Skeleton className="h-9 flex-1 rounded" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
             {/* KPI Banner */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Annual Goal */}
@@ -955,14 +1019,7 @@ const Kanban = () => {
             </div>
 
             <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
-              {loadingRecommendations ? (
-                <div className="professional-card p-5">
-                  <div className="text-center py-8">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-                    <p className="mt-4 text-gray-600">Generating AI recommendations from your data...</p>
-                  </div>
-                </div>
-              ) : initiatives.recommended.length === 0 ? (
+              {initiatives.recommended.length === 0 ? (
                 <div className="professional-card p-5">
                   <div className="text-center py-8">
                     <p className="text-gray-600">No recommendations available. Please check your data connection.</p>
@@ -1396,6 +1453,8 @@ const Kanban = () => {
             </div>
           </div>
         </div>
+              </>
+            )}
           </>
         )}
 
