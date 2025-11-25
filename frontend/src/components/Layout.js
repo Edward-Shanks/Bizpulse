@@ -59,7 +59,7 @@ const Layout = ({ children }) => {
       ]
     },
     { path: '/customer-insights', icon: BarChart3, label: 'Customer Deep Intelligence' },
-    { path: '/root-cause-analysis', icon: AlertCircle, label: 'Marketing & RCA' },
+    { path: '/root-cause-analysis', icon: AlertCircle, label: 'Root Cause Analysis' },
     { path: '/projects', icon: FolderKanban, label: 'Projects' },
     { path: '/reports', icon: FileText, label: 'Reports' },
   ];

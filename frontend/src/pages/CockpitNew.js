@@ -30,7 +30,7 @@ const Cockpit = () => {
       title: 'Revenue Opportunity',
       description: 'Untapped market segment with 25% growth potential',
       color: { bg: '#d1fae5', text: '#065f46', icon: '#10b981' },
-      navigateTo: '/kanban',
+      navigateTo: '/projects',
       targetTab: 'goals-management'
     },
     {
@@ -38,7 +38,7 @@ const Cockpit = () => {
       title: 'Cost Optimization',
       description: 'Operational efficiency improvements can save €150K annually',
       color: { bg: '#dbeafe', text: '#1e3a8a', icon: '#3b82f6' },
-      navigateTo: '/kanban',
+      navigateTo: '/projects',
       targetTab: 'goals-management'
     },
     {
@@ -46,17 +46,17 @@ const Cockpit = () => {
       title: 'Customer Retention',
       description: 'Churn rate increased by 3% - immediate action needed',
       color: { bg: '#fef3c7', text: '#92400e', icon: '#f59e0b' },
-      navigateTo: '/kanban',
+      navigateTo: '/projects',
       targetTab: 'goals-management'
     }
   ];
 
-  // Handle insight card click - navigate to Strategic Kanban Goals Management
+  // Handle insight card click - navigate to Projects Goals Management
   const handleInsightClick = (insight) => {
     if (insight.navigateTo) {
-      // Store the target tab in sessionStorage so Kanban page can read it
+      // Store the target tab in sessionStorage so Projects page can read it
       if (insight.targetTab) {
-        sessionStorage.setItem('kanbanActiveTab', insight.targetTab);
+        sessionStorage.setItem('projectsActiveTab', insight.targetTab);
       }
       navigate(insight.navigateTo);
       toast.success(`Navigating to Goals Management...`);
