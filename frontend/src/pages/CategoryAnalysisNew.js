@@ -6,6 +6,7 @@ import InsightModal from '@/components/InsightModal';
 import { formatNumber } from '@/utils/formatters';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { Layers, TrendingUp, Euro, Lightbulb } from 'lucide-react';
 
@@ -98,10 +99,40 @@ const CategoryAnalysis = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading category analysis...</p>
+        <div className="space-y-6">
+          {/* Header Skeleton */}
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+
+          {/* KPI Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <Skeleton className="h-4 w-24 mb-3" />
+                    <Skeleton className="h-10 w-32 mb-2" />
+                    <Skeleton className="h-3 w-full" />
+                  </div>
+                  <Skeleton className="w-10 h-10 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Charts Grid Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <Skeleton className="h-6 w-40" />
+                  <Skeleton className="h-8 w-28 rounded" />
+                </div>
+                <Skeleton className="h-64 w-full rounded" />
+              </div>
+            ))}
           </div>
         </div>
       </Layout>

@@ -36,12 +36,12 @@ const Layout = ({ children }) => {
   const businessCompassPaths = ['/compass', '/brands', '/customers', '/categories', '/sales-analysis'];
   const isBusinessCompassActive = businessCompassPaths.includes(location.pathname);
 
-  // Auto-open Business Compass dropdown if a sub-item is active
+  // Auto-open Business Compass dropdown if a sub-item is active (only on pathname change)
   React.useEffect(() => {
-    if (isBusinessCompassActive && !businessCompassOpen) {
+    if (isBusinessCompassActive) {
       setBusinessCompassOpen(true);
     }
-  }, [location.pathname, isBusinessCompassActive, businessCompassOpen]);
+  }, [location.pathname]);
 
   const menuItems = [
     { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
@@ -143,15 +143,7 @@ const Layout = ({ children }) => {
                 
                 return (
                   <div key={item.path}>
-                    <button
-                      onClick={() => {
-                        if (hasSubmenu) {
-                          // Toggle dropdown - clicking anywhere on Business Compass toggles it
-                          setBusinessCompassOpen(!businessCompassOpen);
-                        } else {
-                          navigate(item.path);
-                        }
-                      }}
+                    <div
                       className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all ${
                         isItemActive || isParentActive
                           ? 'bg-amber-50 text-amber-900 font-medium'
@@ -159,22 +151,45 @@ const Layout = ({ children }) => {
                       }`}
                       style={(isItemActive || isParentActive) ? { borderLeft: '3px solid #f59e0b' } : {}}
                     >
-                      <Icon 
-                        className={`w-5 h-5 flex-shrink-0 ${isItemActive || isParentActive ? 'text-amber-600' : 'text-gray-500'}`} 
-                      />
-                      {!sidebarCollapsed && (
-                        <>
-                          <span className="text-sm flex-1 text-left">{item.label}</span>
-                          {hasSubmenu && (
-                            businessCompassOpen ? (
-                              <ChevronUp className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                            )
+                      <button
+                        onClick={() => {
+                          if (hasSubmenu) {
+                            // If not on Business Compass page, navigate to it and expand submenu
+                            if (location.pathname !== item.path) {
+                              navigate(item.path);
+                              setBusinessCompassOpen(true);
+                            }
+                            // If already on page, clicking main button doesn't toggle - only chevron does
+                          } else {
+                            navigate(item.path);
+                          }
+                        }}
+                        className="flex items-center gap-3 flex-1 text-left"
+                      >
+                        <Icon 
+                          className={`w-5 h-5 flex-shrink-0 ${isItemActive || isParentActive ? 'text-amber-600' : 'text-gray-500'}`} 
+                        />
+                        {!sidebarCollapsed && (
+                          <span className="text-sm">{item.label}</span>
+                        )}
+                      </button>
+                      {!sidebarCollapsed && hasSubmenu && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBusinessCompassOpen(!businessCompassOpen);
+                          }}
+                          className="p-1 hover:bg-gray-200 rounded transition flex-shrink-0"
+                          aria-label={businessCompassOpen ? 'Collapse menu' : 'Expand menu'}
+                        >
+                          {businessCompassOpen ? (
+                            <ChevronUp className="w-4 h-4 text-gray-500" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-gray-500" />
                           )}
-                        </>
+                        </button>
                       )}
-                    </button>
+                    </div>
                     
                     {/* Submenu Items */}
                     {hasSubmenu && !sidebarCollapsed && businessCompassOpen && (

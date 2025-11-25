@@ -10,6 +10,7 @@ import {
   TrendingUp, TrendingDown, Euro, Package, 
   Users, Target, Activity, Lightbulb 
 } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Dashboard = () => {
   const [data, setData] = useState(null);
@@ -187,10 +188,42 @@ const Dashboard = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading dashboard...</p>
+        <div className="space-y-6">
+          {/* Header Skeleton */}
+          <div className="flex justify-between items-start">
+            <div>
+              <Skeleton className="h-9 w-64 mb-2" />
+              <Skeleton className="h-5 w-96" />
+            </div>
+          </div>
+
+          {/* KPI Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-lg border border-gray-200 p-5">
+                <Skeleton className="h-4 w-24 mb-3" />
+                <Skeleton className="h-10 w-32 mb-2" />
+                <Skeleton className="h-3 w-full" />
+              </div>
+            ))}
+          </div>
+
+          {/* Charts Grid Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-white rounded-lg border border-gray-200 p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <Skeleton className="h-6 w-40" />
+                  <Skeleton className="h-8 w-32 rounded" />
+                </div>
+                <div className="flex flex-wrap gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+                  <Skeleton className="h-9 w-24 rounded" />
+                  <Skeleton className="h-9 w-24 rounded" />
+                  <Skeleton className="h-9 w-24 rounded" />
+                </div>
+                <Skeleton className="h-64 w-full rounded" />
+              </div>
+            ))}
           </div>
         </div>
       </Layout>
