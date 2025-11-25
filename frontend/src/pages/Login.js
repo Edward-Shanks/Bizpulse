@@ -62,10 +62,18 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex bg-white">
+    <div 
+      className="min-h-screen flex relative"
+      style={{ 
+        backgroundImage: 'url(/login_bg.svg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
       {/* Left Side - Globe */}
-      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-50">
-        <div className="absolute inset-0 flex items-center justify-center">
+      <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
+        <div className="absolute inset-0 flex items-center justify-center" style={{ paddingTop: '80px' }}>
           {/* Globe container */}
           <div 
             className="relative flex items-center justify-center"
@@ -92,15 +100,15 @@ const Login = () => {
               >
                 {displayItems[currentDisplay].type === 'logo' ? (
                   <img 
-                    src="/Vector AI Studio Black.svg" 
+                    src="/Vector-Logo-white.svg" 
                     alt="Vector AI Studio" 
                     className="h-36 w-auto"
                     style={{ display: 'block' }}
                   />
                 ) : (
                   <div className="flex items-center justify-center gap-4 whitespace-nowrap">
-                    {React.createElement(displayItems[currentDisplay].icon, { className: "w-8 h-8 text-black" })}
-                    <p className="text-2xl font-bold text-black">{displayItems[currentDisplay].text}</p>
+                    {React.createElement(displayItems[currentDisplay].icon, { className: "w-8 h-8 text-white" })}
+                    <p className="text-2xl font-bold text-white">{displayItems[currentDisplay].text}</p>
                   </div>
                 )}
               </div>
@@ -109,22 +117,22 @@ const Login = () => {
         </div>
         {/* Small logo in bottom left */}
         <div className="absolute bottom-6 left-6 z-10">
-          <div className="w-10 h-10 bg-gray-900 flex items-center justify-center">
-            <span className="text-white font-bold text-lg">{brand.logo}</span>
+          <div className="w-10 h-10 bg-white flex items-center justify-center">
+            <span className="text-black font-bold text-lg">{brand.logo}</span>
           </div>
         </div>
       </div>
 
       {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex flex-col justify-center p-8 bg-gray-50">
+      <div className="w-full lg:w-1/2 flex flex-col justify-center p-8">
         <div className="w-full max-w-md mx-auto">
           {/* Static Logo and Text at top */}
           <div className="mb-10">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gray-900 flex items-center justify-center">
-                <span className="text-white font-bold text-xl">{brand.logo}</span>
+              <div className="w-10 h-10 bg-white flex items-center justify-center">
+                <span className="text-black font-bold text-xl">{brand.logo}</span>
               </div>
-              <h1 className="text-3xl font-bold text-gray-900">{brand.name}</h1>
+              <h1 className="text-3xl font-bold text-white">{brand.name}</h1>
             </div>
           </div>
 
@@ -222,8 +230,8 @@ const Login = () => {
 
       {/* Mobile: Show logo at bottom */}
       <div className="lg:hidden absolute bottom-6 left-6 z-10">
-        <div className="w-10 h-10 bg-gray-900 flex items-center justify-center">
-          <span className="text-white font-bold text-lg">{brand.logo}</span>
+        <div className="w-10 h-10 bg-white flex items-center justify-center">
+          <span className="text-black font-bold text-lg">{brand.logo}</span>
         </div>
       </div>
 
