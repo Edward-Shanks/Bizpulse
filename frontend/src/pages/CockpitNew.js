@@ -15,7 +15,10 @@ import {
   Calendar,
   Target,
   Archive,
-  StopCircle
+  StopCircle,
+  FileText,
+  ChevronDown,
+  Info
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,29 +26,33 @@ const Cockpit = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('recommended');
 
-  // Key Insights data
+  // Key Insights data - 4 cards with gradient backgrounds matching Figma
   const insights = [
+    {
+      icon: Target,
+      title: 'Business AI Score',
+      score: '65/100',
+      description: 'Overall Business Health and Performance',
+      navigateTo: null
+    },
     {
       icon: TrendingUp,
       title: 'Revenue Opportunity',
-      description: 'Untapped market segment with 25% growth potential',
-      color: { bg: '#d1fae5', text: '#065f46', icon: '#10b981' },
+      description: 'Untapped market segments with 20% growth potential',
       navigateTo: '/projects',
       targetTab: 'goals-management'
     },
     {
       icon: Euro,
       title: 'Cost Optimization',
-      description: 'Operational efficiency improvements can save €150K annually',
-      color: { bg: '#dbeafe', text: '#1e3a8a', icon: '#3b82f6' },
+      description: 'Reduce operational expenses by 15% across all departments annually',
       navigateTo: '/projects',
       targetTab: 'goals-management'
     },
     {
       icon: AlertCircle,
       title: 'Customer Retention',
-      description: 'Churn rate increased by 3% - immediate action needed',
-      color: { bg: '#fef3c7', text: '#92400e', icon: '#f59e0b' },
+      description: 'Improve customer loyalty by 10% through personalized interactions',
       navigateTo: '/projects',
       targetTab: 'goals-management'
     }
@@ -63,13 +70,27 @@ const Cockpit = () => {
     }
   };
 
-  // Action Items
-  const actionItems = [
-    { id: 1, title: 'Launch Q4 Campaign', dueDate: '2025-01-15', priority: 'high' },
-    { id: 2, title: 'Review Pricing Strategy', dueDate: '2025-01-20', priority: 'medium' },
-    { id: 3, title: 'Analyze Competitor Activity', dueDate: '2025-01-10', priority: 'high' },
-    { id: 4, title: 'Optimize Supply Chain', dueDate: '2025-01-25', priority: 'medium' }
-  ];
+  // Action Items - split into Critical and Impact
+  const [criticalPriorityFilter, setCriticalPriorityFilter] = useState('all');
+  const [impactPriorityFilter, setImpactPriorityFilter] = useState('all');
+  
+  const actionItems = {
+    critical: [
+      { id: 1, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' },
+      { id: 2, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' },
+      { id: 3, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' }
+    ],
+    impact: [
+      { id: 4, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' },
+      { id: 5, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'medium' },
+      { id: 6, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' }
+    ]
+  };
+  
+  const getFilteredItems = (items, filter) => {
+    if (filter === 'all') return items;
+    return items.filter(item => item.priority === filter);
+  };
 
   // Campaign data
   const [campaigns, setCampaigns] = useState({
@@ -80,19 +101,19 @@ const Cockpit = () => {
         description: 'Targeted campaign for summer season with focus on outdoor products',
         aiScore: 72,
         budget: '€50K',
-        roi: '320%',
+        growth: '323%',
         channels: ['Email', 'Social Media', 'Display Ads'],
-        aiRecommendation: 'High potential for Q3 revenue growth. Recommended to activate immediately.'
+        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
       },
       {
         id: 2,
         name: 'Holiday Campaign 2025',
-        description: 'Comprehensive holiday season marketing initiative',
+        description: 'Targeted campaign for holiday season with focus on outdoor products',
         aiScore: 78,
-        budget: '€175K',
-        roi: '450%',
-        channels: ['Email', 'Social Media', 'Video', 'Influencer'],
-        aiRecommendation: 'Optimal timing for holiday shopping season. Expected 45% increase in conversions.'
+        budget: '€75K',
+        growth: '450%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
+        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
       },
       {
         id: 3,
@@ -100,9 +121,9 @@ const Cockpit = () => {
         description: 'Launch campaign for new premium product line',
         aiScore: 75,
         budget: '€60K',
-        roi: '380%',
-        channels: ['Social Media', 'Video', 'Influencer'],
-        aiRecommendation: 'Prioritize Japan and Singapore markets first. Engage local consulting partners.'
+        growth: '380%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
+        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
       },
       {
         id: 4,
@@ -110,9 +131,9 @@ const Cockpit = () => {
         description: 'Targeted campaign for students and parents',
         aiScore: 77,
         budget: '€45K',
-        roi: '340%',
+        growth: '340%',
         channels: ['Email', 'Display Ads', 'Social Media'],
-        aiRecommendation: 'Strong seasonal opportunity. Recommend early August activation for maximum impact.'
+        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
       },
       {
         id: 5,
@@ -120,9 +141,9 @@ const Cockpit = () => {
         description: 'Retention campaign for existing high-value customers',
         aiScore: 81,
         budget: '€35K',
-        roi: '520%',
-        channels: ['Email', 'Video'],
-        aiRecommendation: 'Top 10 customers account for 62% revenue. Focus on personalized offers.'
+        growth: '520%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
+        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
       },
       {
         id: 6,
@@ -130,9 +151,9 @@ const Cockpit = () => {
         description: 'Limited-time promotional campaign for spring season',
         aiScore: 73,
         budget: '€28K',
-        roi: '290%',
-        channels: ['Social Media', 'Display Ads', 'Email'],
-        aiRecommendation: 'Budget-efficient option with solid ROI. Perfect for quick wins.'
+        growth: '290%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
+        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
       }
     ],
     active: [
@@ -142,8 +163,8 @@ const Cockpit = () => {
         description: 'Ongoing brand building across multiple touchpoints',
         aiScore: 68,
         budget: '€40K',
-        roi: '280%',
-        channels: ['Social Media', 'Display Ads'],
+        growth: '280%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         startDate: '2025-01-05',
         status: 'running'
       },
@@ -153,7 +174,7 @@ const Cockpit = () => {
         description: 'End of season inventory clearance',
         aiScore: 72,
         budget: '€55K',
-        roi: '310%',
+        growth: '310%',
         channels: ['Email', 'Social Media', 'Display Ads'],
         startDate: '2025-01-10',
         status: 'running'
@@ -164,8 +185,8 @@ const Cockpit = () => {
         description: 'Webinar series for lead generation',
         aiScore: 66,
         budget: '€30K',
-        roi: '240%',
-        channels: ['Video', 'Email', 'Social Media'],
+        growth: '240%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         startDate: '2025-01-08',
         status: 'running'
       },
@@ -175,8 +196,8 @@ const Cockpit = () => {
         description: 'Joint marketing initiative with strategic partners',
         aiScore: 74,
         budget: '€65K',
-        roi: '380%',
-        channels: ['Email', 'Video', 'Display Ads'],
+        growth: '380%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         startDate: '2025-01-12',
         status: 'running'
       }
@@ -188,9 +209,9 @@ const Cockpit = () => {
         description: 'Successful Black Friday promotional campaign',
         aiScore: 75,
         budget: '€85K',
-        roi: '520%',
-        actualROI: '548%',
-        channels: ['Email', 'Social Media', 'Video', 'Display Ads'],
+        growth: '520%',
+        actualGrowth: '548%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         endDate: '2025-11-29'
       },
       {
@@ -199,8 +220,8 @@ const Cockpit = () => {
         description: 'Online-focused promotional campaign',
         aiScore: 73,
         budget: '€70K',
-        roi: '480%',
-        actualROI: '495%',
+        growth: '480%',
+        actualGrowth: '495%',
         channels: ['Email', 'Social Media', 'Display Ads'],
         endDate: '2025-12-02'
       },
@@ -210,9 +231,9 @@ const Cockpit = () => {
         description: 'Virtual product demonstration series',
         aiScore: 71,
         budget: '€42K',
-        roi: '300%',
-        actualROI: '315%',
-        channels: ['Video', 'Email', 'Social Media'],
+        growth: '300%',
+        actualGrowth: '315%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         endDate: '2025-09-30'
       },
       {
@@ -221,9 +242,9 @@ const Cockpit = () => {
         description: 'Event sponsorship and brand activation',
         aiScore: 69,
         budget: '€50K',
-        roi: '270%',
-        actualROI: '285%',
-        channels: ['Social Media', 'Display Ads'],
+        growth: '270%',
+        actualGrowth: '285%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         endDate: '2025-07-15'
       },
       {
@@ -232,9 +253,9 @@ const Cockpit = () => {
         description: 'Major product line introduction campaign',
         aiScore: 78,
         budget: '€95K',
-        roi: '420%',
-        actualROI: '442%',
-        channels: ['Email', 'Social Media', 'Video', 'Influencer'],
+        growth: '420%',
+        actualGrowth: '442%',
+        channels: ['Email', 'Social Media', 'Display Ads'],
         endDate: '2025-05-31'
       }
     ]
@@ -291,90 +312,154 @@ const Cockpit = () => {
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Business Cockpit</h1>
-          <p className="text-gray-600">AI-powered business intelligence and campaign management</p>
+          <p className="text-gray-600">AI-powered Business and Revenue and Campaign Management</p>
         </div>
 
-        {/* Business AI Score Banner */}
-        <div 
-          className="rounded-xl p-6 border"
-          style={{ background: '#fef3c7', borderColor: '#f59e0b' }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Business AI Score</h2>
-              <p className="text-sm text-gray-700">Overall business health and performance indicator</p>
-            </div>
-            <div className="text-5xl font-bold" style={{ color: '#d97706' }}>
-              65<span className="text-2xl text-gray-600">/100</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Key Insights */}
+        {/* Key Insights - 4 cards with gradient backgrounds matching Figma */}
         <div>
           <h2 className="text-xl font-bold text-gray-900 mb-4">Key Insights</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {insights.map((insight, idx) => {
-              const Icon = insight.icon;
               return (
                 <div
                   key={idx}
-                  onClick={() => handleInsightClick(insight)}
-                  className="rounded-lg p-5 border cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => insight.navigateTo && handleInsightClick(insight)}
+                  className={`cursor-pointer hover:shadow-lg transition-shadow ${insight.navigateTo ? 'cursor-pointer' : ''}`}
                   style={{ 
-                    background: insight.color.bg, 
-                    borderColor: insight.color.bg
+                    background: 'linear-gradient(180deg, #0C1113 0%, rgba(12, 123, 174, 0.24) 100%)',
+                    border: '2.08px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: '7.26px',
+                    padding: '20px',
+                    backdropFilter: 'blur(10px)',
+                    WebkitBackdropFilter: 'blur(10px)'
                   }}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="mt-1">
-                      <Icon className="w-5 h-5" style={{ color: insight.color.icon }} />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1" style={{ color: insight.color.text }}>
+                  {insight.score ? (
+                    // Business AI Score card
+                    <div>
+                      <div className="flex items-baseline gap-1 mb-2">
+                        <span className="text-5xl font-bold" style={{ color: '#fbbf24' }}>
+                          65
+                        </span>
+                        <span className="text-2xl font-bold" style={{ color: '#9ca3af' }}>
+                          /100
+                        </span>
+                      </div>
+                      <h3 className="font-semibold mb-1 text-sm" style={{ color: '#fbbf24' }}>
                         {insight.title}
                       </h3>
-                      <p className="text-sm" style={{ color: insight.color.text, opacity: 0.8 }}>
+                      <p className="text-xs" style={{ color: '#ffffff', opacity: 0.9 }}>
                         {insight.description}
                       </p>
                     </div>
-                  </div>
+                  ) : (
+                    // Other insight cards
+                    <div>
+                      <h3 className="font-semibold mb-2 text-sm" style={{ color: '#fbbf24' }}>
+                        {insight.title}
+                      </h3>
+                      <p className="text-xs" style={{ color: '#ffffff', opacity: 0.9 }}>
+                        {insight.description}
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* Top Action Items */}
+        {/* Top Action Items - Two Columns */}
         <div>
           <h2 className="text-xl font-bold text-gray-900 mb-4">Top Action Items</h2>
-          <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            {actionItems.map((item, idx) => (
-              <div
-                key={item.id}
-                className={`flex items-center justify-between p-4 ${
-                  idx !== actionItems.length - 1 ? 'border-b border-gray-200' : ''
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${
-                    item.priority === 'high' ? 'bg-red-500' : 'bg-yellow-500'
-                  }`}></div>
-                  <Calendar className="w-4 h-4 text-gray-400" />
-                  <div>
-                    <h4 className="font-medium text-gray-900">{item.title}</h4>
-                    <p className="text-sm text-gray-500">Due: {item.dueDate}</p>
-                  </div>
-                </div>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  item.priority === 'high' 
-                    ? 'bg-red-100 text-red-700' 
-                    : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {item.priority}
-                </span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Critical Column */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-900">Critical</h3>
+                <select
+                  value={criticalPriorityFilter}
+                  onChange={(e) => setCriticalPriorityFilter(e.target.value)}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                >
+                  <option value="all">Priority</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
               </div>
-            ))}
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                {getFilteredItems(actionItems.critical, criticalPriorityFilter).map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center justify-between p-4 ${
+                      idx !== getFilteredItems(actionItems.critical, criticalPriorityFilter).length - 1 ? 'border-b border-gray-200' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <h4 className="font-medium text-gray-900 text-sm">{item.title}</h4>
+                        <p className="text-xs text-gray-500">Due - {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                      item.priority === 'high' 
+                        ? 'bg-red-100 text-red-700' 
+                        : item.priority === 'medium'
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Impact Column */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-900">Impact</h3>
+                <select
+                  value={impactPriorityFilter}
+                  onChange={(e) => setImpactPriorityFilter(e.target.value)}
+                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                >
+                  <option value="all">Priority</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                {getFilteredItems(actionItems.impact, impactPriorityFilter).map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center justify-between p-4 ${
+                      idx !== getFilteredItems(actionItems.impact, impactPriorityFilter).length - 1 ? 'border-b border-gray-200' : ''
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-4 h-4 text-gray-400" />
+                      <div>
+                        <h4 className="font-medium text-gray-900 text-sm">{item.title}</h4>
+                        <p className="text-xs text-gray-500">Due - {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                      item.priority === 'high' 
+                        ? 'bg-red-100 text-red-700' 
+                        : item.priority === 'medium'
+                        ? 'bg-yellow-100 text-yellow-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -402,53 +487,97 @@ const Cockpit = () => {
 
           {/* Campaign Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {campaigns[activeTab].map((campaign) => (
-              <div key={campaign.id} className="bg-white rounded-xl border border-gray-200 p-6">
+            {campaigns[activeTab].map((campaign) => {
+              return (
+                <div 
+                  key={campaign.id} 
+                  className="rounded-[10px] border border-gray-200 p-6"
+                  style={{
+                    background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                    border: '1px solid rgba(0, 0, 0, 0.1)'
+                  }}
+                >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-2">{campaign.name}</h3>
-                    <p className="text-sm text-gray-600 mb-3">{campaign.description}</p>
+                    <p className="text-sm text-gray-600 mb-4">{campaign.description}</p>
                   </div>
-                  <div className="flex flex-col items-end">
-                    <div className="flex items-baseline gap-1 mb-1">
-                      <span className="text-2xl font-bold" style={{ color: '#f59e0b' }}>
-                        {campaign.aiScore}%
-                      </span>
-                      <span className="text-xs text-gray-500">AI Score</span>
+                  {/* AI Score on Right Side */}
+                  <div className="flex flex-col items-end flex-shrink-0 ml-4">
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-gray-900">{campaign.aiScore}%</p>
+                      <p className="text-xs text-gray-500 mt-1">AI Score</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4 mb-4">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Budget</p>
-                    <p className="font-semibold text-gray-900">{campaign.budget}</p>
+                {/* Row 1: Channels and Budget */}
+                <div className="flex items-center justify-between gap-4 mb-3">
+                  {/* Channels - White Card */}
+                  <div className="flex-1 bg-white rounded-lg p-3 border border-gray-200">
+                    <p className="text-sm font-medium text-gray-900 mb-2">{campaign.channels.length} Channels</p>
+                    <div className="flex items-center gap-3">
+                      {campaign.channels.map((channel, idx) => {
+                        const channelLogos = {
+                          'Email': '/email_logo.svg',
+                          'Social Media': '/social_logo.svg',
+                          'Video': '/video_logo.svg',
+                          'Display Ads': '/display_ads_logo.svg',
+                          'Influencer': '/social_logo.svg'
+                        };
+                        const logoPath = channelLogos[channel] || '/display_ads_logo.svg';
+                        return (
+                          <div key={idx} className="flex flex-col items-center gap-1.5">
+                            <div className="w-6 h-6 flex items-center justify-center">
+                              <img src={logoPath} alt={channel} className="w-full h-full object-contain" />
+                            </div>
+                            <span className="text-xs text-gray-600">{channel}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">{activeTab === 'archived' && campaign.actualROI ? 'Actual ROI' : 'Expected ROI'}</p>
-                    <p className="font-semibold text-gray-900">{activeTab === 'archived' && campaign.actualROI ? campaign.actualROI : campaign.roi}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Channels</p>
-                    <p className="font-semibold text-gray-900">{campaign.channels.length}</p>
+
+                  {/* Budget on Right */}
+                  <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
+                    <p className="text-lg font-semibold text-gray-900">{campaign.budget}</p>
+                    <p className="text-xs text-gray-500 mt-1">Budget</p>
                   </div>
                 </div>
 
+                {/* Row 2: AI Recommendation and Expected ROI */}
                 {activeTab === 'recommended' && campaign.aiRecommendation && (
-                  <div 
-                    className="rounded-lg p-3 mb-4"
-                    style={{ background: '#dbeafe' }}
-                  >
-                    <div className="flex items-start gap-2">
-                      <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#1e40af' }} />
-                      <div>
-                        <p className="text-xs font-semibold mb-1" style={{ color: '#1e3a8a' }}>
-                          AI Recommendation:
-                        </p>
-                        <p className="text-xs" style={{ color: '#1e3a8a' }}>
-                          {campaign.aiRecommendation}
-                        </p>
+                  <div className="flex items-center justify-between gap-4 mb-4">
+                    {/* AI Recommendation - Light Beige Background */}
+                    <div 
+                      className="flex-1 rounded-lg p-3"
+                      style={{ background: '#F2E9DB' }}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-1">AI Recommendation</h4>
+                          <p className="text-xs text-gray-700 leading-relaxed">
+                            {campaign.aiRecommendation}
+                          </p>
+                        </div>
+                        <img src="/ai_logo.svg" alt="AI" className="w-5 h-5 flex-shrink-0" />
                       </div>
+                    </div>
+
+                    {/* Expected ROI on Right */}
+                    <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
+                      <p className="text-lg font-semibold text-gray-900">{activeTab === 'archived' && campaign.actualGrowth ? campaign.actualGrowth : (campaign.growth || campaign.roi)}</p>
+                      <p className="text-xs text-gray-500 mt-1">Expected ROI</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* For active and archived tabs, show Expected ROI separately */}
+                {(activeTab === 'active' || activeTab === 'archived') && (
+                  <div className="flex items-start justify-end gap-4 mb-4">
+                    <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
+                      <p className="text-lg font-semibold text-gray-900">{activeTab === 'archived' && campaign.actualGrowth ? campaign.actualGrowth : (campaign.growth || campaign.roi)}</p>
+                      <p className="text-xs text-gray-500 mt-1">Expected ROI</p>
                     </div>
                   </div>
                 )}
@@ -467,42 +596,20 @@ const Cockpit = () => {
                   </div>
                 )}
 
-                <div className="flex items-center gap-2 mb-4 flex-wrap">
-                  {campaign.channels.map((channel, idx) => {
-                    const channelIcons = {
-                      'Email': Mail,
-                      'Social Media': Share2,
-                      'Video': Video,
-                      'Display Ads': Target,
-                      'Influencer': UsersIcon,
-                      'PR': Sparkles
-                    };
-                    const ChannelIcon = channelIcons[channel] || Target;
-                    return (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full"
-                      >
-                        <ChannelIcon className="w-3.5 h-3.5 text-gray-600" />
-                        <span className="text-xs font-medium text-gray-700">{channel}</span>
-                      </div>
-                    );
-                  })}
-                </div>
 
                 {activeTab === 'recommended' && (
                   <div className="flex gap-3">
                     <Button
                       onClick={() => handleActivate(campaign.id, campaign.name)}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                      className="flex-1 text-white flex items-center justify-center rounded-lg"
+                      style={{ background: '#184464' }}
                     >
-                      <Play className="w-4 h-4 mr-2" />
-                      Activate
+                      <span className="mr-2">Activate</span>
+                      <img src="/arrow_logo.svg" alt="arrow" className="w-4 h-4" />
                     </Button>
                     <Button
                       onClick={() => handleArchive(campaign.id, campaign.name)}
-                      className="flex-1 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300"
-                      variant="outline"
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 border-0 rounded-lg"
                     >
                       <Archive className="w-4 h-4 mr-2" />
                       Archive
@@ -534,15 +641,17 @@ const Cockpit = () => {
                   <div className="flex gap-3">
                     <Button
                       onClick={() => handleActivate(campaign.id, campaign.name, 'archived')}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                      className="flex-1 text-white flex items-center justify-center rounded-lg"
+                      style={{ background: '#184464' }}
                     >
-                      <Play className="w-4 h-4 mr-2" />
-                      Activate
+                      <span className="mr-2">Activate</span>
+                      <img src="/arrow_logo.svg" alt="arrow" className="w-4 h-4" />
                     </Button>
                   </div>
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

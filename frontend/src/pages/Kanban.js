@@ -402,7 +402,8 @@ const Kanban = () => {
             </p>
           </div>
           <Button
-            className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+            className="text-white"
+            style={{ background: '#184464' }}
             onClick={handleGenerateRecommendations}
             disabled={generatingRecommendations}
           >
@@ -413,7 +414,7 @@ const Kanban = () => {
               </>
             ) : (
               <>
-                <Sparkles className="w-4 h-4 mr-2" />
+                <img src="/discover_ai_insights_icon.svg" alt="AI Insights" className="w-4 h-4 mr-2" />
                 Discover AI Insights
               </>
             )}
@@ -427,9 +428,10 @@ const Kanban = () => {
               onClick={() => setActiveTab('strategic-kanban')}
               className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'strategic-kanban'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                  ? 'text-white shadow-md'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              style={activeTab === 'strategic-kanban' ? { background: '#184464' } : {}}
             >
               <Zap className="w-4 h-4" />
               Strategic Kanban
@@ -438,9 +440,10 @@ const Kanban = () => {
               onClick={() => setActiveTab('marketing-strategy')}
               className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'marketing-strategy'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                  ? 'text-white shadow-md'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              style={activeTab === 'marketing-strategy' ? { background: '#184464' } : {}}
             >
               <Target className="w-4 h-4" />
               Marketing Strategy
@@ -514,73 +517,91 @@ const Kanban = () => {
               </>
             ) : (
               <>
-            {/* KPI Banner */}
+            {/* KPI Banner - Dark Background Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Annual Goal */}
-          <div className="professional-card p-5 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200">
-            <div className="flex items-center gap-2 mb-2">
-              <Target className="w-5 h-5 text-amber-600" />
-              <p className="text-sm font-semibold text-gray-700">Annual Goal</p>
-            </div>
-            <div className="mb-2">
-              <h2 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-                {annualGoal.current}/{annualGoal.target}
-              </h2>
-              <p className="text-xs text-gray-600 mt-1">{annualGoal.metric} • {goalProgress.toFixed(0)}% complete</p>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div
-                className="h-2 rounded-full"
-                style={{
-                  width: `${goalProgress}%`,
-                  background: 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)'
-                }}
-              />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex-1">
+                <h2 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+                  {annualGoal.current}/{annualGoal.target}
+                </h2>
+                <p className="text-sm text-white opacity-90 mb-2">Annual Goal</p>
+                <p className="text-xs text-white opacity-75">{annualGoal.metric}</p>
+                <p className="text-xs text-white opacity-75">{goalProgress.toFixed(0)}% Complete</p>
+              </div>
+              <div className="w-2 h-20 bg-gray-700 rounded-full relative overflow-hidden">
+                <div
+                  className="absolute bottom-0 w-full rounded-full"
+                  style={{
+                    height: `${goalProgress}%`,
+                    background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)'
+                  }}
+                />
+              </div>
             </div>
           </div>
 
           {/* Pending Recommendations */}
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-5 h-5 text-blue-600" />
-              <p className="text-sm font-semibold text-gray-700">Pending Recommendations</p>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
-              {totalRecommended}
-            </h2>
-            <div className="flex gap-3 text-xs text-gray-600">
-              <span>System: {systemRecommended}</span>
-              <span>Custom: {customRecommended}</span>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+                {totalRecommended}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Pending Recommendation</p>
+              <div className="flex flex-col gap-1 text-xs text-white opacity-75">
+                <span>System: {systemRecommended}</span>
+                <span>Custom: {customRecommended}</span>
+              </div>
             </div>
           </div>
 
           {/* Live Campaigns */}
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Zap className="w-5 h-5 text-green-600" />
-              <p className="text-sm font-semibold text-gray-700">Live Campaigns</p>
-            </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
-              {totalLive}
-            </h2>
-            <div className="flex gap-3 text-xs text-gray-600">
-              <span>System: {systemLive}</span>
-              <span>Custom: {customLive}</span>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+                {totalLive}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Live Campaigns</p>
+              <div className="flex flex-col gap-1 text-xs text-white opacity-75">
+                <span>System: {systemLive}</span>
+                <span>Custom: {customLive}</span>
+              </div>
             </div>
           </div>
 
           {/* Impact Delivered */}
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="w-5 h-5 text-purple-600" />
-              <p className="text-sm font-semibold text-gray-700">Impact Delivered</p>
-            </div>
-            <h2 className="text-3xl font-bold text-green-600 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
-              {formatNumber(totalImpact)}
-            </h2>
-            <div className="flex items-center gap-1 text-xs">
-              <TrendingUp className="w-3 h-3 text-green-600" />
-              <span className="text-green-600 font-semibold">{avgUplift.toFixed(1)}% avg uplift</span>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#fbbf24' }}>
+                {formatNumber(totalImpact)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Impact Delivered</p>
+              <p className="text-xs text-white opacity-75">{avgUplift.toFixed(1)}% Avg Uplift</p>
             </div>
           </div>
         </div>
@@ -591,11 +612,9 @@ const Kanban = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-blue-600" />
                 <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-                  RECOMMENDED
+                  Recommended [{totalRecommended}]
                 </h3>
-                <span className="text-sm text-gray-500">({totalRecommended})</span>
               </div>
             </div>
 
@@ -626,79 +645,74 @@ const Kanban = () => {
 
                     {/* Tags */}
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
-                      <div
-                        className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1"
-                        style={{ background: typeInfo.bg, color: typeInfo.text }}
-                      >
-                        <TypeIcon className="w-3 h-3" />
-                        {initiative.type}
-                      </div>
-                      <div
-                        className="px-3 py-1 rounded-full text-xs font-semibold"
-                        style={{ background: categoryInfo.bg, color: categoryInfo.text }}
-                      >
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-700">
+                        System
+                      </span>
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">
                         {categoryInfo.label}
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-500 ml-auto">
-                        <Sparkles className="w-3 h-3 text-amber-600" />
-                        <span className="font-semibold text-amber-600">{initiative.aiScore}% AI Score</span>
-                      </div>
+                      </span>
                     </div>
 
-                    {/* Date & Budget */}
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <Calendar className="w-4 h-4" />
-                        <span>
-                          {new Date(initiative.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          {initiative.endDate && ` - ${new Date(initiative.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <Euro className="w-4 h-4" />
-                        <span className="font-semibold text-gray-900">{formatNumber(initiative.budget)}</span>
-                      </div>
+                    {/* Date Range */}
+                    <div className="mb-3">
+                      <p className="text-xs text-gray-500">
+                        {new Date(initiative.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {initiative.endDate && ` - ${new Date(initiative.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                      </p>
                     </div>
 
-                    {/* Expected Impact */}
-                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 mb-3 border border-green-200">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-green-700 font-semibold">Expected Impact</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-green-900">
-                            {formatNumber(initiative.impact.value)}
-                          </span>
-                          <span className="text-xs text-green-700">• {initiative.impact.percentage}% uplift</span>
+                    {/* Expected Impact and AI Score */}
+                    <div 
+                      className="rounded-lg p-4 mb-3"
+                      style={{ background: '#F2E9DB' }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="text-xs text-gray-500 mb-1">Expected Impact</p>
+                          <p className="text-xl font-bold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+                            {formatNumber(initiative.impact?.value || 0)}
+                          </p>
+                          <p className="text-xs text-green-600 font-semibold">
+                            {initiative.impact?.percentage || 0}% Uplift
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+                            {initiative.aiScore}%
+                          </p>
+                          <p className="text-xs text-gray-500">AI Score</p>
                         </div>
                       </div>
                     </div>
 
                     {/* Reasoning Section */}
                     {showReasoning === initiative.id && (
-                      <div className="bg-blue-50 rounded-lg p-3 mb-3 border border-blue-200">
-                        <div className="flex items-start gap-2">
-                          <Zap className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-xs font-semibold text-blue-900 mb-1">AI Reasoning:</p>
-                            <p className="text-xs text-blue-800 leading-relaxed">{initiative.reasoning}</p>
-                          </div>
-                        </div>
+                      <div className="bg-blue-50 rounded-lg p-4 mt-3 border border-blue-200">
+                        <p className="text-sm font-semibold text-gray-900 mb-2">AI Reasoning</p>
+                        <p className="text-sm text-gray-700 leading-relaxed">{initiative.reasoning}</p>
                       </div>
                     )}
 
-                    {/* Channels */}
-                    <div className="flex items-center gap-2 mb-3 flex-wrap">
-                      {initiative.channels.map((channel, idx) => (
-                        <span
-                          key={`channel-${initiative.id}-${idx}-${channel}`}
-                          className="px-2 py-1 rounded-md text-xs bg-gray-100 text-gray-700 flex items-center gap-1"
-                        >
-                          {channel === 'Email' && <Mail className="w-3 h-3" />}
-                          {channel === 'Social Media' && <Share2 className="w-3 h-3" />}
-                          {channel === 'Video' && <Video className="w-3 h-3" />}
-                          {channel}
-                        </span>
-                      ))}
+                    {/* Channels - Circular Icons */}
+                    <div className="flex items-center gap-3 mb-3">
+                      {initiative.channels.map((channel, idx) => {
+                        const channelLogos = {
+                          'Email': '/email_logo.svg',
+                          'Social Media': '/social_logo.svg',
+                          'Video': '/video_logo.svg',
+                          'Display Ads': '/display_ads_logo.svg',
+                          'Google Ads': '/display_ads_logo.svg'
+                        };
+                        const logoPath = channelLogos[channel] || '/display_ads_logo.svg';
+                        return (
+                          <div key={`channel-${initiative.id}-${idx}-${channel}`} className="flex flex-col items-center gap-1">
+                            <div className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center">
+                              <img src={logoPath} alt={channel} className="w-6 h-6 object-contain" />
+                            </div>
+                            <span className="text-xs text-gray-600">{channel}</span>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {/* Action Buttons */}
@@ -707,15 +721,16 @@ const Kanban = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => setShowReasoning(showReasoning === initiative.id ? null : initiative.id)}
-                        className="flex-1 text-gray-700 border-gray-300"
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300"
                       >
-                        <Zap className="w-4 h-4 mr-1" />
+                        <Sparkles className="w-4 h-4 mr-1" />
                         Reasoning
                       </Button>
                       <Button
                         size="sm"
                         onClick={() => handleAccept(initiative)}
-                        className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+                        className="flex-1 text-white"
+                        style={{ background: '#184464' }}
                       >
                         <CheckCircle className="w-4 h-4 mr-1" />
                         Accept
@@ -736,21 +751,23 @@ const Kanban = () => {
                 onClick={() => setActiveCampaignTab('live')}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                   activeCampaignTab === 'live'
-                    ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white'
+                    ? 'text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
+                style={activeCampaignTab === 'live' ? { background: '#184464' } : {}}
               >
-                Live ({initiatives.live.length})
+                Live [{initiatives.live.length}]
               </button>
               <button
                 onClick={() => setActiveCampaignTab('past')}
                 className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                   activeCampaignTab === 'past'
-                    ? 'bg-gradient-to-r from-gray-500 to-gray-600 text-white'
+                    ? 'text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
+                style={activeCampaignTab === 'past' ? { background: '#184464' } : {}}
               >
-                Past ({initiatives.past.length})
+                Past [{initiatives.past.length}]
               </button>
             </div>
 
@@ -771,87 +788,51 @@ const Kanban = () => {
                 return (
                   <div key={initiative.id} className="professional-card p-5 hover:shadow-lg transition-shadow">
                     {/* Header */}
-                    <div className="flex items-start justify-between mb-3">
-                      <h4 className="text-base font-semibold text-gray-900 flex-1" style={{ fontFamily: 'Space Grotesk' }}>
+                    <div className="mb-3">
+                      <h4 className="text-base font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                         {initiative.title}
                       </h4>
-                      <button className="text-gray-400 hover:text-gray-600">
-                        <MoreVertical className="w-5 h-5" />
-                      </button>
                     </div>
 
-                    {/* Tags */}
+                    {/* Tags - System and Category */}
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
-                      <div
-                        className="px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1"
-                        style={{ background: typeInfo.bg, color: typeInfo.text }}
-                      >
-                        <TypeIcon className="w-3 h-3" />
-                        {initiative.type}
-                      </div>
-                      <div
-                        className="px-3 py-1 rounded-full text-xs font-semibold"
-                        style={{ background: categoryInfo.bg, color: categoryInfo.text }}
-                      >
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-700">
+                        System
+                      </span>
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">
                         {categoryInfo.label}
-                      </div>
-                    </div>
-
-                    {/* Date */}
-                    <div className="flex items-center gap-2 text-xs text-gray-600 mb-3">
-                      <Calendar className="w-4 h-4" />
-                      <span>
-                        {new Date(initiative.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        {initiative.endDate ? ` - ${new Date(initiative.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ' - None'}
                       </span>
                     </div>
 
-                    {/* Impact */}
-                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 mb-3 border border-green-200">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-green-700 font-semibold">Current Impact</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-green-900">
-                            {formatNumber(initiative.impact?.value || 0)}
-                          </span>
-                          <span className="text-xs text-green-700">• {initiative.impact?.percentage || 0}%</span>
-                        </div>
-                      </div>
+                    {/* Date */}
+                    <div className="mb-3">
+                      <p className="text-xs text-gray-500">
+                        {new Date(initiative.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
                     </div>
 
-                    {/* Progress */}
-                    {initiative.progress !== undefined && (
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs text-gray-600">Progress</span>
-                          <span className="text-xs font-semibold text-gray-900">{initiative.progress || 0}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className="h-2 rounded-full"
-                            style={{
-                              width: `${initiative.progress || 0}%`,
-                              background: (initiative.progress || 0) >= 75 
-                                ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)'
-                                : (initiative.progress || 0) >= 50
-                                ? 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)'
-                                : 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)'
-                            }}
-                          />
-                        </div>
-                      </div>
-                    )}
+                    {/* Current Impact */}
+                    <div 
+                      className="rounded-lg p-4 mb-3"
+                      style={{ background: '#F2E9DB' }}
+                    >
+                      <p className="text-xs text-gray-500 mb-1">Current Impact</p>
+                      <p className="text-lg font-bold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+                        {initiative.impact?.percentage || 0}%
+                      </p>
+                      <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+                        {formatNumber(initiative.impact?.value || 0)}
+                      </p>
+                    </div>
 
-                    {/* Channels */}
+
+                    {/* Channels - Labels */}
                     <div className="flex items-center gap-2 mb-3 flex-wrap">
                       {(initiative.channels || []).map((channel, idx) => (
                         <span
-                          key={`channel-past-${initiative.id}-${idx}-${channel}`}
-                          className="px-2 py-1 rounded-md text-xs bg-gray-100 text-gray-700 flex items-center gap-1"
+                          key={`channel-live-${initiative.id}-${idx}-${channel}`}
+                          className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700"
                         >
-                          {channel === 'Email' && <Mail className="w-3 h-3" />}
-                          {channel === 'Push Notification' && <Zap className="w-3 h-3" />}
-                          {channel === 'In-App' && <TagIcon className="w-3 h-3" />}
                           {channel}
                         </span>
                       ))}
@@ -865,10 +846,11 @@ const Kanban = () => {
                           setCreateGoalsModalOpen(true);
                         }}
                         size="sm"
-                        className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+                        variant="outline"
+                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300 flex items-center justify-between"
                       >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Create Goals
+                        <span>Create Goal</span>
+                        <img src="/plus_logo.svg" alt="plus" className="w-4 h-4" />
                       </Button>
                       <Button
                         onClick={() => {
@@ -882,21 +864,12 @@ const Kanban = () => {
                             loadCampaignGoals(initiative.id);
                           }
                         }}
-                        variant="outline"
                         size="sm"
-                        className="flex-1 text-gray-700 border-gray-300"
+                        className="flex-1 text-white"
+                        style={{ background: '#184464' }}
                       >
-                        {expandedCampaigns[initiative.id] ? (
-                          <>
-                            <ChevronUp className="w-4 h-4 mr-2" />
-                            Hide Goals
-                          </>
-                        ) : (
-                          <>
-                            <ChevronDown className="w-4 h-4 mr-2" />
-                            View Goals ({campaignGoals[initiative.id]?.length || 0})
-                          </>
-                        )}
+                        <ChevronDown className="w-4 h-4 mr-2" />
+                        View Goal
                       </Button>
                     </div>
 
