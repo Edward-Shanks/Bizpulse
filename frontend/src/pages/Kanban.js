@@ -521,7 +521,7 @@ const Kanban = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* Annual Goal */}
           <div 
-            className="rounded-lg p-5 text-white"
+            className="rounded-lg p-5 text-white relative overflow-hidden"
             style={{
               background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
               border: '1px solid rgba(255, 255, 255, 0.1)'
@@ -529,19 +529,19 @@ const Kanban = () => {
           >
             <div className="flex items-center justify-between mb-3">
               <div className="flex-1">
-                <h2 className="text-3xl font-bold text-white mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+                <h2 className="text-3xl font-bold mb-1" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
                   {annualGoal.current}/{annualGoal.target}
                 </h2>
                 <p className="text-sm text-white opacity-90 mb-2">Annual Goal</p>
                 <p className="text-xs text-white opacity-75">{annualGoal.metric}</p>
                 <p className="text-xs text-white opacity-75">{goalProgress.toFixed(0)}% Complete</p>
               </div>
-              <div className="w-2 h-20 bg-gray-700 rounded-full relative overflow-hidden">
+              <div className="w-2 h-20 rounded-full relative overflow-hidden" style={{ background: 'rgba(237, 213, 177, 0.2)' }}>
                 <div
                   className="absolute bottom-0 w-full rounded-full"
                   style={{
                     height: `${goalProgress}%`,
-                    background: 'linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%)'
+                    background: '#EDD5B1'
                   }}
                 />
               </div>
@@ -557,7 +557,7 @@ const Kanban = () => {
             }}
           >
             <div className="mb-3">
-              <h2 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
                 {totalRecommended}
               </h2>
               <p className="text-sm text-white opacity-90 mb-3">Pending Recommendation</p>
@@ -577,7 +577,7 @@ const Kanban = () => {
             }}
           >
             <div className="mb-3">
-              <h2 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
                 {totalLive}
               </h2>
               <p className="text-sm text-white opacity-90 mb-3">Live Campaigns</p>
@@ -597,7 +597,7 @@ const Kanban = () => {
             }}
           >
             <div className="mb-3">
-              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#fbbf24' }}>
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
                 {formatNumber(totalImpact)}
               </h2>
               <p className="text-sm text-white opacity-90 mb-3">Impact Delivered</p>
@@ -632,7 +632,14 @@ const Kanban = () => {
                 const TypeIcon = typeInfo.icon;
 
                 return (
-                  <div key={initiative.id} className="professional-card p-5 hover:shadow-lg transition-shadow">
+                  <div 
+                    key={initiative.id} 
+                    className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
+                    style={{
+                      background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                      border: '1px solid rgba(0, 0, 0, 0.1)'
+                    }}
+                  >
                     {/* Header */}
                     <div className="mb-3">
                       <h4 className="text-base font-semibold text-gray-900 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
@@ -693,26 +700,16 @@ const Kanban = () => {
                       </div>
                     )}
 
-                    {/* Channels - Circular Icons */}
-                    <div className="flex items-center gap-3 mb-3">
-                      {initiative.channels.map((channel, idx) => {
-                        const channelLogos = {
-                          'Email': '/email_logo.svg',
-                          'Social Media': '/social_logo.svg',
-                          'Video': '/video_logo.svg',
-                          'Display Ads': '/display_ads_logo.svg',
-                          'Google Ads': '/display_ads_logo.svg'
-                        };
-                        const logoPath = channelLogos[channel] || '/display_ads_logo.svg';
-                        return (
-                          <div key={`channel-${initiative.id}-${idx}-${channel}`} className="flex flex-col items-center gap-1">
-                            <div className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 flex items-center justify-center">
-                              <img src={logoPath} alt={channel} className="w-6 h-6 object-contain" />
-                            </div>
-                            <span className="text-xs text-gray-600">{channel}</span>
-                          </div>
-                        );
-                      })}
+                    {/* Channels - Labels */}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      {initiative.channels.map((channel, idx) => (
+                        <span
+                          key={`channel-${initiative.id}-${idx}-${channel}`}
+                          className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700"
+                        >
+                          {channel}
+                        </span>
+                      ))}
                     </div>
 
                     {/* Action Buttons */}
@@ -786,7 +783,14 @@ const Kanban = () => {
                 const TypeIcon = typeInfo.icon;
 
                 return (
-                  <div key={initiative.id} className="professional-card p-5 hover:shadow-lg transition-shadow">
+                  <div 
+                    key={initiative.id} 
+                    className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
+                    style={{
+                      background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                      border: '1px solid rgba(0, 0, 0, 0.1)'
+                    }}
+                  >
                     {/* Header */}
                     <div className="mb-3">
                       <h4 className="text-base font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
@@ -935,7 +939,14 @@ const Kanban = () => {
                     const TypeIcon = typeInfo.icon;
 
                     return (
-                      <div key={`past-${initiative.id || initiative.title}`} className="professional-card p-5 hover:shadow-lg transition-shadow opacity-75">
+                      <div 
+                        key={`past-${initiative.id || initiative.title}`} 
+                        className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow opacity-75"
+                        style={{
+                          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                          border: '1px solid rgba(0, 0, 0, 0.1)'
+                        }}
+                      >
                         {/* Header */}
                         <div className="flex items-start justify-between mb-3">
                           <h4 className="text-base font-semibold text-gray-900 flex-1" style={{ fontFamily: 'Space Grotesk' }}>

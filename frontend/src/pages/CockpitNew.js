@@ -324,41 +324,37 @@ const Cockpit = () => {
                 <div
                   key={idx}
                   onClick={() => insight.navigateTo && handleInsightClick(insight)}
-                  className={`cursor-pointer hover:shadow-lg transition-shadow ${insight.navigateTo ? 'cursor-pointer' : ''}`}
+                  className={`rounded-lg p-5 text-white cursor-pointer hover:shadow-lg transition-shadow ${insight.navigateTo ? 'cursor-pointer' : ''}`}
                   style={{ 
-                    background: 'linear-gradient(180deg, #0C1113 0%, rgba(12, 123, 174, 0.24) 100%)',
-                    border: '2.08px solid rgba(255, 255, 255, 0.12)',
-                    borderRadius: '7.26px',
-                    padding: '20px',
-                    backdropFilter: 'blur(10px)',
-                    WebkitBackdropFilter: 'blur(10px)'
+                    background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
                   }}
                 >
                   {insight.score ? (
                     // Business AI Score card
                     <div>
                       <div className="flex items-baseline gap-1 mb-2">
-                        <span className="text-5xl font-bold" style={{ color: '#fbbf24' }}>
+                        <span className="text-5xl font-bold" style={{ color: '#EDD5B1' }}>
                           65
                         </span>
-                        <span className="text-2xl font-bold" style={{ color: '#9ca3af' }}>
+                        <span className="text-2xl font-bold" style={{ color: '#EDD5B1' }}>
                           /100
                         </span>
                       </div>
-                      <h3 className="font-semibold mb-1 text-sm" style={{ color: '#fbbf24' }}>
+                      <h3 className="font-semibold mb-1 text-sm text-white opacity-90">
                         {insight.title}
                       </h3>
-                      <p className="text-xs" style={{ color: '#ffffff', opacity: 0.9 }}>
+                      <p className="text-xs text-white opacity-75">
                         {insight.description}
                       </p>
                     </div>
                   ) : (
                     // Other insight cards
                     <div>
-                      <h3 className="font-semibold mb-2 text-sm" style={{ color: '#fbbf24' }}>
+                      <h3 className="font-semibold mb-2 text-base" style={{ color: '#EDD5B1' }}>
                         {insight.title}
                       </h3>
-                      <p className="text-xs" style={{ color: '#ffffff', opacity: 0.9 }}>
+                      <p className="text-xs text-white opacity-75">
                         {insight.description}
                       </p>
                     </div>
