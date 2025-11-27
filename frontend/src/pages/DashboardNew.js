@@ -280,12 +280,27 @@ const Dashboard = () => {
     '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
     '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'
   ];
+  
+  // Colors with reduced opacity for Business vs Cases graph
+  const colorsWithOpacity = colors.map(color => {
+    // Convert hex to rgba with 0.5 opacity
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.5)`;
+  });
 
   const ChartCard = ({ title, chartName, children, context }) => {
     const currentFilters = chartFilters[chartName] || {};
     
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <div 
+        className="rounded-lg p-5"
+        style={{
+          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+          border: '1px solid rgba(0, 0, 0, 0.1)'
+        }}
+      >
         {/* Title and View Insight Button */}
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-bold text-gray-900">{title}</h3>
@@ -390,7 +405,13 @@ const Dashboard = () => {
         </div>
 
         {/* Overall Page Filters */}
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div 
+        className="rounded-lg p-5"
+        style={{
+          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+          border: '1px solid rgba(0, 0, 0, 0.1)'
+        }}
+      >
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-semibold text-gray-700">Global Filters</h3>
             {isDevelopment && (
@@ -479,7 +500,13 @@ const Dashboard = () => {
 
         {/* Key Metrics */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Euro className="w-4 h-4 text-blue-600" />
               <span className="text-xs text-gray-600">Total Sales</span>
@@ -491,7 +518,13 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="w-4 h-4 text-green-600" />
               <span className="text-xs text-gray-600">Gross Profit</span>
@@ -503,7 +536,13 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Package className="w-4 h-4 text-purple-600" />
               <span className="text-xs text-gray-600">Cases Sold</span>
@@ -515,7 +554,13 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Activity className="w-4 h-4 text-orange-600" />
               <span className="text-xs text-gray-600">Avg. Margin</span>
@@ -524,7 +569,13 @@ const Dashboard = () => {
             <p className="text-xs text-gray-500">Current</p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="w-4 h-4 text-blue-600" />
               <span className="text-xs text-gray-600">YoY Growth</span>
@@ -536,7 +587,13 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-4 h-4 text-green-600" />
               <span className="text-xs text-gray-600">New Customers</span>
@@ -548,7 +605,13 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Target className="w-4 h-4 text-indigo-600" />
               <span className="text-xs text-gray-600">Market Share</span>
@@ -560,7 +623,13 @@ const Dashboard = () => {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div 
+            className="rounded-lg p-4"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center gap-2 mb-2">
               <Activity className="w-4 h-4 text-emerald-600" />
               <span className="text-xs text-gray-600">Efficiency</span>
@@ -586,8 +655,8 @@ const Dashboard = () => {
                     datasets: [{
                       label: 'Revenue',
                       data: monthlyData.map(item => item.Revenue),
-                      borderColor: '#3b82f6',
-                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                      borderColor: '#1e293b',
+                      backgroundColor: 'rgba(30, 41, 59, 0.1)',
                       tension: 0.4,
                       fill: true,
                       borderWidth: 3
@@ -630,13 +699,13 @@ const Dashboard = () => {
                       {
                         label: 'Revenue',
                         data: yearlyData.map(item => item.Revenue),
-                        backgroundColor: '#10b981',
+                        backgroundColor: '#1e293b',
                         borderRadius: 8
                       },
                       {
                         label: 'Expenses',
                         data: yearlyData.map(item => item.Revenue - item.Gross_Profit),
-                        backgroundColor: '#ef4444',
+                        backgroundColor: '#EDD5B1',
                         borderRadius: 8
                       }
                     ]
@@ -677,7 +746,7 @@ const Dashboard = () => {
                     datasets: [{
                       label: 'Units',
                       data: businessData.map(item => item.Units),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderRadius: 8
                     }]
                   }}
@@ -718,7 +787,7 @@ const Dashboard = () => {
                     datasets: [{
                       label: 'Revenue',
                       data: businessData.map(item => item.Revenue),
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: '#1e293b',
                       borderRadius: 8
                     }]
                   }}
@@ -759,7 +828,7 @@ const Dashboard = () => {
                     datasets: [{
                       label: 'Profit',
                       data: businessData.map(item => item.Gross_Profit),
-                      backgroundColor: '#10b981',
+                      backgroundColor: '#1e293b',
                       borderRadius: 8
                     }]
                   }}
@@ -799,7 +868,7 @@ const Dashboard = () => {
                     labels: channelData.map(item => item.Channel),
                     datasets: [{
                       data: channelData.map(item => item.Revenue),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderWidth: 2,
                       borderColor: '#fff'
                     }]
@@ -833,7 +902,7 @@ const Dashboard = () => {
                     labels: businessData.map(item => item.Business),
                     datasets: [{
                       data: businessData.map(item => item.Revenue),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderWidth: 2,
                       borderColor: '#fff'
                     }]
@@ -869,13 +938,13 @@ const Dashboard = () => {
                       {
                         label: 'Revenue',
                         data: businessData.slice(0, 5).map(item => item.Revenue),
-                        backgroundColor: '#3b82f6',
+                        backgroundColor: '#1e293b',
                         borderRadius: 6
                       },
                       {
                         label: 'Profit',
                         data: businessData.slice(0, 5).map(item => item.Gross_Profit),
-                        backgroundColor: '#10b981',
+                        backgroundColor: '#EDD5B1',
                         borderRadius: 6
                       }
                     ]
