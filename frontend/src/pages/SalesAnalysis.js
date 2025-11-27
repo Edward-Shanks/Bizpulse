@@ -299,7 +299,13 @@ const SalesAnalysis = () => {
   };
 
   const ChartCard = ({ title, chartId, children }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-5">
+    <div 
+      className="rounded-lg p-5"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <button
@@ -349,7 +355,13 @@ const SalesAnalysis = () => {
         </div>
 
         {/* Multi-Select Filters */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div 
+          className="rounded-lg p-4"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <MultiSelectFilter
@@ -385,40 +397,52 @@ const SalesAnalysis = () => {
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600">Total Sales</h3>
-              <Euro className="w-5 h-5 text-green-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalRevenue)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Sales</p>
+              <p className="text-xs text-white opacity-75">Last period comparison coming soon</p>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatNumber(totalRevenue)}</p>
-            <p className="text-sm text-green-600 mt-1">
-              <TrendingUp className="w-4 h-4 inline mr-1" />
-              Last period comparison coming soon
-            </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600">Total Units</h3>
-              <Package className="w-5 h-5 text-blue-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatUnits(totalUnits)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Units</p>
+              <p className="text-xs text-white opacity-75">Track unit growth with filters</p>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatUnits(totalUnits)}</p>
-            <p className="text-sm text-blue-600 mt-1">
-              <TrendingUp className="w-4 h-4 inline mr-1" />
-              Track unit growth with filters
-            </p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600">Avg Price/Case</h3>
-              <Target className="w-5 h-5 text-amber-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(avgPrice)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Avg Price/Case</p>
+              <p className="text-xs text-white opacity-75">Combine filters to refine insights</p>
             </div>
-            <p className="text-2xl font-bold text-gray-900">{formatNumber(avgPrice)}</p>
-            <p className="text-sm text-amber-600 mt-1">
-              <TrendingUp className="w-4 h-4 inline mr-1" />
-              Combine filters to refine insights
-            </p>
           </div>
         </div>
 
@@ -435,13 +459,13 @@ const SalesAnalysis = () => {
                       {
                         label: 'Revenue',
                         data: yearlyData.map(item => item.Revenue),
-                        backgroundColor: '#f59e0b',
+                        backgroundColor: '#1e293b',
                         borderRadius: 6,
                       },
                       {
                         label: 'Gross Profit',
                         data: yearlyData.map(item => item.Gross_Profit),
-                        backgroundColor: '#34d399',
+                        backgroundColor: '#EDD5B1',
                         borderRadius: 6,
                       },
                     ],
@@ -465,13 +489,13 @@ const SalesAnalysis = () => {
                       {
                         label: 'Revenue',
                         data: businessData.map(item => item.Revenue),
-                        backgroundColor: '#3b82f6',
+                        backgroundColor: '#1e293b',
                         borderRadius: 6,
                       },
                       {
                         label: 'Gross Profit',
                         data: businessData.map(item => item.Gross_Profit),
-                        backgroundColor: '#60a5fa',
+                        backgroundColor: '#EDD5B1',
                         borderRadius: 6,
                       },
                     ],

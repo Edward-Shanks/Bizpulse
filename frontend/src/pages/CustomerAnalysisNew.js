@@ -164,6 +164,14 @@ const CustomerAnalysis = () => {
     '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16',
   ];
 
+  // Colors with reduced opacity for multi-color graphs
+  const colorsWithOpacity = colors.map(color => {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.5)`;
+  });
+
   const baseInsightContext = {
     selectedYears,
     selectedMonths,
@@ -306,7 +314,13 @@ const CustomerAnalysis = () => {
   const closeInsightModal = () => setInsightModal(prev => ({ ...prev, isOpen: false }));
 
   const ChartCard = ({ title, chartId, children }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div 
+      className="rounded-lg p-6"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <button
@@ -329,7 +343,13 @@ const CustomerAnalysis = () => {
           <p className="text-gray-600">Channel performance and customer insights</p>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div 
+          className="rounded-lg p-5"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <MultiSelectFilter
@@ -378,31 +398,52 @@ const CustomerAnalysis = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Revenue</h3>
-              <Euro className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalRevenue)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Revenue</p>
+              <p className="text-xs text-white opacity-75">Across {activeChannels} active channels</p>
             </div>
-            <p className="text-3xl font-bold">{formatNumber(totalRevenue)}</p>
-            <p className="text-sm opacity-80 mt-2">Across {activeChannels} active channels</p>
           </div>
 
-          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Profit</h3>
-              <TrendingUp className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalProfit)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Profit</p>
+              <p className="text-xs text-white opacity-75">{avgMargin.toFixed(1)}% margin</p>
             </div>
-            <p className="text-3xl font-bold">{formatNumber(totalProfit)}</p>
-            <p className="text-sm opacity-80 mt-2">{avgMargin.toFixed(1)}% margin</p>
           </div>
 
-          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Units</h3>
-              <ShoppingCart className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatUnits(totalUnits)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Units</p>
+              <p className="text-xs text-white opacity-75">Units sold</p>
             </div>
-            <p className="text-3xl font-bold">{formatUnits(totalUnits)}</p>
-            <p className="text-sm opacity-80 mt-2">Units sold</p>
           </div>
         </div>
 
@@ -417,7 +458,7 @@ const CustomerAnalysis = () => {
                     datasets: [{
                       label: 'Revenue',
                       data: channelData.map(item => item.Revenue || 0),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderRadius: 8,
                       borderWidth: 0,
                     }],
@@ -458,7 +499,7 @@ const CustomerAnalysis = () => {
                     labels: topCustomers.map(item => item.Customer || 'Unknown'),
                     datasets: [{
                       data: topCustomers.map(item => item.Revenue || 0),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderWidth: 2,
                       borderColor: '#fff',
                     }],
@@ -499,7 +540,7 @@ const CustomerAnalysis = () => {
                     datasets: [{
                       label: 'Profit',
                       data: channelData.map(item => item.Gross_Profit || 0),
-                      backgroundColor: '#10b981',
+                      backgroundColor: '#1e293b',
                       borderRadius: 8,
                     }],
                   }}
@@ -539,7 +580,7 @@ const CustomerAnalysis = () => {
                     labels: channelData.map(item => item.Channel || 'Unknown'),
                     datasets: [{
                       data: channelData.map(item => item.Units || 0),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderWidth: 2,
                       borderColor: '#fff',
                     }],

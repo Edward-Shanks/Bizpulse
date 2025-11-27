@@ -464,6 +464,15 @@ const ProjectsNew = () => {
   const TopProjectsSection = () => {
     const projects = data.topProjects || [];
     
+    // Colors with reduced opacity for multi-color graphs
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'];
+    const colorsWithOpacity = colors.map(color => {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, 0.5)`;
+    });
+    
     // Prepare chart data
     const projectBudgetData = projects.slice(0, 6).map(p => ({
       name: p.name.length > 25 ? p.name.substring(0, 25) + '...' : p.name,
@@ -505,75 +514,89 @@ const ProjectsNew = () => {
       <div className="space-y-6">
         {/* Summary Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-blue-100">
-                <FolderKanban className="w-5 h-5 text-blue-600" />
-              </div>
-              <TrendingUp className="w-4 h-4 text-green-600" />
-            </div>
-            <p className="text-sm text-gray-600 mb-1">Total Projects</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {projects.length}
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">{completedProjects} completed</p>
-          </div>
-
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-green-100">
-                <Euro className="w-5 h-5 text-green-600" />
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-green-600" />
-            </div>
-            <p className="text-sm text-gray-600 mb-1">Total Budget</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {formatNumber(totalBudget / 1000000)}M
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">{formatNumber(totalSpent / 1000000)}M spent</p>
-          </div>
-
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-amber-100">
-                <Target className="w-5 h-5 text-amber-600" />
-              </div>
-              <Activity className="w-4 h-4 text-amber-600" />
-            </div>
-            <p className="text-sm text-gray-600 mb-1">Avg Progress</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {avgProgress.toFixed(1)}%
-            </h3>
-            <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
-              <div
-                className="h-1.5 rounded-full"
-                style={{
-                  width: `${avgProgress}%`,
-                  background: 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)'
-                }}
-              />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {projects.length}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Projects</p>
+              <p className="text-xs text-white opacity-75">{completedProjects} completed</p>
             </div>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-purple-100">
-                <CheckCircle2 className="w-5 h-5 text-purple-600" />
-              </div>
-              <TrendingUp className="w-4 h-4 text-green-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalBudget / 1000000)}M
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Budget</p>
+              <p className="text-xs text-white opacity-75">{formatNumber(totalSpent / 1000000)}M spent</p>
             </div>
-            <p className="text-sm text-gray-600 mb-1">On Track</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {onTrackProjects}/{projects.length}
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">{((onTrackProjects / projects.length) * 100).toFixed(1)}% success rate</p>
+          </div>
+
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {avgProgress.toFixed(1)}%
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Avg Progress</p>
+              <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                <div
+                  className="h-1.5 rounded-full"
+                  style={{
+                    width: `${avgProgress}%`,
+                    background: 'linear-gradient(90deg, #d97706 0%, #f59e0b 100%)'
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {onTrackProjects}/{projects.length}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">On Track</p>
+              <p className="text-xs text-white opacity-75">{((onTrackProjects / projects.length) * 100).toFixed(1)}% success rate</p>
+            </div>
           </div>
         </div>
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Budget Overview Chart */}
-          <div className="professional-card p-5">
+          <div 
+            className="rounded-[10px] p-5"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 Budget Overview (€ k)
@@ -596,17 +619,17 @@ const ProjectsNew = () => {
                   {
                     label: 'Budget',
                     data: projectBudgetData.map(d => d.Budget),
-                    backgroundColor: '#3b82f6'
+                    backgroundColor: '#1e293b'
                   },
                   {
                     label: 'Spent',
                     data: projectBudgetData.map(d => d.Spent),
-                    backgroundColor: '#10b981'
+                    backgroundColor: '#EDD5B1'
                   },
                   {
                     label: 'Remaining',
                     data: projectBudgetData.map(d => d.Remaining),
-                    backgroundColor: '#f59e0b'
+                    backgroundColor: '#1e293b'
                   }
                 ]
               }}
@@ -622,7 +645,13 @@ const ProjectsNew = () => {
           </div>
 
           {/* Project Status Distribution */}
-          <div className="professional-card p-5">
+          <div 
+            className="rounded-[10px] p-5"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 Project Status Distribution
@@ -643,7 +672,7 @@ const ProjectsNew = () => {
                 labels: statusChartData.map(d => d.status),
                 datasets: [{
                   data: statusChartData.map(d => d.count),
-                  backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                  backgroundColor: colorsWithOpacity.slice(0, 5)
                 }]
               }}
               options={{
@@ -658,7 +687,13 @@ const ProjectsNew = () => {
           </div>
 
           {/* ROI Comparison */}
-          <div className="professional-card p-5">
+          <div 
+            className="rounded-[10px] p-5"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 ROI Analysis
@@ -681,12 +716,12 @@ const ProjectsNew = () => {
                   {
                     label: 'Expected ROI',
                     data: projectROIData.map(d => d['Expected ROI']),
-                    backgroundColor: '#10b981'
+                    backgroundColor: '#1e293b'
                   },
                   {
                     label: 'Actual ROI',
                     data: projectROIData.map(d => d['Actual ROI']),
-                    backgroundColor: '#3b82f6'
+                    backgroundColor: '#EDD5B1'
                   }
                 ]
               }}
@@ -705,7 +740,13 @@ const ProjectsNew = () => {
           </div>
 
           {/* Progress Tracker */}
-          <div className="professional-card p-5">
+          <div 
+            className="rounded-[10px] p-5"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 Project Progress (%)
@@ -727,8 +768,8 @@ const ProjectsNew = () => {
                 datasets: [{
                   label: 'Progress',
                   data: projectProgressData.map(d => d.Progress),
-                  borderColor: '#f59e0b',
-                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  borderColor: '#1e293b',
+                  backgroundColor: 'rgba(30, 41, 59, 0.1)',
                   tension: 0.4,
                   fill: true
                 }]
@@ -772,7 +813,14 @@ const ProjectsNew = () => {
     return (
       <div className="space-y-6">
         {plans.map(plan => (
-          <div key={plan.id} className="professional-card p-6">
+          <div 
+            key={plan.id} 
+            className="rounded-[10px] p-6"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             {/* Plan Header */}
             <div className="flex items-start justify-between mb-6">
               <div className="flex-1">
@@ -912,6 +960,15 @@ const ProjectsNew = () => {
     const activeCampaigns = campaigns.filter(c => c.status === 'active');
     const completedCampaigns = campaigns.filter(c => c.status === 'completed');
     
+    // Colors with reduced opacity for multi-color graphs
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'];
+    const colorsWithOpacity = colors.map(color => {
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, 0.5)`;
+    });
+    
     // Summary metrics
     const totalBudget = campaigns.reduce((sum, c) => sum + c.budget, 0);
     const totalSpent = campaigns.reduce((sum, c) => sum + c.spent, 0);
@@ -942,67 +999,81 @@ const ProjectsNew = () => {
       <div className="space-y-6">
         {/* Summary Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-blue-100">
-                <Activity className="w-5 h-5 text-blue-600" />
-              </div>
-              <TrendingUp className="w-4 h-4 text-green-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {activeCampaigns.length}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Active Campaigns</p>
+              <p className="text-xs text-white opacity-75">{campaigns.length} total campaigns</p>
             </div>
-            <p className="text-sm text-gray-600 mb-1">Active Campaigns</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {activeCampaigns.length}
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">{campaigns.length} total campaigns</p>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-green-100">
-                <Euro className="w-5 h-5 text-green-600" />
-              </div>
-              <ArrowUpRight className="w-4 h-4 text-green-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalRevenue / 1000000)}M
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Revenue</p>
+              <p className="text-xs text-white opacity-75">{formatNumber(totalSpent)} spent</p>
             </div>
-            <p className="text-sm text-gray-600 mb-1">Total Revenue</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {formatNumber(totalRevenue / 1000000)}M
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">{formatNumber(totalSpent)} spent</p>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-amber-100">
-                <TrendingUp className="w-5 h-5 text-amber-600" />
-              </div>
-              <Activity className="w-4 h-4 text-amber-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {avgROI.toFixed(1)}x
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Avg ROI</p>
+              <p className="text-xs text-white opacity-75">Return on investment</p>
             </div>
-            <p className="text-sm text-gray-600 mb-1">Avg ROI</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {avgROI.toFixed(1)}x
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">Return on investment</p>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="p-2 rounded-lg bg-purple-100">
-                <Users className="w-5 h-5 text-purple-600" />
-              </div>
-              <TrendingUp className="w-4 h-4 text-green-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalLeads)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Leads</p>
+              <p className="text-xs text-white opacity-75">{formatNumber(totalConversions)} conversions</p>
             </div>
-            <p className="text-sm text-gray-600 mb-1">Total Leads</p>
-            <h3 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {formatNumber(totalLeads)}
-            </h3>
-            <p className="text-xs text-gray-500 mt-1">{formatNumber(totalConversions)} conversions</p>
           </div>
         </div>
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Campaign Performance */}
-          <div className="professional-card p-5">
+          <div 
+            className="rounded-[10px] p-5"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 Campaign Performance (€ k)
@@ -1025,12 +1096,12 @@ const ProjectsNew = () => {
                   {
                     label: 'Budget',
                     data: campaignPerformanceData.map(d => d.Budget),
-                    backgroundColor: '#3b82f6'
+                    backgroundColor: '#1e293b'
                   },
                   {
                     label: 'Revenue',
                     data: campaignPerformanceData.map(d => d.Revenue),
-                    backgroundColor: '#10b981'
+                    backgroundColor: '#EDD5B1'
                   }
                 ]
               }}
@@ -1046,7 +1117,13 @@ const ProjectsNew = () => {
           </div>
 
           {/* ROI by Campaign */}
-          <div className="professional-card p-5">
+          <div 
+            className="rounded-[10px] p-5"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 ROI by Campaign
@@ -1068,7 +1145,7 @@ const ProjectsNew = () => {
                 datasets: [{
                   label: 'ROI',
                   data: campaignROIData.map(d => d.ROI),
-                  backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6']
+                  backgroundColor: colorsWithOpacity.slice(0, 6)
                 }]
               }}
               options={{
@@ -1086,7 +1163,13 @@ const ProjectsNew = () => {
           </div>
 
           {/* Conversion Rates */}
-          <div className="professional-card p-5 lg:col-span-2">
+          <div 
+            className="rounded-[10px] p-5 lg:col-span-2"
+            style={{
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }}
+          >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
                 Conversion Rate Analysis (%)
@@ -1108,8 +1191,8 @@ const ProjectsNew = () => {
                 datasets: [{
                   label: 'Conversion Rate (%)',
                   data: conversionRateData.map(d => d['Conversion Rate']),
-                  borderColor: '#f59e0b',
-                  backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                  borderColor: '#1e293b',
+                  backgroundColor: 'rgba(30, 41, 59, 0.1)',
                   tension: 0.4,
                   fill: true
                 }]
@@ -1298,50 +1381,70 @@ const ProjectsNew = () => {
 
         {/* Goals Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <Target className="w-5 h-5 text-blue-600" />
-              <p className="text-sm font-semibold text-gray-700">Total Objectives</p>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {selectedQuarter?.objectives?.length || 0}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Objectives</p>
+              <p className="text-xs text-white opacity-75">{selectedQuarter?.quarter || 'N/A'}</p>
             </div>
-            <h2 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              {selectedQuarter?.objectives?.length || 0}
-            </h2>
-            <p className="text-xs text-gray-600 mt-1">{selectedQuarter?.quarter || 'N/A'}</p>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <CheckCircle className="w-5 h-5 text-green-600" />
-              <p className="text-sm font-semibold text-gray-700">On Track</p>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {selectedQuarter?.objectives?.filter(o => o.status === 'on-track').length || 0}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">On Track</p>
+              <p className="text-xs text-white opacity-75">Meeting targets</p>
             </div>
-            <h2 className="text-3xl font-bold text-green-600" style={{ fontFamily: 'Space Grotesk' }}>
-              {selectedQuarter?.objectives?.filter(o => o.status === 'on-track').length || 0}
-            </h2>
-            <p className="text-xs text-gray-600 mt-1">Meeting targets</p>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertCircle className="w-5 h-5 text-amber-600" />
-              <p className="text-sm font-semibold text-gray-700">At Risk</p>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {selectedQuarter?.objectives?.filter(o => o.status === 'at-risk').length || 0}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">At Risk</p>
+              <p className="text-xs text-white opacity-75">Needs attention</p>
             </div>
-            <h2 className="text-3xl font-bold text-amber-600" style={{ fontFamily: 'Space Grotesk' }}>
-              {selectedQuarter?.objectives?.filter(o => o.status === 'at-risk').length || 0}
-            </h2>
-            <p className="text-xs text-gray-600 mt-1">Needs attention</p>
           </div>
 
-          <div className="professional-card p-5">
-            <div className="flex items-center gap-2 mb-2">
-              <BarChart3 className="w-5 h-5 text-purple-600" />
-              <p className="text-sm font-semibold text-gray-700">Avg Progress</p>
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {selectedQuarter?.objectives?.length > 0 
+                  ? Math.round(selectedQuarter.objectives.reduce((sum, o) => sum + (o.progress || 0), 0) / selectedQuarter.objectives.length)
+                  : 0}%
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Avg Progress</p>
+              <p className="text-xs text-white opacity-75">Overall completion</p>
             </div>
-            <h2 className="text-3xl font-bold text-purple-600" style={{ fontFamily: 'Space Grotesk' }}>
-              {selectedQuarter?.objectives?.length > 0 
-                ? Math.round(selectedQuarter.objectives.reduce((sum, o) => sum + (o.progress || 0), 0) / selectedQuarter.objectives.length)
-                : 0}%
-            </h2>
-            <p className="text-xs text-gray-600 mt-1">Overall completion</p>
           </div>
         </div>
 
@@ -1361,8 +1464,13 @@ const ProjectsNew = () => {
                   <div
                     key={dept.id}
                     onClick={() => setSelectedDepartment(dept)}
-                    className="professional-card p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-105 border-l-4"
-                    style={{ borderLeftColor: dept.color.border }}
+                    className="rounded-[10px] p-6 cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-105 border-l-4"
+                    style={{ 
+                      borderLeftColor: dept.color.border,
+                      background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                      border: '1px solid rgba(0, 0, 0, 0.1)',
+                      borderLeft: `4px solid ${dept.color.border}`
+                    }}
                   >
                     <div className="flex items-start justify-between mb-4">
                       <div
@@ -1418,7 +1526,15 @@ const ProjectsNew = () => {
               </div>
 
               {/* Department Header */}
-              <div className="professional-card p-6 border-l-4" style={{ borderLeftColor: selectedDepartment.color.border }}>
+              <div 
+                className="rounded-[10px] p-6 border-l-4" 
+                style={{ 
+                  borderLeftColor: selectedDepartment.color.border,
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderLeft: `4px solid ${selectedDepartment.color.border}`
+                }}
+              >
                 <div className="flex items-center gap-4">
                   <div
                     className="w-16 h-16 rounded-lg flex items-center justify-center"
@@ -1443,8 +1559,13 @@ const ProjectsNew = () => {
               {selectedDepartment.goals.map((goal, goalIdx) => (
                 <div
                   key={goal.id || `dept-goal-${selectedDepartment.id}-${goalIdx}`}
-                  className="professional-card p-6 border-l-4"
-                  style={{ borderLeftColor: selectedDepartment.color.border }}
+                  className="rounded-[10px] p-6 border-l-4"
+                  style={{ 
+                    borderLeftColor: selectedDepartment.color.border,
+                    background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                    border: '1px solid rgba(0, 0, 0, 0.1)',
+                    borderLeft: `4px solid ${selectedDepartment.color.border}`
+                  }}
                 >
                   {/* Goal Header */}
                   <div className="flex items-start justify-between mb-4">
@@ -1657,8 +1778,13 @@ const ProjectsNew = () => {
             return (
               <div 
                 key={objective.id} 
-                className="professional-card p-6 border-l-4"
-                style={{ borderLeftColor: statusInfo.border }}
+                className="rounded-[10px] p-6 border-l-4"
+                style={{ 
+                  borderLeftColor: statusInfo.border,
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)',
+                  borderLeft: `4px solid ${statusInfo.border}`
+                }}
               >
                 {/* Objective Header */}
                 <div className="flex items-start justify-between mb-4">
@@ -1812,50 +1938,60 @@ const ProjectsNew = () => {
         </div>
 
         {/* Section Navigation */}
-        <div className="professional-card p-1">
+        <div 
+          className="rounded-[10px] p-1"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <div className="flex gap-1">
             <button
               onClick={() => setActiveSection('top-projects')}
-              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeSection === 'top-projects'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                  ? 'text-white shadow-md'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              style={activeSection === 'top-projects' ? { background: '#184464' } : {}}
             >
-              <FolderKanban className="w-4 h-4 inline mr-2" />
+              <FolderKanban className="w-4 h-4" />
               Top Projects
             </button>
             <button
               onClick={() => setActiveSection('business-planner')}
-              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeSection === 'business-planner'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                  ? 'text-white shadow-md'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              style={activeSection === 'business-planner' ? { background: '#184464' } : {}}
             >
-              <Target className="w-4 h-4 inline mr-2" />
+              <Target className="w-4 h-4" />
               Business Planner
             </button>
             <button
               onClick={() => setActiveSection('campaign-cockpit')}
-              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeSection === 'campaign-cockpit'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                  ? 'text-white shadow-md'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              style={activeSection === 'campaign-cockpit' ? { background: '#184464' } : {}}
             >
-              <BarChart3 className="w-4 h-4 inline mr-2" />
+              <BarChart3 className="w-4 h-4" />
               Campaign Cockpit
             </button>
             <button
               onClick={() => setActiveSection('goals-management')}
-              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all ${
+              className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeSection === 'goals-management'
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
+                  ? 'text-white shadow-md'
                   : 'text-gray-600 hover:bg-gray-50'
               }`}
+              style={activeSection === 'goals-management' ? { background: '#184464' } : {}}
             >
-              <Target className="w-4 h-4 inline mr-2" />
+              <Target className="w-4 h-4" />
               Goals Management
             </button>
           </div>
@@ -1904,7 +2040,13 @@ const ProjectCard = ({ project, getStatusColor, getPriorityColor }) => {
   const budgetUtilization = (project.spent / project.budget) * 100;
 
   return (
-    <div className="professional-card p-5">
+    <div 
+      className="rounded-[10px] p-5"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <h4 className="text-base font-semibold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
@@ -2001,7 +2143,13 @@ const CampaignCard = ({ campaign, getStatusColor }) => {
   const budgetUtilization = campaign.budget > 0 ? (campaign.spent / campaign.budget) * 100 : 0;
 
   return (
-    <div className="professional-card p-5">
+    <div 
+      className="rounded-[10px] p-5"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-start justify-between mb-3">
         <div className="flex-1">
           <h4 className="text-base font-semibold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>

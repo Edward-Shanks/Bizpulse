@@ -6,8 +6,7 @@ import { formatNumber, formatCurrency, formatUnits } from '@/utils/formatters';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
 import { toast } from 'sonner';
-import { Users, ShoppingCart, TrendingUp, MapPin, Globe, Mail, Euro, Eye, Clock, Package, Calendar, AlertTriangle, MessageSquare } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Users, ShoppingCart, TrendingUp, MapPin, Globe, Mail, Euro, Eye, Clock, Package, Calendar, AlertTriangle, MessageSquare, Lightbulb } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const CustomerInsights = () => {
@@ -55,22 +54,26 @@ const CustomerInsights = () => {
   };
 
   const ChartCard = ({ title, children, onViewInsight, icon: Icon }) => (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+    <div 
+      className="rounded-lg shadow-sm p-6"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           {Icon && <Icon className="w-5 h-5 text-indigo-600" />}
           <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         </div>
         {onViewInsight && (
-          <Button
+          <button
             onClick={onViewInsight}
-            variant="outline"
-            size="sm"
-            className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+            className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2 whitespace-nowrap"
           >
-            <Eye className="w-4 h-4 mr-1" />
-            View Insights
-          </Button>
+            <Lightbulb className="w-4 h-4" />
+            View Insight
+          </button>
         )}
       </div>
       {children}
@@ -161,6 +164,15 @@ const CustomerInsights = () => {
   const dayOfWeekAnalysis = data.dayOfWeekAnalysis || [];
   const returnTrend = data.returnTrend || [];
 
+  // Colors with reduced opacity for multi-color graphs
+  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#06b6d4', '#84cc16'];
+  const colorsWithOpacity = colors.map(color => {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.5)`;
+  });
+
   // Chart data configurations
   const newVsReturningChart = {
     labels: newVsReturning.map((item) => item.type || 'Unknown'),
@@ -168,7 +180,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: newVsReturning.map((item) => item.sales || 0),
-        backgroundColor: ['#3b82f6', '#10b981'],
+        backgroundColor: ['#1e293b', '#EDD5B1'],
       },
     ],
   };
@@ -179,7 +191,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: channelPerf.map((item) => item.sales || 0),
-        backgroundColor: '#3b82f6',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -190,7 +202,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: regionPerf.map((item) => item.sales || 0),
-        backgroundColor: '#10b981',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -201,7 +213,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: trafficSource.map((item) => item.sales || 0),
-        backgroundColor: '#f59e0b',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -212,7 +224,7 @@ const CustomerInsights = () => {
       {
         label: 'Avg Sales per Customer (€)',
         data: clv.map((item) => item.avg_sales_per_customer || 0),
-        backgroundColor: '#8b5cf6',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -227,8 +239,8 @@ const CustomerInsights = () => {
           const value = item.Total_sales || item['Total_sales'] || item['Total sales'] || item.total_sales || 0;
           return typeof value === 'number' ? value : parseFloat(value) || 0;
         }),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderColor: '#1e293b',
+        backgroundColor: 'rgba(30, 41, 59, 0.1)',
         fill: true,
         tension: 0.4,
         yAxisID: 'y',
@@ -240,8 +252,8 @@ const CustomerInsights = () => {
           const value = item.Orders_first_time || item['Orders_first_time'] || item['Orders (first-time)'] || item.orders_first_time || 0;
           return typeof value === 'number' ? value : parseFloat(value) || 0;
         }),
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderColor: '#EDD5B1',
+        backgroundColor: 'rgba(237, 213, 177, 0.1)',
         fill: true,
         tension: 0.4,
         yAxisID: 'y1',
@@ -253,8 +265,8 @@ const CustomerInsights = () => {
           const value = item.Orders_returning || item['Orders_returning'] || item['Orders (returning)'] || item.orders_returning || 0;
           return typeof value === 'number' ? value : parseFloat(value) || 0;
         }),
-        borderColor: '#f59e0b',
-        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+        borderColor: '#1e293b',
+        backgroundColor: 'rgba(30, 41, 59, 0.1)',
         fill: true,
         tension: 0.4,
         yAxisID: 'y1',
@@ -268,7 +280,7 @@ const CustomerInsights = () => {
       {
         label: 'Customers',
         data: subscriptionStatus.map((item) => item.unique_customers || 0),
-        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'],
+        backgroundColor: colorsWithOpacity.slice(0, 3),
       },
     ],
   };
@@ -279,7 +291,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: platformAnalysis.map((item) => item.sales || 0),
-        backgroundColor: '#ec4899',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -290,7 +302,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: trafficType.map((item) => item.sales || 0),
-        backgroundColor: '#14b8a6',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -302,16 +314,16 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: hourlyPatterns.length > 0 ? hourlyPatterns.map((item) => item.sales || 0) : [0],
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderColor: '#1e293b',
+        backgroundColor: 'rgba(30, 41, 59, 0.1)',
         fill: true,
         tension: 0.4,
       },
       {
         label: 'Orders',
         data: hourlyPatterns.length > 0 ? hourlyPatterns.map((item) => item.orders || 0) : [0],
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderColor: '#EDD5B1',
+        backgroundColor: 'rgba(237, 213, 177, 0.1)',
         fill: true,
         tension: 0.4,
         yAxisID: 'y1',
@@ -325,7 +337,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: countryDistribution.length > 0 ? countryDistribution.map((item) => item.sales || 0) : [0],
-        backgroundColor: '#8b5cf6',
+        backgroundColor: colorsWithOpacity,
       },
     ],
   };
@@ -336,7 +348,7 @@ const CustomerInsights = () => {
       {
         label: 'Customers',
         data: smsSubscription.length > 0 ? smsSubscription.map((item) => item.unique_customers || 0) : [0],
-        backgroundColor: ['#3b82f6', '#10b981', '#f59e0b'],
+        backgroundColor: colorsWithOpacity.slice(0, 3),
       },
     ],
   };
@@ -347,7 +359,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: mediumAnalysis.length > 0 ? mediumAnalysis.map((item) => item.sales || 0) : [0],
-        backgroundColor: '#f97316',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -358,7 +370,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: topProducts.length > 0 ? topProducts.map((item) => item.sales || 0) : [0],
-        backgroundColor: '#06b6d4',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -369,7 +381,7 @@ const CustomerInsights = () => {
       {
         label: 'Sales (€)',
         data: dayOfWeekAnalysis.length > 0 ? dayOfWeekAnalysis.map((item) => item.sales || 0) : [0],
-        backgroundColor: '#ec4899',
+        backgroundColor: '#1e293b',
       },
     ],
   };
@@ -380,8 +392,8 @@ const CustomerInsights = () => {
       {
         label: 'Return Rate (%)',
         data: returnTrend.length > 0 ? returnTrend.map((item) => item.return_rate || 0) : [0],
-        borderColor: '#ef4444',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        borderColor: '#1e293b',
+        backgroundColor: 'rgba(30, 41, 59, 0.1)',
         fill: true,
         tension: 0.4,
       },
@@ -450,43 +462,63 @@ const CustomerInsights = () => {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Customers</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{formatUnits(summary.totalCustomers || 0)}</p>
-              </div>
-              <Users className="w-10 h-10 text-indigo-600 opacity-50" />
+          <div 
+            className="rounded-lg shadow-sm p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatUnits(summary.totalCustomers || 0)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Customers</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Orders</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{formatUnits(summary.totalOrders || 0)}</p>
-              </div>
-              <ShoppingCart className="w-10 h-10 text-green-600 opacity-50" />
+          <div 
+            className="rounded-lg shadow-sm p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatUnits(summary.totalOrders || 0)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Orders</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Total Sales</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(summary.totalSales || 0)}</p>
-              </div>
-              <Euro className="w-10 h-10 text-blue-600 opacity-50" />
+          <div 
+            className="rounded-lg shadow-sm p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatCurrency(summary.totalSales || 0)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Sales</p>
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Avg Order Value</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{formatCurrency(summary.avgOrderValue || 0)}</p>
-              </div>
-              <TrendingUp className="w-10 h-10 text-purple-600 opacity-50" />
+          <div 
+            className="rounded-lg shadow-sm p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatCurrency(summary.avgOrderValue || 0)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Avg Order Value</p>
             </div>
           </div>
         </div>
@@ -771,7 +803,13 @@ const CustomerInsights = () => {
         )}
 
         {/* Top Customers Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div 
+          className="rounded-lg shadow-sm p-6"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Top 20 Customers by Sales</h3>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">

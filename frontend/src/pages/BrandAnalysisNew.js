@@ -167,6 +167,14 @@ const [insightModal, setInsightModal] = useState({
     '#facc15',
   ];
 
+  // Colors with reduced opacity for multi-color graphs
+  const colorsWithOpacity = colors.map(color => {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.5)`;
+  });
+
   const baseInsightContext = {
     selectedYears,
     selectedMonths,
@@ -320,7 +328,13 @@ const [insightModal, setInsightModal] = useState({
   };
 
   const ChartCard = ({ title, chartId, children }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div 
+      className="rounded-lg p-6"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <button
@@ -343,7 +357,13 @@ const [insightModal, setInsightModal] = useState({
           <p className="text-gray-600">Brand performance metrics and insights</p>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div 
+          className="rounded-lg p-5"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <MultiSelectFilter
@@ -392,31 +412,52 @@ const [insightModal, setInsightModal] = useState({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Revenue</h3>
-              <Euro className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalRevenue)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Revenue</p>
+              <p className="text-xs text-white opacity-75">Across {activeBrands} active brands</p>
             </div>
-            <p className="text-3xl font-bold">{formatNumber(totalRevenue)}</p>
-            <p className="text-sm opacity-80 mt-2">Across {activeBrands} active brands</p>
           </div>
 
-          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Profit</h3>
-              <TrendingUp className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalProfit)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Profit</p>
+              <p className="text-xs text-white opacity-75">{avgMargin.toFixed(1)}% margin</p>
             </div>
-            <p className="text-3xl font-bold">{formatNumber(totalProfit)}</p>
-            <p className="text-sm opacity-80 mt-2">{avgMargin.toFixed(1)}% margin</p>
           </div>
 
-          <div className="bg-gradient-to-br from-violet-500 to-violet-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Active Brands</h3>
-              <Tag className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {activeBrands}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Active Brands</p>
+              <p className="text-xs text-white opacity-75">In portfolio</p>
             </div>
-            <p className="text-3xl font-bold">{activeBrands}</p>
-            <p className="text-sm opacity-80 mt-2">In portfolio</p>
           </div>
         </div>
 
@@ -432,7 +473,7 @@ const [insightModal, setInsightModal] = useState({
                       {
                         label: 'Revenue',
                         data: brandData.map(item => item.Revenue || 0),
-                        backgroundColor: colors,
+                        backgroundColor: colorsWithOpacity,
                         borderRadius: 6,
                       },
                     ],
@@ -475,7 +516,7 @@ const [insightModal, setInsightModal] = useState({
                     datasets: [
                       {
                         data: brandData.slice(0, 10).map(item => item.Revenue || 0),
-                        backgroundColor: colors,
+                        backgroundColor: colorsWithOpacity,
                         borderWidth: 2,
                         borderColor: '#fff',
                       },
@@ -520,7 +561,7 @@ const [insightModal, setInsightModal] = useState({
                       {
                         label: 'Profit',
                         data: brandData.slice(0, 10).map(item => item.Gross_Profit || 0),
-                        backgroundColor: '#10b981',
+                        backgroundColor: '#1e293b',
                         borderRadius: 8,
                       },
                     ],
@@ -566,13 +607,13 @@ const [insightModal, setInsightModal] = useState({
                       {
                         label: 'Revenue',
                         data: brandData.slice(0, 10).map(item => item.Revenue || 0),
-                        backgroundColor: '#3b82f6',
+                        backgroundColor: '#1e293b',
                         borderRadius: 6,
                       },
                       {
                         label: 'Profit',
                         data: brandData.slice(0, 10).map(item => item.Gross_Profit || 0),
-                        backgroundColor: '#10b981',
+                        backgroundColor: '#EDD5B1',
                         borderRadius: 6,
                       },
                     ],
@@ -608,7 +649,13 @@ const [insightModal, setInsightModal] = useState({
           </ChartCard>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <div 
+          className="rounded-lg p-6"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Brand Performance by Business</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

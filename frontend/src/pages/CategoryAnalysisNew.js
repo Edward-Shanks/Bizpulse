@@ -162,6 +162,14 @@ const CategoryAnalysis = () => {
     '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e'
   ];
 
+  // Colors with reduced opacity for multi-color graphs
+  const colorsWithOpacity = colors.map(color => {
+    const r = parseInt(color.slice(1, 3), 16);
+    const g = parseInt(color.slice(3, 5), 16);
+    const b = parseInt(color.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.5)`;
+  });
+
   const baseInsightContext = {
     selectedYears,
     selectedMonths,
@@ -309,7 +317,13 @@ const CategoryAnalysis = () => {
   };
 
   const ChartCard = ({ title, chartId, children }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div 
+      className="rounded-lg p-6"
+      style={{
+        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+        border: '1px solid rgba(0, 0, 0, 0.1)'
+      }}
+    >
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
         <button
@@ -332,7 +346,13 @@ const CategoryAnalysis = () => {
           <p className="text-gray-600">Product category and sub-category performance</p>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div 
+          className="rounded-lg p-5"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <MultiSelectFilter
@@ -381,31 +401,52 @@ const CategoryAnalysis = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-gradient-to-br from-pink-500 to-rose-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Revenue</h3>
-              <Euro className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalRevenue)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Revenue</p>
+              <p className="text-xs text-white opacity-75">Across categories</p>
             </div>
-            <p className="text-3xl font-bold">{formatNumber(totalRevenue)}</p>
-            <p className="text-sm opacity-80 mt-2">Across categories</p>
           </div>
 
-          <div className="bg-gradient-to-br from-cyan-500 to-blue-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Total Profit</h3>
-              <TrendingUp className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {formatNumber(totalProfit)}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Total Profit</p>
+              <p className="text-xs text-white opacity-75">{avgMargin.toFixed(1)}% margin</p>
             </div>
-            <p className="text-3xl font-bold">{formatNumber(totalProfit)}</p>
-            <p className="text-sm opacity-80 mt-2">{avgMargin.toFixed(1)}% margin</p>
           </div>
 
-          <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg p-6 text-white shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium opacity-90">Categories</h3>
-              <Layers className="w-8 h-8 opacity-80" />
+          <div 
+            className="rounded-lg p-6 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                {activeCategories}
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Categories</p>
+              <p className="text-xs text-white opacity-75">Active categories</p>
             </div>
-            <p className="text-3xl font-bold">{activeCategories}</p>
-            <p className="text-sm opacity-80 mt-2">Active categories</p>
           </div>
         </div>
 
@@ -420,7 +461,7 @@ const CategoryAnalysis = () => {
                     datasets: [{
                       label: 'Revenue',
                       data: categoryData.map(item => item.Revenue || 0),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderRadius: 6
                     }]
                   }}
@@ -461,7 +502,7 @@ const CategoryAnalysis = () => {
                     labels: categoryData.slice(0, 10).map(item => item.Category || 'Unknown'),
                     datasets: [{
                       data: categoryData.slice(0, 10).map(item => item.Revenue || 0),
-                      backgroundColor: colors,
+                      backgroundColor: colorsWithOpacity,
                       borderWidth: 2,
                       borderColor: '#fff'
                     }]
@@ -502,7 +543,7 @@ const CategoryAnalysis = () => {
                     datasets: [{
                       label: 'Profit',
                       data: categoryData.slice(0, 10).map(item => item.Gross_Profit || 0),
-                      backgroundColor: '#10b981',
+                      backgroundColor: '#1e293b',
                       borderRadius: 8
                     }]
                   }}
@@ -546,7 +587,7 @@ const CategoryAnalysis = () => {
                     datasets: [{
                       label: 'Revenue',
                       data: subcategoryData.slice(0, 10).map(item => item.Revenue || 0),
-                      backgroundColor: '#f59e0b',
+                      backgroundColor: '#1e293b',
                       borderRadius: 8
                     }]
                   }}

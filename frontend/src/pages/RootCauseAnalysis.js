@@ -112,7 +112,13 @@ const RootCauseAnalysis = () => {
         {(
           <>
         {/* Multi-Select Filters */}
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div 
+          className="rounded-lg p-4"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <MultiSelectFilter
@@ -148,31 +154,52 @@ const RootCauseAnalysis = () => {
 
         {/* Issues Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600">Critical Issues</h3>
-              <AlertCircle className="w-5 h-5 text-red-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                3
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Critical Issues</p>
+              <p className="text-xs text-white opacity-75">Require immediate attention</p>
             </div>
-            <p className="text-3xl font-bold text-gray-900">3</p>
-            <p className="text-sm text-red-600 mt-1">Require immediate attention</p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600">Under Investigation</h3>
-              <AlertTriangle className="w-5 h-5 text-amber-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                5
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Under Investigation</p>
+              <p className="text-xs text-white opacity-75">Analysis in progress</p>
             </div>
-            <p className="text-3xl font-bold text-gray-900">5</p>
-            <p className="text-sm text-amber-600 mt-1">Analysis in progress</p>
           </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 p-5">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-600">Resolved</h3>
-              <CheckCircle className="w-5 h-5 text-green-600" />
+          <div 
+            className="rounded-lg p-5 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div className="mb-3">
+              <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
+                12
+              </h2>
+              <p className="text-sm text-white opacity-90 mb-3">Resolved</p>
+              <p className="text-xs text-white opacity-75">Successfully addressed</p>
             </div>
-            <p className="text-3xl font-bold text-gray-900">12</p>
-            <p className="text-sm text-green-600 mt-1">Successfully addressed</p>
           </div>
         </div>
 
@@ -185,8 +212,11 @@ const RootCauseAnalysis = () => {
             return (
               <div
                 key={issue.id}
-                className="bg-white rounded-lg border p-6"
-                style={{ borderColor: issue.color.border }}
+                className="rounded-lg p-6"
+                style={{
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }}
               >
                 <div className="flex items-start gap-4">
                   <div className="mt-1">
@@ -253,7 +283,13 @@ const RootCauseAnalysis = () => {
         </div>
 
         {/* Performance Analysis Chart */}
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div 
+          className="rounded-lg p-5"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Business Performance by Segment</h3>
           <div className="h-80">
             {businessData.length > 0 ? (
@@ -265,13 +301,13 @@ const RootCauseAnalysis = () => {
                     {
                       label: 'Revenue',
                       data: businessData.map(item => item.Revenue),
-                      backgroundColor: '#3b82f6',
+                      backgroundColor: '#1e293b',
                       borderRadius: 6
                     },
                     {
                       label: 'Profit',
                       data: businessData.map(item => item.Gross_Profit),
-                      backgroundColor: '#10b981',
+                      backgroundColor: '#EDD5B1',
                       borderRadius: 6
                     }
                   ]
