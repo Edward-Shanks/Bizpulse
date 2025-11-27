@@ -58,7 +58,13 @@ const Reports = () => {
         </div>
 
         {/* Report Generator */}
-        <div className="professional-card p-8">
+        <div 
+          className="p-8 rounded-[10px]"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
           <div className="flex items-center gap-3 mb-6">
             <div className="p-2 bg-blue-50 rounded-lg">
               <FileText className="w-6 h-6 text-blue-600" />
@@ -157,7 +163,8 @@ const Reports = () => {
 
           <Button
             onClick={handleGenerateReport}
-            className="w-full md:w-auto bg-blue-600 hover:bg-blue-700"
+            className="w-full md:w-auto text-white hover:opacity-90"
+            style={{ backgroundColor: '#184464' }}
             data-testid="generate-report-button"
           >
             <Download className="mr-2 w-5 h-5" />
@@ -181,7 +188,11 @@ const Reports = () => {
             ].map((report) => (
               <div
                 key={report}
-                className="professional-card p-6 cursor-pointer hover:shadow-lg transition"
+                className="p-6 cursor-pointer hover:shadow-lg transition rounded-[10px]"
+                style={{
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }}
                 onClick={() => toast.info(`${report} will be available soon`)}
               >
                 <FileText className="w-8 h-8 text-blue-600 mb-3" />

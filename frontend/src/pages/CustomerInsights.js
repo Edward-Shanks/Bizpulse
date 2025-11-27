@@ -181,6 +181,8 @@ const CustomerInsights = () => {
         label: 'Sales (€)',
         data: newVsReturning.map((item) => item.sales || 0),
         backgroundColor: ['#1e293b', '#EDD5B1'],
+        borderWidth: 2,
+        borderColor: '#fff',
       },
     ],
   };
@@ -233,42 +235,41 @@ const CustomerInsights = () => {
     labels: monthlyTrend.map((item) => item.month_label || item.MonthName || 'Unknown'),
     datasets: [
       {
+        type: 'line',
         label: 'Total Sales (€)',
         data: monthlyTrend.map((item) => {
           // Try multiple possible key formats
           const value = item.Total_sales || item['Total_sales'] || item['Total sales'] || item.total_sales || 0;
           return typeof value === 'number' ? value : parseFloat(value) || 0;
         }),
-        borderColor: '#1e293b',
-        backgroundColor: 'rgba(30, 41, 59, 0.1)',
+        borderColor: '#745E39',
+        backgroundColor: 'rgba(116, 94, 57, 0.1)',
         fill: true,
         tension: 0.4,
         yAxisID: 'y',
       },
       {
+        type: 'bar',
         label: 'New Customers',
         data: monthlyTrend.map((item) => {
           // Try multiple possible key formats
           const value = item.Orders_first_time || item['Orders_first_time'] || item['Orders (first-time)'] || item.orders_first_time || 0;
           return typeof value === 'number' ? value : parseFloat(value) || 0;
         }),
-        borderColor: '#EDD5B1',
-        backgroundColor: 'rgba(237, 213, 177, 0.1)',
-        fill: true,
-        tension: 0.4,
+        backgroundColor: '#EDD5B1',
+        borderRadius: 4,
         yAxisID: 'y1',
       },
       {
+        type: 'bar',
         label: 'Returning Customers',
         data: monthlyTrend.map((item) => {
           // Try multiple possible key formats
           const value = item.Orders_returning || item['Orders_returning'] || item['Orders (returning)'] || item.orders_returning || 0;
           return typeof value === 'number' ? value : parseFloat(value) || 0;
         }),
-        borderColor: '#1e293b',
-        backgroundColor: 'rgba(30, 41, 59, 0.1)',
-        fill: true,
-        tension: 0.4,
+        backgroundColor: '#1e293b',
+        borderRadius: 4,
         yAxisID: 'y1',
       },
     ],
@@ -281,6 +282,8 @@ const CustomerInsights = () => {
         label: 'Customers',
         data: subscriptionStatus.map((item) => item.unique_customers || 0),
         backgroundColor: colorsWithOpacity.slice(0, 3),
+        borderWidth: 2,
+        borderColor: '#fff',
       },
     ],
   };
@@ -322,8 +325,8 @@ const CustomerInsights = () => {
       {
         label: 'Orders',
         data: hourlyPatterns.length > 0 ? hourlyPatterns.map((item) => item.orders || 0) : [0],
-        borderColor: '#EDD5B1',
-        backgroundColor: 'rgba(237, 213, 177, 0.1)',
+        borderColor: '#745E39',
+        backgroundColor: 'rgba(116, 94, 57, 0.1)',
         fill: true,
         tension: 0.4,
         yAxisID: 'y1',
@@ -338,6 +341,8 @@ const CustomerInsights = () => {
         label: 'Sales (€)',
         data: countryDistribution.length > 0 ? countryDistribution.map((item) => item.sales || 0) : [0],
         backgroundColor: colorsWithOpacity,
+        borderWidth: 2,
+        borderColor: '#fff',
       },
     ],
   };
@@ -349,6 +354,8 @@ const CustomerInsights = () => {
         label: 'Customers',
         data: smsSubscription.length > 0 ? smsSubscription.map((item) => item.unique_customers || 0) : [0],
         backgroundColor: colorsWithOpacity.slice(0, 3),
+        borderWidth: 2,
+        borderColor: '#fff',
       },
     ],
   };
@@ -409,6 +416,45 @@ const CustomerInsights = () => {
         position: 'top',
       },
     },
+  };
+
+  const donutChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: 10,
+        bottom: 20,
+        left: 10,
+        right: 10,
+      },
+    },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'right',
+        labels: {
+          boxWidth: 12,
+          padding: 10,
+          font: { size: 11 },
+        },
+      },
+      tooltip: {
+        callbacks: {
+          label: (context) => {
+            const label = context.label || '';
+            const value = context.parsed || 0;
+            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+            // Check if the dataset label suggests it's a count (Customers) or currency (Sales)
+            const isCurrency = context.dataset.label && (context.dataset.label.includes('Sales') || context.dataset.label.includes('€'));
+            const formattedValue = isCurrency ? formatCurrency(value) : formatUnits(value);
+            return `${label}: ${formattedValue} (${percentage}%)`;
+          },
+        },
+      },
+    },
+    cutout: '60%',
   };
 
   const lineChartOptions = {
@@ -540,7 +586,7 @@ const CustomerInsights = () => {
             }
           >
             <div className="h-64">
-              <ChartComponent type="pie" data={newVsReturningChart} options={chartOptions} />
+              <ChartComponent type="doughnut" data={newVsReturningChart} options={donutChartOptions} />
             </div>
           </ChartCard>
 
@@ -625,7 +671,7 @@ const CustomerInsights = () => {
             }
           >
             <div className="h-64">
-              <ChartComponent type="pie" data={subscriptionChart} options={chartOptions} />
+              <ChartComponent type="doughnut" data={subscriptionChart} options={donutChartOptions} />
             </div>
           </ChartCard>
 
@@ -693,7 +739,7 @@ const CustomerInsights = () => {
             }
           >
             <div className="h-64">
-              <ChartComponent type="pie" data={countryDistributionChart} options={chartOptions} />
+              <ChartComponent type="doughnut" data={countryDistributionChart} options={donutChartOptions} />
             </div>
           </ChartCard>
 
@@ -710,7 +756,7 @@ const CustomerInsights = () => {
             }
           >
             <div className="h-64">
-              <ChartComponent type="pie" data={smsSubscriptionChart} options={chartOptions} />
+              <ChartComponent type="doughnut" data={smsSubscriptionChart} options={donutChartOptions} />
             </div>
           </ChartCard>
 
@@ -779,7 +825,7 @@ const CustomerInsights = () => {
           }
         >
           <div className="h-80">
-            <ChartComponent type="line" data={monthlyTrendChart} options={lineChartOptions} />
+            <ChartComponent type="bar" data={monthlyTrendChart} options={lineChartOptions} />
           </div>
         </ChartCard>
 

@@ -1921,7 +1921,8 @@ const ProjectsNew = () => {
           </div>
           {activeSection === 'goals-management' ? (
             <Button
-              className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+              className="text-white"
+              style={{ background: '#184464' }}
               onClick={() => handleNewGoal('quarterly')}
             >
               <Plus className="w-4 h-4 mr-2" />
@@ -1929,7 +1930,8 @@ const ProjectsNew = () => {
             </Button>
           ) : (
             <Button
-              className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
+              className="text-white"
+              style={{ background: '#184464' }}
             >
               <Plus className="w-4 h-4 mr-2" />
               New Project
