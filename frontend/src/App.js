@@ -12,6 +12,7 @@ import CategoryAnalysisNew from '@/pages/CategoryAnalysisNew';
 import Reports from '@/pages/Reports';
 import CockpitNew from '@/pages/CockpitNew';
 import ProjectsNew from '@/pages/ProjectsNew';
+import StrategicDeployment from '@/pages/StrategicDeployment';
 import SalesAnalysis from '@/pages/SalesAnalysis';
 import RootCauseAnalysis from '@/pages/RootCauseAnalysis';
 import ChartInsight from '@/pages/ChartInsight';
@@ -113,6 +114,14 @@ function App() {
             element={
               <PrivateRoute>
                 <Kanban />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/strategic-deployment"
+            element={
+              <PrivateRoute>
+                <StrategicDeployment />
               </PrivateRoute>
             }
           />

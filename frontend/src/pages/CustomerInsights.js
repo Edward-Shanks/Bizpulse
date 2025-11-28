@@ -891,6 +891,7 @@ const CustomerInsights = () => {
           chartTitle={insightModal.chartTitle}
           insights={insightModal.insights}
           recommendations={insightModal.recommendations}
+          apiUrl={API}
         />
       </div>
     </Layout>

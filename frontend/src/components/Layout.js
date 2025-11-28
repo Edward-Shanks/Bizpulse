@@ -46,6 +46,7 @@ const Layout = ({ children }) => {
   const menuItems = [
     { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
     { path: '/kanban', icon: Trello, label: 'Strategic Kanban' },
+    { path: '/strategic-deployment', icon: FolderKanban, label: 'Strategic Deployment' },
     {
       path: '/compass',
       icon: LayoutDashboard,

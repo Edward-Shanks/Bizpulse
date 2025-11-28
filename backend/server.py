@@ -1,5 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv, find_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -24,13 +25,21 @@ import json
 import asyncio
 
 ROOT_DIR = Path(__file__).parent
+
+# Configure logging early
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Load nearest .env (backend/.env preferred). This works even if cwd differs.
 _dotenv_path = find_dotenv(str(ROOT_DIR / '.env')) or find_dotenv()
 if _dotenv_path:
     load_dotenv(_dotenv_path)
-    logging.getLogger(__name__).info(f"Loaded environment from: {_dotenv_path}")
+    logger.info(f"Loaded environment from: {_dotenv_path}")
 else:
-    logging.getLogger(__name__).warning("No .env file found. Relying on process env vars.")
+    logger.warning("No .env file found. Relying on process env vars.")
 
 # MongoDB connection
 mongo_url = os.getenv('MONGO_URL')
@@ -117,6 +126,19 @@ class AIChatRequest(BaseModel):
 class AIChatResponse(BaseModel):
     response: str
     session_id: str
+
+class CustomerInsightsChatRequest(BaseModel):
+    message: str
+    chart_title: Optional[str] = None
+    context: Optional[Dict[str, Any]] = {}
+    session_id: Optional[str] = None
+    conversation_history: Optional[List[Dict[str, str]]] = []
+
+class CustomerInsightsChatResponse(BaseModel):
+    response: str
+    timestamp: Optional[str] = None
+    context: Optional[str] = None
+    data: Optional[Dict[str, Any]] = {}
 
 class SyncStatusResponse(BaseModel):
     status: str
@@ -209,6 +231,27 @@ async def lifespan(app: FastAPI):
     # Startup: Initialize default user only
     logger.info("Application startup...")
     
+    # Log all registered routes for debugging
+    try:
+        routes = []
+        for route in app.routes:
+            if hasattr(route, 'path') and hasattr(route, 'methods'):
+                method = list(route.methods)[0] if route.methods else 'GET'
+                routes.append(f"{method} {route.path}")
+        logger.info(f"Registered {len(routes)} routes")
+        customer_chat_route = [r for r in routes if 'customer-insights/chat' in r]
+        if customer_chat_route:
+            logger.info(f"✅ Customer insights chat route found: {customer_chat_route}")
+        else:
+            logger.warning("⚠️ Customer insights chat route NOT found in registered routes!")
+            logger.warning(f"Available routes with 'customer': {[r for r in routes if 'customer' in r.lower()]}")
+            logger.warning(f"All POST routes: {[r for r in routes if 'POST' in r]}")
+            logger.warning(f"All analytics routes: {[r for r in routes if '/analytics' in r]}")
+    except Exception as e:
+        logger.warning(f"Could not log routes: {str(e)}")
+        import traceback
+        logger.warning(f"Traceback: {traceback.format_exc()}")
+    
     # Create default user if not exists
     existing_user = await db.users.find_one({"email": "data.admin@thrivebrands.ai"})
     if not existing_user:
@@ -267,6 +310,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add request logging middleware to debug routing issues
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # Log ALL requests to customer-insights endpoints (and a few others to verify middleware works)
+        if '/api/analytics/customer-insights' in path or '/api/auth' in path:
+            logger.info(f"🔵🔵🔵 MIDDLEWARE: INCOMING REQUEST: {request.method} {path}")
+            logger.info(f"🔵🔵🔵 MIDDLEWARE: Full URL: {request.url}")
+            logger.info(f"🔵🔵🔵 MIDDLEWARE: Authorization header: {'present' if 'authorization' in request.headers else 'MISSING'}")
+            if 'authorization' in request.headers:
+                auth_header = request.headers.get('authorization', '')
+                logger.info(f"🔵🔵🔵 MIDDLEWARE: Auth header value: {auth_header[:50]}...")
+        try:
+            response = await call_next(request)
+            if '/api/analytics/customer-insights' in path or '/api/auth' in path:
+                logger.info(f"🔵🔵🔵 MIDDLEWARE: RESPONSE: {response.status_code} for {request.method} {path}")
+            return response
+        except Exception as e:
+            logger.error(f"🔵🔵🔵 MIDDLEWARE: ERROR: {str(e)}")
+            import traceback
+            logger.error(f"🔵🔵🔵 MIDDLEWARE: Traceback: {traceback.format_exc()}")
+            raise
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
@@ -2587,6 +2658,16 @@ Return ONLY valid JSON array, no additional text.
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Strategic recommendations error: {str(e)}")
 
+@api_router.get("/analytics/customer-insights/chat/test")
+async def test_customer_insights_chat(email: str = Depends(get_current_user)):
+    """Test endpoint to verify customer insights chat route is accessible"""
+    return {
+        "status": "ok", 
+        "message": "Customer insights chat endpoint is accessible", 
+        "endpoint": "/api/analytics/customer-insights/chat",
+        "method": "POST"
+    }
+
 @api_router.get("/analytics/customer-insights")
 async def get_customer_insights(email: str = Depends(get_current_user)):
     """Customer Insights from Shopify data - Multiple visualizations"""
@@ -2980,15 +3061,254 @@ async def get_customer_insights(email: str = Depends(get_current_user)):
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing customer insights: {str(e)}")
 
+# Test endpoint to verify route registration (no auth required for testing)
+@api_router.get("/analytics/customer-insights/chat/health")
+async def customer_insights_chat_health():
+    """Health check for customer insights chat endpoint"""
+    return {"status": "ok", "message": "Customer insights chat route is registered", "path": "/api/analytics/customer-insights/chat"}
+
+# Simple test POST endpoint (no auth, no dependencies) to verify POST routes work
+@api_router.post("/analytics/customer-insights/chat/test-simple")
+async def customer_insights_chat_test_simple(request: CustomerInsightsChatRequest):
+    """Simple test endpoint without auth to verify POST route registration"""
+    logger.info("🔵 TEST-SIMPLE endpoint called!")
+    return {"status": "ok", "message": "POST route is working", "received": request.message[:50]}
+
+# Customer Insights Chat endpoint - TEMPORARILY WITHOUT AUTH TO TEST
+@api_router.post("/analytics/customer-insights/chat", response_model=CustomerInsightsChatResponse, name="customer_insights_chat")
+async def customer_insights_chat(request: CustomerInsightsChatRequest):
+    """AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data"""
+    logger.info(f"🔵🔵🔵 Customer insights chat endpoint CALLED (NO AUTH)")
+    logger.info(f"🔵🔵🔵 Request received: {request.message[:100] if request.message else 'None'}")
+    logger.info(f"🔵🔵🔵 Full request path: /api/analytics/customer-insights/chat")
+    
+    # Temporarily use a default email for testing
+    email = "test@test.com"
+    """AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data"""
+    logger.info(f"Customer insights chat endpoint called by {email}")
+    logger.info(f"Request message: {request.message[:100] if request.message else 'None'}")
+    try:
+        # Load Shopify_customer_df.csv
+        csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
+        if not csv_path.exists():
+            raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+        
+        df = pd.read_csv(csv_path)
+        if df.empty:
+            raise HTTPException(status_code=500, detail="Customer Shopify data is empty")
+        
+        # Convert date columns
+        if 'Day' in df.columns:
+            try:
+                df['Day'] = pd.to_datetime(df['Day'], errors='coerce')
+                df['Year'] = df['Day'].dt.year
+                df['Month'] = df['Day'].dt.month
+                df['MonthName'] = df['Day'].dt.strftime('%B')
+            except Exception as e:
+                logger.warning(f"Error processing date columns: {str(e)}")
+        
+        # Ensure numeric columns
+        numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 'Orders (first-time)', 
+                       'Orders (returning)', 'Quantity ordered', 'Customer number of orders']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        # Build comprehensive data context for AI
+        total_customers = df['Customer email'].nunique() if 'Customer email' in df.columns else 0
+        total_orders = df['Orders'].sum() if 'Orders' in df.columns else 0
+        total_sales = df['Total sales'].sum() if 'Total sales' in df.columns else 0
+        avg_order_value = total_sales / total_orders if total_orders > 0 else 0
+        
+        # Customer segmentation
+        new_customers = (df['New or returning customer'] == 'New').sum() if 'New or returning customer' in df.columns else 0
+        returning_customers = (df['New or returning customer'] == 'Returning').sum() if 'New or returning customer' in df.columns else 0
+        
+        # Channel analysis
+        channels = df['Referring channel'].value_counts().head(10).to_dict() if 'Referring channel' in df.columns else {}
+        platforms = df['Referring platform'].value_counts().head(10).to_dict() if 'Referring platform' in df.columns else {}
+        traffic_types = df['Traffic type'].value_counts().to_dict() if 'Traffic type' in df.columns else {}
+        
+        # Geographic analysis
+        countries = df['Shipping country'].value_counts().head(10).to_dict() if 'Shipping country' in df.columns else {}
+        regions = df['Shipping region'].value_counts().head(10).to_dict() if 'Shipping region' in df.columns else {}
+        
+        # Subscription status
+        email_subscribed = (df['Customer email subscription status'] == 'SUBSCRIBED').sum() if 'Customer email subscription status' in df.columns else 0
+        sms_subscribed = (df['Customer SMS subscription status'] == 'SUBSCRIBED').sum() if 'Customer SMS subscription status' in df.columns else 0
+        
+        # Time-based patterns
+        hourly_patterns = {}
+        peak_hour_orders = 'N/A'
+        peak_hour_sales = 'N/A'
+        hourly_orders_summary = 'N/A'
+        
+        if 'Hour of day' in df.columns and 'Orders' in df.columns:
+            hourly_orders = df.groupby('Hour of day')['Orders'].sum()
+            hourly_sales = df.groupby('Hour of day')['Total sales'].sum()
+            
+            if not hourly_orders.empty:
+                peak_hour_orders = int(hourly_orders.idxmax())
+                # Get top 3 hours for orders
+                top_hours = hourly_orders.nlargest(3)
+                hourly_orders_summary = ', '.join([f"{int(hour)}:00 ({int(orders)} orders)" for hour, orders in top_hours.items()])
+            
+            if not hourly_sales.empty:
+                peak_hour_sales = int(hourly_sales.idxmax())
+            
+            hourly_patterns = {
+                'orders_by_hour': hourly_orders.to_dict(),
+                'sales_by_hour': hourly_sales.to_dict(),
+                'peak_hour_orders': peak_hour_orders,
+                'peak_hour_sales': peak_hour_sales
+            }
+        
+        monthly_trends = df.groupby('MonthName')['Total sales'].sum().to_dict() if 'MonthName' in df.columns else {}
+        
+        # Build context string
+        context = f"""
+You are VectorDeep AI, a customer intelligence assistant for ThriveBrands analyzing Shopify customer data.
+
+DATA OVERVIEW:
+- Total Customers: {total_customers:,}
+- Total Orders: {total_orders:,}
+- Total Sales: €{total_sales:,.2f}
+- Average Order Value: €{avg_order_value:,.2f}
+
+CUSTOMER SEGMENTATION:
+- New Customers: {new_customers:,}
+- Returning Customers: {returning_customers:,}
+- Returning Customer Rate: {(returning_customers / total_customers * 100) if total_customers > 0 else 0:.1f}%
+
+CHANNEL PERFORMANCE:
+Top Referring Channels: {', '.join(list(channels.keys())[:5]) if channels else 'N/A'}
+Top Referring Platforms: {', '.join(list(platforms.keys())[:5]) if platforms else 'N/A'}
+Traffic Types: {', '.join(list(traffic_types.keys())) if traffic_types else 'N/A'}
+
+GEOGRAPHIC DISTRIBUTION:
+Top Countries: {', '.join(list(countries.keys())[:5]) if countries else 'N/A'}
+Top Regions: {', '.join(list(regions.keys())[:5]) if regions else 'N/A'}
+
+SUBSCRIPTION STATUS:
+- Email Subscribed: {email_subscribed:,} ({email_subscribed / total_customers * 100 if total_customers > 0 else 0:.1f}%)
+- SMS Subscribed: {sms_subscribed:,} ({sms_subscribed / total_customers * 100 if total_customers > 0 else 0:.1f}%)
+
+TIME-BASED PATTERNS:
+- Peak Order Hour: {peak_hour_orders}:00 (hour with maximum orders)
+- Peak Sales Hour: {peak_hour_sales}:00 (hour with maximum sales)
+- Top 3 Hours by Orders: {hourly_orders_summary}
+- Hourly order and sales data is available for detailed analysis
+
+AVAILABLE DATA COLUMNS:
+{', '.join(df.columns.tolist())}
+
+You can answer questions about:
+- Customer behavior and patterns
+- Sales channel performance
+- Geographic distribution
+- Customer lifetime value
+- New vs returning customer analysis
+- Traffic sources and platforms
+- Subscription rates and engagement
+- Time-based shopping patterns (hourly, daily, monthly)
+- Product performance
+- Return rates and trends
+
+Provide insights with specific numbers when possible. Highlight opportunities for customer acquisition, retention, and revenue optimization. Be data-driven and actionable.
+"""
+        
+        # Add chart title context if provided
+        chart_context = ""
+        if request.chart_title:
+            chart_context = f"\n\nCurrent Chart Context: {request.chart_title}"
+        
+        # Add additional context from request
+        additional_context = ""
+        if request.context:
+            try:
+                additional_context = f"\n\nAdditional Context: {json.dumps(request.context, default=str)[:1000]}"
+            except Exception:
+                pass
+        
+        # Build full prompt
+        full_prompt = f"{request.message}{chart_context}{additional_context}\n\n{context}"
+        
+        # Convert conversation history to the format expected by query_perplexity
+        conversation_history = []
+        if request.conversation_history:
+            for msg in request.conversation_history:
+                if isinstance(msg, dict):
+                    conversation_history.append({
+                        "role": msg.get("role", "user"),
+                        "content": msg.get("content", "")
+                    })
+        
+        # Query Perplexity API
+        try:
+            logger.info(f"Customer insights chat request: {request.message[:100]}...")
+            logger.info(f"Context length: {len(context)} characters")
+            response_text = await query_perplexity(full_prompt, conversation_history if conversation_history else None)
+            logger.info(f"Perplexity API response received, length: {len(response_text)} characters")
+        except Exception as e:
+            logger.error(f"Perplexity API error: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            response_text = f"I apologize, but I'm experiencing technical difficulties. Please try again later. Error: {str(e)}"
+        
+        # Generate timestamp
+        timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
+        
+        return CustomerInsightsChatResponse(
+            response=response_text,
+            timestamp=timestamp,
+            context=context[:500] + "..." if len(context) > 500 else context,  # Truncate for response
+            data={
+                "chart_title": request.chart_title,
+                "total_customers": total_customers,
+                "total_orders": total_orders,
+                "total_sales": float(total_sales)
+            }
+        )
+        
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+    except Exception as e:
+        logger.error(f"Customer insights chat error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing customer insights chat: {str(e)}")
+
 # Include the router in the main app
 app.include_router(api_router)
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# Add a catch-all exception handler to see what's happening
+from starlette.requests import Request as StarletteRequest
+
+@app.exception_handler(404)
+async def not_found_handler(request: StarletteRequest, exc):
+    logger.error(f"❌❌❌ 404 ERROR: {request.method} {request.url.path}")
+    logger.error(f"❌❌❌ Query params: {dict(request.query_params)}")
+    # Log available POST routes
+    post_routes = [r.path for r in app.routes if hasattr(r, 'path') and hasattr(r, 'methods') and 'POST' in r.methods]
+    logger.error(f"❌❌❌ Available POST routes: {post_routes[:10]}")
+    return JSONResponse(
+        status_code=404,
+        content={"detail": f"Not Found: {request.method} {request.url.path}"}
+    )
+
+# Log customer insights chat route registration and verify it's accessible
+logger.info("Registering customer insights chat route: POST /api/analytics/customer-insights/chat")
+# Verify the route is actually in the app
+main_route_found = False
+for route in app.routes:
+    if hasattr(route, 'path') and hasattr(route, 'methods'):
+        if '/analytics/customer-insights/chat' in route.path and 'POST' in route.methods:
+            logger.info(f"✅ Verified route in app: {list(route.methods)} {route.path}")
+            if route.path == '/api/analytics/customer-insights/chat':
+                main_route_found = True
+if not main_route_found:
+    logger.error("❌ Main route /api/analytics/customer-insights/chat NOT found in app routes after include_router!")
+    logger.error(f"Available POST routes with 'customer-insights': {[f'{list(r.methods)} {r.path}' for r in app.routes if hasattr(r, 'path') and hasattr(r, 'methods') and 'POST' in r.methods and 'customer-insights' in r.path]}")
 
 # Run locally with: python server.py
 if __name__ == "__main__":

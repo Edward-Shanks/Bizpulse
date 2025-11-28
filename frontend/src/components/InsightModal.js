@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import axios from 'axios';
-import { API, useAuth } from '@/App';
+import { useAuth } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -10,9 +10,9 @@ import ChartComponent from '@/components/ChartComponent';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, onExploreDeep, context }) => {
+const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, onExploreDeep, context, apiUrl }) => {
   const { token } = useAuth();
-  const INSIGHTS_API = process.env.REACT_APP_INSIGHTS_URL || 'http://localhost:8005';
+  const INSIGHTS_API = apiUrl || process.env.REACT_APP_INSIGHTS_URL || 'http://localhost:8005';
   const [messages, setMessages] = useState([
     {
       role: 'ai',
@@ -145,7 +145,26 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         conversation_history: conversationHistory
       };
 
-      const response = await axios.post(`${INSIGHTS_API}/insights/chat`, payload);
+      // Determine the correct endpoint based on API URL
+      // If apiUrl is provided (from Customer Deep Intelligence), use the backend API
+      // Note: apiUrl already includes /api prefix (e.g., http://localhost:8000/api)
+      // Otherwise, use the external insights API
+      let endpoint;
+      if (apiUrl) {
+        // apiUrl is like "http://localhost:8000/api", so we append the path
+        endpoint = `${apiUrl}/analytics/customer-insights/chat`;
+      } else {
+        endpoint = `${INSIGHTS_API}/insights/chat`;
+      }
+      
+      console.log('InsightModal - Making API call to:', endpoint);
+      console.log('InsightModal - Payload:', payload);
+      console.log('InsightModal - API URL:', INSIGHTS_API);
+      console.log('InsightModal - apiUrl prop:', apiUrl);
+      
+      const response = await axios.post(endpoint, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       const fullResponse = response.data?.response || 'No response';
       const pivot = response?.data?.data?.pivot_table || [];
@@ -159,11 +178,13 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         setMessages((prev) => [...prev, aiMessage]);
       });
     } catch (error) {
+      console.error('InsightModal API Error:', error);
+      console.error('Error details:', error.response?.data || error.message);
       toast.error('AI Assistant is unavailable');
       setLoading(false);
       const errorMessage = {
         role: 'ai',
-        content: 'Sorry, I am currently unavailable. Please try again later.'
+        content: error.response?.data?.detail || error.message || 'Sorry, I am currently unavailable. Please try again later.'
       };
       setMessages((prev) => [...prev, errorMessage]);
     }
