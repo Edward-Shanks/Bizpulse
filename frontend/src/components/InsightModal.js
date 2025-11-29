@@ -152,7 +152,8 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       let endpoint;
       if (apiUrl) {
         // apiUrl is like "http://localhost:8000/api", so we append the path
-        endpoint = `${apiUrl}/analytics/customer-insights/chat`;
+        // Use view-insights/chat endpoint for Customer Deep Intelligence view insights modal
+        endpoint = `${apiUrl}/analytics/customer-insights/view-insights/chat`;
       } else {
         endpoint = `${INSIGHTS_API}/insights/chat`;
       }

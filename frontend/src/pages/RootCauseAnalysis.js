@@ -61,34 +61,109 @@ const RootCauseAnalysis = () => {
   const issues = [
     {
       id: 1,
-      title: 'Sales Decline in Q4',
+      title: 'Household & Beauty Revenue Decline',
       severity: 'high',
-      rootCause: 'Increased competition from new market entrants',
-      impact: '€250K revenue loss',
-      recommendation: 'Launch competitive pricing strategy and enhanced marketing',
+      rootCause:
+        'Household & Beauty revenue decreased from about €17.4M in 2023 to €16.2M in 2024, with softness in core grocery customers.',
+      impact: '≈€1.2M revenue decline year-on-year (-7%) in Household & Beauty.',
+      recommendation: [
+        'Re-focus promotions and display investments on the top Household & Beauty SKUs in Grocery ROI.',
+        'Bundle Household & Beauty hero SKUs with high-velocity Food lines to lift basket value.',
+        'Tighten price ladders vs key competitors where elasticities are highest.',
+        'Launch joint business plans with Dunnes and Musgrave to rebuild distribution and share.',
+        'Track weekly sell-out dashboards for Household & Beauty to validate recovery actions.'
+      ],
       status: 'investigating',
       icon: TrendingDown,
       color: { bg: '#fee2e2', border: '#ef4444', text: '#991b1b', icon: '#ef4444' }
     },
     {
       id: 2,
-      title: 'Customer Churn Rate Increase',
-      severity: 'medium',
-      rootCause: 'Service delivery delays due to supply chain issues',
-      impact: '15% increase in churn',
-      recommendation: 'Optimize logistics and implement customer retention program',
-      status: 'resolved',
+      title: 'Cali Cali Brand Revenue Contraction',
+      severity: 'high',
+      rootCause:
+        'Cali Cali revenue has fallen from roughly €1.04M in 2023 to €0.60M in 2024, indicating range rationalisation and slower rate of sale.',
+      impact: '≈€440K revenue loss (-40%+) for Cali Cali between 2023 and 2024.',
+      recommendation: [
+        'Identify top 10 Cali Cali SKUs by rate of sale and protect distribution and space for these first.',
+        'Rationalise long-tail SKUs with low cases and gSales to simplify the range.',
+        'Run price and promotion tests with Grocery ROI and Wholesale ROI to re-activate trial.',
+        'Use digital and in-store campaigns to reposition Cali Cali around clear shopper occasions.',
+        'Set quarterly revenue and distribution targets for Cali Cali and review in brand councils.'
+      ],
+      status: 'investigating',
       icon: AlertTriangle,
       color: { bg: '#fef3c7', border: '#f59e0b', text: '#92400e', icon: '#f59e0b' }
     },
     {
       id: 3,
-      title: 'Inventory Turnover Slowdown',
-      severity: 'low',
-      rootCause: 'Overstocking of seasonal products',
-      impact: '€120K in tied capital',
-      recommendation: 'Implement dynamic inventory management system',
+      title: 'Q3 2025 Sales Slowdown vs H1 2025',
+      severity: 'high',
+      rootCause:
+        'Total revenue in 2025 drops from about €28.5M in Q1 and €28.0M in Q2 to only €7.9M in Q3, driven by fewer orders and listings later in the year.',
+      impact: 'Run-rate decline of ~70% vs the average of Q1–Q2 2025, risking full-year targets.',
+      recommendation: [
+        'Drill into Q3 2025 by business, channel and customer to isolate where cases and gSales fell most.',
+        'Align with demand planning to confirm whether the drop is timing-related or a structural slowdown.',
+        'Rebuild activation calendars for late Q3 and Q4 with campaigns in Grocery ROI and Online.',
+        'Engage key accounts whose Q3 orders have fallen behind 2024 levels to recover volume.',
+        'Monitor weekly Q3/Q4 run-rate against 2024 benchmarks to close the gap early.'
+      ],
+      status: 'investigating',
+      icon: TrendingDown,
+      color: { bg: '#fee2e2', border: '#ef4444', text: '#991b1b', icon: '#ef4444' }
+    },
+    {
+      id: 4,
+      title: 'Under-leveraged Online & International Channels',
+      severity: 'medium',
+      rootCause:
+        'In 2025, Online and International channels together generate ~€7M, only about 11% of total revenue, with most sales concentrated in Grocery ROI.',
+      impact: 'Missed growth opportunity in higher-margin, scalable channels vs physical retail.',
+      recommendation: [
+        'Prioritise a focused assortment for Online and International based on high-margin SKUs.',
+        'Improve digital content, ratings and reviews for the top 50 SKUs sold online.',
+        'Run targeted campaigns in key export and e-commerce markets using performance media.',
+        'Align pricing and pack sizes to online shopper missions (bulk, subscription, discovery).',
+        'Set channel-specific growth targets and track ROI on digital investments monthly.'
+      ],
       status: 'monitoring',
+      icon: BarChart3,
+      color: { bg: '#dbeafe', border: '#3b82f6', text: '#1d4ed8', icon: '#3b82f6' }
+    },
+    {
+      id: 5,
+      title: 'Portfolio Concentration in Food Business',
+      severity: 'medium',
+      rootCause:
+        'In 2025 the Food business delivers ~€44.0M of ~€64.4M total revenue (around two-thirds of the portfolio).',
+      impact: 'High dependency on one business line increases risk if Food growth slows or competition intensifies.',
+      recommendation: [
+        'Define clear growth roles for non-Food businesses such as Household and Kinetica.',
+        'Invest in innovation and activation in under-scaled brands to diversify revenue streams.',
+        'Create cross-category shopper missions that link Food with Household and Health brands.',
+        'Allocate part of trade and media budgets specifically to emerging businesses each year.',
+        'Track contribution of each business to total revenue and margin in executive dashboards.'
+      ],
+      status: 'monitoring',
+      icon: Layers,
+      color: { bg: '#ecfeff', border: '#06b6d4', text: '#0e7490', icon: '#06b6d4' }
+    },
+    {
+      id: 6,
+      title: 'Negative-Margin SKUs and Promotions',
+      severity: 'low',
+      rootCause:
+        'Roughly 2% of rows in yearly_data.csv have negative fGP, often linked to deep discounts or specific customer deals.',
+      impact: 'Erosion of overall margin if negative-margin SKUs or deals are not tightly controlled.',
+      recommendation: [
+        'List all SKUs and customers with consistently negative fGP and review deal structures.',
+        'Cap depth and frequency of promotions for SKUs that do not recover margin through uplift.',
+        'Introduce guardrails so new trade terms cannot push fGP below agreed thresholds.',
+        'Align sales and finance on a common view of margin by SKU, customer and channel.',
+        'Track negative-margin share monthly and include it in commercial performance reviews.'
+      ],
+      status: 'resolved',
       icon: CheckCircle,
       color: { bg: '#d1fae5', border: '#10b981', text: '#065f46', icon: '#10b981' }
     }
@@ -269,8 +344,10 @@ const RootCauseAnalysis = () => {
                           <p className="text-xs font-semibold mb-1" style={{ color: '#92400e' }}>
                             AI Recommendation:
                           </p>
-                          <p className="text-xs" style={{ color: '#92400e' }}>
-                            {issue.recommendation}
+                          <p className="text-xs" style={{ color: '#92400e', whiteSpace: 'pre-line' }}>
+                            {Array.isArray(issue.recommendation)
+                              ? issue.recommendation.join('\n')
+                              : issue.recommendation}
                           </p>
                         </div>
                       </div>

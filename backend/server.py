@@ -128,17 +128,37 @@ class AIChatResponse(BaseModel):
     session_id: str
 
 class CustomerInsightsChatRequest(BaseModel):
-    message: str
-    chart_title: Optional[str] = None
-    context: Optional[Dict[str, Any]] = {}
-    session_id: Optional[str] = None
-    conversation_history: Optional[List[Dict[str, str]]] = []
+    """Request model for Customer Deep Intelligence chatbot"""
+    message: str = Field(..., description="User's question or message", example="What is the total gross sales?")
+    chart_title: Optional[str] = Field(None, description="Title of the chart being viewed", example="Sales Channel Performance")
+    context: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Filter context including selectedYears, selectedMonths, selectedChannels, etc.",
+        example={"selectedYears": [2025], "selectedMonths": ["January"]}
+    )
+    session_id: Optional[str] = Field(None, description="Session identifier for tracking conversations", example="session_123")
+    conversation_history: Optional[List[Dict[str, str]]] = Field(
+        default_factory=list,
+        description="Previous conversation messages for context",
+        example=[{"role": "user", "content": "What is the total sales?"}, {"role": "assistant", "content": "The total sales is..."}]
+    )
 
 class CustomerInsightsChatResponse(BaseModel):
-    response: str
-    timestamp: Optional[str] = None
-    context: Optional[str] = None
-    data: Optional[Dict[str, Any]] = {}
+    """Response model for Customer Deep Intelligence chatbot"""
+    response: str = Field(..., description="AI-generated response to the user's question", example="Based on the Shopify customer data, the total gross sales is €299,132,414.31...")
+    timestamp: Optional[str] = Field(None, description="Response timestamp", example="01:30 PM IST on November 29, 2025")
+    context: Optional[str] = Field(None, description="Data context used for generating the response", example="Shopify Customer Data Analysis...")
+    data: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Additional data including pivot_table, filters, columns, etc.",
+        example={
+            "pivot_table": [{"Total sales": 299132414.31, "Orders": 15000}],
+            "columns": ["Total sales"],
+            "filters": {},
+            "is_trend_query": False,
+            "total_rows": 15972
+        }
+    )
 
 class SyncStatusResponse(BaseModel):
     status: str
@@ -247,6 +267,20 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Available routes with 'customer': {[r for r in routes if 'customer' in r.lower()]}")
             logger.warning(f"All POST routes: {[r for r in routes if 'POST' in r]}")
             logger.warning(f"All analytics routes: {[r for r in routes if '/analytics' in r]}")
+        # Log root cause analysis routes specifically
+        rca_routes = [r for r in routes if 'root-cause-analysis' in r]
+        if rca_routes:
+            logger.info(f"✅ Root Cause Analysis routes found: {rca_routes}")
+        else:
+            logger.warning("⚠️ Root Cause Analysis routes NOT found in registered routes!")
+            logger.warning(f"Available routes with 'root': {[r for r in routes if 'root' in r.lower()]}")
+        # Also check the actual app.routes to see what's registered
+        actual_routes = []
+        for route in app.routes:
+            if hasattr(route, 'path') and hasattr(route, 'methods'):
+                actual_routes.append(f"{list(route.methods)} {route.path}")
+        rca_actual = [r for r in actual_routes if 'root-cause-analysis' in r]
+        logger.info(f"🔍🔍🔍 Actual app.routes with root-cause: {rca_actual}")
     except Exception as e:
         logger.warning(f"Could not log routes: {str(e)}")
         import traceback
@@ -303,13 +337,28 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 # Add CORS middleware BEFORE router (so error responses have CORS headers)
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Allow all origins for development, restrict in production
+cors_origins = os.environ.get('CORS_ORIGINS', '*').split(',')
+if cors_origins == ['*']:
+    # Allow all origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+else:
+    # Specific origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
 
 # Add request logging middleware to debug routing issues
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -318,8 +367,8 @@ from starlette.requests import Request
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # Log ALL requests to customer-insights endpoints (and a few others to verify middleware works)
-        if '/api/analytics/customer-insights' in path or '/api/auth' in path:
+        # Log ALL requests to customer-insights and root-cause-analysis endpoints
+        if '/api/analytics/customer-insights' in path or '/api/auth' in path or '/api/root-cause-analysis' in path:
             logger.info(f"🔵🔵🔵 MIDDLEWARE: INCOMING REQUEST: {request.method} {path}")
             logger.info(f"🔵🔵🔵 MIDDLEWARE: Full URL: {request.url}")
             logger.info(f"🔵🔵🔵 MIDDLEWARE: Authorization header: {'present' if 'authorization' in request.headers else 'MISSING'}")
@@ -328,7 +377,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 logger.info(f"🔵🔵🔵 MIDDLEWARE: Auth header value: {auth_header[:50]}...")
         try:
             response = await call_next(request)
-            if '/api/analytics/customer-insights' in path or '/api/auth' in path:
+            if '/api/analytics/customer-insights' in path or '/api/auth' in path or '/api/root-cause-analysis' in path:
                 logger.info(f"🔵🔵🔵 MIDDLEWARE: RESPONSE: {response.status_code} for {request.method} {path}")
             return response
         except Exception as e:
@@ -1468,6 +1517,22 @@ class AcceptCampaignRequest(BaseModel):
     campaignId: int
     fromCollection: str  # "recommended"
 
+# Root Cause Analysis Models
+class RootCauseIssue(BaseModel):
+    id: int
+    title: str
+    severity: str  # high, medium, low
+    rootCause: str
+    impact: str
+    recommendation: str
+    status: str  # investigating, resolved, monitoring
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+class RootCauseAnalysisResponse(BaseModel):
+    issues: List[RootCauseIssue]
+    summary: Dict[str, int]  # critical, investigating, resolved counts
+
 # Helper function to move expired campaigns from live to past
 async def move_expired_campaigns():
     """Move campaigns from live to past if their endDate has passed"""
@@ -2423,6 +2488,14 @@ async def accept_campaign(request: AcceptCampaignRequest, email: str = Depends(g
 @api_router.get("/analytics/strategic-recommendations", response_model=StrategicRecommendationsResponse)
 async def generate_strategic_recommendations(email: str = Depends(get_current_user)):
     """Generate NEW AI-powered strategic recommendations based on real Azure data and save to MongoDB"""
+    import sys
+    print("=" * 80, file=sys.stderr)
+    print("🚀 STARTING strategic recommendations generation", file=sys.stderr)
+    print("=" * 80, file=sys.stderr)
+    logger.info("=" * 80)
+    logger.info("🚀 STARTING strategic recommendations generation")
+    logger.info(f"🚀 Called by user: {email}")
+    logger.info("=" * 80)
     try:
         logger.info("🔍 Generating NEW strategic recommendations from Azure data")
         
@@ -2562,10 +2635,30 @@ Return ONLY valid JSON array, no additional text.
 """
         
         try:
-            ai_response = await query_perplexity(ai_prompt)
+            logger.info("🤖 Calling Perplexity AI to generate recommendations...")
+            logger.info(f"🤖 Prompt length: {len(ai_prompt)} characters")
+            try:
+                ai_response = await query_perplexity(ai_prompt)
+            except Exception as ai_error:
+                logger.error(f"❌ Perplexity API call failed: {str(ai_error)}")
+                import traceback
+                logger.error(f"❌ AI Error Traceback: {traceback.format_exc()}")
+                raise HTTPException(status_code=500, detail=f"AI service call failed: {str(ai_error)}")
+            
+            logger.info(f"🤖 AI Response received (length: {len(ai_response) if ai_response else 0})")
+            
+            if not ai_response:
+                logger.error("❌ AI response is empty or None")
+                raise HTTPException(status_code=500, detail="AI service returned empty response")
+            
+            if len(ai_response.strip()) < 10:
+                logger.error(f"❌ AI response is too short: '{ai_response}'")
+                raise HTTPException(status_code=500, detail="AI service returned invalid response (too short)")
             
             # Parse JSON from AI response (might have markdown code blocks)
             ai_response_clean = ai_response.strip()
+            logger.info(f"🤖 AI Response (first 500 chars): {ai_response_clean[:500]}")
+            
             if ai_response_clean.startswith('```json'):
                 ai_response_clean = ai_response_clean[7:]
             if ai_response_clean.startswith('```'):
@@ -2574,7 +2667,16 @@ Return ONLY valid JSON array, no additional text.
                 ai_response_clean = ai_response_clean[:-3]
             ai_response_clean = ai_response_clean.strip()
             
+            logger.info(f"🤖 Parsing JSON from cleaned response...")
             recommendations_data = json.loads(ai_response_clean)
+            logger.info(f"🤖 Successfully parsed {len(recommendations_data)} recommendations from AI")
+            
+            # Check if we got any recommendations
+            if not recommendations_data or len(recommendations_data) == 0:
+                logger.error("❌ AI returned empty recommendations array")
+                raise HTTPException(status_code=500, detail="AI service returned empty recommendations. Please try again.")
+            
+            logger.info(f"✅ Processing {len(recommendations_data)} recommendations from AI")
             
             # Format recommendations
             recommendations = []
@@ -2633,30 +2735,119 @@ Return ONLY valid JSON array, no additional text.
             )
             
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse AI response as JSON: {e}")
-            logger.error(f"AI Response (first 500 chars): {ai_response[:500] if 'ai_response' in locals() else 'No response'}")
-            # Fallback to default recommendations if AI fails
+            logger.error(f"❌ Failed to parse AI response as JSON: {e}")
+            logger.error(f"❌ AI Response (first 1000 chars): {ai_response[:1000] if 'ai_response' in locals() else 'No response'}")
+            logger.error(f"❌ AI Response (last 500 chars): {ai_response[-500:] if 'ai_response' in locals() and len(ai_response) > 500 else 'N/A'}")
+            # Try to extract JSON from the response if it's embedded in text
+            recommendations_data = None
+            if 'ai_response' in locals() and ai_response:
+                import re
+                # Try to find JSON array in the response (more robust pattern)
+                json_match = re.search(r'\[[\s\S]*\]', ai_response)
+                if json_match:
+                    try:
+                        recommendations_data = json.loads(json_match.group(0))
+                        logger.info(f"✅ Extracted JSON from text: {len(recommendations_data)} recommendations")
+                    except Exception as extract_error:
+                        logger.error(f"❌ Failed to parse extracted JSON: {extract_error}")
+                        recommendations_data = None
+                
+                # If still no JSON, try to find it between code blocks
+                if not recommendations_data:
+                    json_match = re.search(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', ai_response)
+                    if json_match:
+                        try:
+                            recommendations_data = json.loads(json_match.group(1))
+                            logger.info(f"✅ Extracted JSON from code block: {len(recommendations_data)} recommendations")
+                        except Exception as extract_error:
+                            logger.error(f"❌ Failed to parse JSON from code block: {extract_error}")
+            
+            if not recommendations_data:
+                raise HTTPException(status_code=500, detail=f"Failed to parse AI response as JSON. The AI may have returned invalid JSON format. Error: {str(e)}")
+            
+            # Continue processing with extracted recommendations_data (fall through to the code below)
+            logger.info(f"🤖 Processing {len(recommendations_data)} extracted recommendations...")
+            
+            # Format recommendations
+            recommendations = []
+            for idx, rec in enumerate(recommendations_data[:6], 1):  # Limit to 6
+                recommendations.append(StrategicRecommendation(
+                    id=idx,
+                    title=rec.get('title', f'Recommendation {idx}'),
+                    description=rec.get('description', ''),
+                    type='system',
+                    category=rec.get('category', 'acquisition'),
+                    startDate=rec.get('startDate', '2025-01-20'),
+                    endDate=rec.get('endDate'),
+                    budget=float(rec.get('budget', 50000)),
+                    impact=rec.get('impact', {'value': 100000, 'percentage': 10}),
+                    reasoning=rec.get('reasoning', ''),
+                    channels=rec.get('channels', ['Email']),
+                    aiScore=int(rec.get('aiScore', 75)),
+                    status='recommended'
+                ))
+            
+            # Save to MongoDB (replace existing recommended, keep live and past)
+            kanban_doc = await db.kanban.find_one({})
+            if not kanban_doc:
+                # Create new document
+                kanban_doc = {
+                    "recommended": [rec.model_dump() for rec in recommendations],
+                    "live": [],
+                    "past": [],
+                    "last_updated": datetime.now(timezone.utc).isoformat()
+                }
+                await db.kanban.insert_one(kanban_doc)
+            else:
+                # Update only recommended field
+                await db.kanban.update_one(
+                    {},
+                    {"$set": {
+                        "recommended": [rec.model_dump() for rec in recommendations],
+                        "last_updated": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
+            
+            # Move expired campaigns before returning
+            await move_expired_campaigns()
+            
+            # Load current state from MongoDB
+            updated_doc = await db.kanban.find_one({})
+            live_campaigns = [StrategicRecommendation(**camp) for camp in updated_doc.get('live', [])] if updated_doc else []
+            past_campaigns = [StrategicRecommendation(**camp) for camp in updated_doc.get('past', [])] if updated_doc else []
+            
+            logger.info(f"✅ Generated {len(recommendations)} new recommendations and saved to MongoDB")
+            
+            # Final safety check - never return empty recommendations
+            if not recommendations or len(recommendations) == 0:
+                logger.error("❌ CRITICAL: Generated recommendations list is empty after processing!")
+                raise HTTPException(status_code=500, detail="Failed to generate recommendations. AI returned empty results. Please try again.")
+            
+            logger.info(f"✅ Returning {len(recommendations)} recommendations to client")
+            
             return StrategicRecommendationsResponse(
-                recommended=[],
-                live=[]
+                recommended=recommendations,
+                live=live_campaigns,
+                past=past_campaigns
             )
         except HTTPException:
             # Re-raise HTTP exceptions
             raise
         except Exception as e:
-            logger.error(f"Error generating recommendations: {str(e)}")
+            logger.error(f"❌ Error generating recommendations: {str(e)}")
             import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            raise HTTPException(status_code=500, detail=f"Error generating recommendations: {str(e)}")
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            # Don't return empty arrays - raise an error so the user knows something went wrong
+            raise HTTPException(status_code=500, detail=f"Error generating recommendations: {str(e)}. Please check backend logs for details.")
             
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
     except Exception as e:
-        logger.error(f"Strategic recommendations error: {str(e)}")
+        logger.error(f"❌ Strategic recommendations error: {str(e)}")
         import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Strategic recommendations error: {str(e)}")
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Strategic recommendations error: {str(e)}. Please check backend logs for details.")
 
 @api_router.get("/analytics/customer-insights/chat/test")
 async def test_customer_insights_chat(email: str = Depends(get_current_user)):
@@ -2668,9 +2859,368 @@ async def test_customer_insights_chat(email: str = Depends(get_current_user)):
         "method": "POST"
     }
 
-@api_router.get("/analytics/customer-insights")
-async def get_customer_insights(email: str = Depends(get_current_user)):
-    """Customer Insights from Shopify data - Multiple visualizations"""
+# Root Cause Analysis Endpoints
+@api_router.get("/root-cause-analysis/test", name="test_root_cause")
+async def test_root_cause_route():
+    """Test endpoint to verify root cause analysis route is accessible"""
+    logger.info("🔍🔍🔍 TEST ENDPOINT CALLED!")
+    return {
+        "status": "ok",
+        "message": "Root cause analysis endpoint is accessible",
+        "endpoint": "/api/root-cause-analysis/issues"
+    }
+
+@api_router.get("/root-cause-analysis/issues", response_model=RootCauseAnalysisResponse, name="get_root_cause_issues")
+async def get_root_cause_issues(email: str = Depends(get_current_user)):
+    """Load root cause analysis issues from MongoDB"""
+    logger.info(f"🔍🔍🔍 GET /root-cause-analysis/issues called by {email}")
+    try:
+        rca_doc = await db.root_cause_analysis.find_one({})
+        
+        if not rca_doc:
+            # Initialize empty document
+            initial_doc = {
+                "issues": [],
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }
+            await db.root_cause_analysis.insert_one(initial_doc)
+            return RootCauseAnalysisResponse(
+                issues=[],
+                summary={"critical": 0, "investigating": 0, "resolved": 0}
+            )
+        
+        # Convert MongoDB issues to RootCauseIssue objects
+        issues = []
+        for issue_data in rca_doc.get('issues', []):
+            try:
+                # Ensure id is an int
+                if 'id' not in issue_data or not isinstance(issue_data.get('id'), int):
+                    issue_data['id'] = len(issues) + 1
+                issues.append(RootCauseIssue(**issue_data))
+            except Exception as e:
+                logger.warning(f"Error parsing issue: {e}, skipping issue: {issue_data}")
+                continue
+        
+        # Calculate summary
+        critical_count = len([i for i in issues if i.severity == 'high'])
+        investigating_count = len([i for i in issues if i.status == 'investigating'])
+        resolved_count = len([i for i in issues if i.status == 'resolved'])
+        
+        return RootCauseAnalysisResponse(
+            issues=issues,
+            summary={
+                "critical": critical_count,
+                "investigating": investigating_count,
+                "resolved": resolved_count
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error loading root cause issues: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error loading root cause issues: {str(e)}")
+
+@api_router.post("/root-cause-analysis/generate", response_model=RootCauseAnalysisResponse, name="generate_root_cause_issues")
+async def generate_root_cause_issues(email: str = Depends(get_current_user)):
+    """Generate NEW AI-powered root cause analysis issues based on real business data"""
+    logger.info(f"🔍🔍🔍 POST /root-cause-analysis/generate called by {email}")
+    try:
+        logger.info("🔍 Generating NEW root cause analysis issues from business data")
+        
+        # Get comprehensive business data
+        data = await db.business_data.find({}, {"_id": 0}).to_list(10000)
+        if not data:
+            raise HTTPException(status_code=404, detail="No data available")
+        
+        df = pd.DataFrame(data)
+        
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No data available in database")
+        
+        required_columns = ['Revenue', 'Gross_Profit', 'Units', 'Year', 'Business', 'Channel', 'Customer', 'Brand']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            logger.error(f"Missing required columns: {missing_columns}")
+            raise HTTPException(status_code=500, detail=f"Missing required columns: {missing_columns}")
+        
+        # Calculate key metrics for context
+        total_revenue = float(df['Revenue'].sum()) if not df.empty else 0
+        total_profit = float(df['Gross_Profit'].sum()) if not df.empty else 0
+        total_units = float(df['Units'].sum()) if not df.empty else 0
+        profit_margin = (total_profit/total_revenue*100) if total_revenue > 0 else 0
+        
+        # Year-over-year analysis
+        yearly_data = df.groupby('Year').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum',
+            'Units': 'sum'
+        }).reset_index().sort_values('Year')
+        
+        # Identify declining trends
+        if len(yearly_data) > 1:
+            latest_year = yearly_data.iloc[-1]
+            previous_year = yearly_data.iloc[-2] if len(yearly_data) > 1 else None
+            revenue_decline = previous_year and latest_year['Revenue'] < previous_year['Revenue']
+            profit_decline = previous_year and latest_year['Gross_Profit'] < previous_year['Gross_Profit']
+        else:
+            revenue_decline = False
+            profit_decline = False
+        
+        # Business performance by segment
+        business_perf = df.groupby('Business').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum'
+        }).reset_index().sort_values('Revenue', ascending=False)
+        
+        # Channel performance
+        channel_perf = df.groupby('Channel').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum'
+        }).reset_index().sort_values('Revenue', ascending=False)
+        
+        # Customer performance
+        customer_perf = df.groupby('Customer').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum'
+        }).reset_index().sort_values('Revenue', ascending=False)
+        
+        # Build data context for AI
+        data_context = f"""
+Business Performance Data Analysis for Root Cause Analysis:
+
+OVERALL METRICS:
+- Total Revenue: €{total_revenue:,.2f}
+- Total Gross Profit: €{total_profit:,.2f}
+- Total Units Sold: {total_units:,.0f}
+- Profit Margin: {profit_margin:.2f}%
+
+YEAR-OVER-YEAR PERFORMANCE:
+{yearly_data.to_string(index=False) if not yearly_data.empty else 'No yearly data'}
+
+TREND ANALYSIS:
+- Revenue Trend: {'Declining' if revenue_decline else 'Stable/Increasing'}
+- Profit Trend: {'Declining' if profit_decline else 'Stable/Increasing'}
+
+TOP 5 BUSINESSES BY REVENUE:
+{business_perf.head(5).to_string(index=False) if not business_perf.empty else 'No business data'}
+
+TOP 5 CHANNELS BY REVENUE:
+{channel_perf.head(5).to_string(index=False) if not channel_perf.empty else 'No channel data'}
+
+TOP 5 CUSTOMERS BY REVENUE:
+{customer_perf.head(5).to_string(index=False) if not customer_perf.empty else 'No customer data'}
+
+AVAILABLE DATA PERIODS:
+- Years: {sorted(df['Year'].unique().tolist()) if not df.empty else []}
+- Total Records: {len(df)}
+- Unique Businesses: {df['Business'].nunique() if not df.empty else 0}
+- Unique Channels: {df['Channel'].nunique() if not df.empty else 0}
+- Unique Brands: {df['Brand'].nunique() if not df.empty else 0}
+- Unique Customers: {df['Customer'].nunique() if not df.empty else 0}
+"""
+        
+        # Generate AI root cause analysis issues
+        ai_prompt = f"""
+Based on the following business performance data, identify 3-5 critical business issues that need root cause analysis.
+
+DATA CONTEXT:
+{data_context}
+
+REQUIREMENTS:
+1. Identify real issues based on data patterns (declining revenue, profit margins, customer churn, etc.)
+2. For each issue, provide:
+   - A clear, specific title (e.g., "Sales Decline in Q4", "Customer Churn Rate Increase")
+   - Severity level: "high", "medium", or "low" based on impact
+   - Root cause: A specific, data-driven explanation of why this issue is occurring
+   - Impact: Quantified impact (e.g., "€250K revenue loss", "15% increase in churn")
+   - AI Recommendation: Specific, actionable recommendation to address the root cause
+   - Status: "investigating", "resolved", or "monitoring"
+3. Base recommendations on actual data patterns and trends
+4. Prioritize issues with highest business impact
+5. Provide realistic impact estimates based on the data scale
+
+OUTPUT FORMAT (JSON array):
+[
+  {{
+    "title": "Specific issue title",
+    "severity": "high|medium|low",
+    "rootCause": "Detailed explanation of the root cause based on data",
+    "impact": "Quantified impact description (e.g., €250K revenue loss)",
+    "recommendation": "Specific, actionable AI recommendation",
+    "status": "investigating|resolved|monitoring"
+  }}
+]
+
+Return ONLY valid JSON array, no additional text.
+"""
+        
+        try:
+            ai_response = await query_perplexity(ai_prompt)
+            
+            # Parse JSON from AI response
+            ai_response_clean = ai_response.strip()
+            if ai_response_clean.startswith('```json'):
+                ai_response_clean = ai_response_clean[7:]
+            if ai_response_clean.startswith('```'):
+                ai_response_clean = ai_response_clean[3:]
+            if ai_response_clean.endswith('```'):
+                ai_response_clean = ai_response_clean[:-3]
+            ai_response_clean = ai_response_clean.strip()
+            
+            issues_data = json.loads(ai_response_clean)
+            
+            # Format issues
+            issues = []
+            for idx, issue_data in enumerate(issues_data[:5], 1):  # Limit to 5
+                issues.append(RootCauseIssue(
+                    id=idx,
+                    title=issue_data.get('title', f'Issue {idx}'),
+                    severity=issue_data.get('severity', 'medium'),
+                    rootCause=issue_data.get('rootCause', ''),
+                    impact=issue_data.get('impact', ''),
+                    recommendation=issue_data.get('recommendation', ''),
+                    status=issue_data.get('status', 'investigating'),
+                    createdAt=datetime.now(timezone.utc).isoformat(),
+                    updatedAt=datetime.now(timezone.utc).isoformat()
+                ))
+            
+            # Save to MongoDB
+            rca_doc = await db.root_cause_analysis.find_one({})
+            if not rca_doc:
+                rca_doc = {
+                    "issues": [issue.model_dump() for issue in issues],
+                    "last_updated": datetime.now(timezone.utc).isoformat()
+                }
+                await db.root_cause_analysis.insert_one(rca_doc)
+            else:
+                await db.root_cause_analysis.update_one(
+                    {},
+                    {"$set": {
+                        "issues": [issue.model_dump() for issue in issues],
+                        "last_updated": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
+            
+            # Calculate summary
+            critical_count = len([i for i in issues if i.severity == 'high'])
+            investigating_count = len([i for i in issues if i.status == 'investigating'])
+            resolved_count = len([i for i in issues if i.status == 'resolved'])
+            
+            logger.info(f"Generated {len(issues)} new root cause issues and saved to MongoDB")
+            
+            return RootCauseAnalysisResponse(
+                issues=issues,
+                summary={
+                    "critical": critical_count,
+                    "investigating": investigating_count,
+                    "resolved": resolved_count
+                }
+            )
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI response as JSON: {e}")
+            logger.error(f"AI Response (first 500 chars): {ai_response[:500] if 'ai_response' in locals() else 'No response'}")
+            raise HTTPException(status_code=500, detail="Failed to parse AI response")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error generating root cause issues: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error generating root cause issues: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Root cause analysis error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Root cause analysis error: {str(e)}")
+
+@api_router.get(
+    "/analytics/customer-insights/filters",
+    summary="Get Customer Insights Filter Options",
+    description="Returns available years and months from the Shopify customer data for filtering."
+)
+async def get_customer_insights_filters(email: str = Depends(get_current_user)):
+    """
+    Get filter options for customer insights based on actual Shopify data.
+    
+    Returns only years and months that exist in the Shopify data, ensuring filters are accurate.
+    """
+    try:
+        # Load Shopify_customer_df.csv
+        csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
+        if not csv_path.exists():
+            raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+        
+        df = pd.read_csv(csv_path)
+        if df.empty:
+            return {
+                "years": [],
+                "months": []
+            }
+        
+        # Convert date columns
+        if 'Day' in df.columns:
+            try:
+                df['Day'] = pd.to_datetime(df['Day'], errors='coerce')
+                df['Year'] = df['Day'].dt.year
+                df['Month'] = df['Day'].dt.month
+                df['MonthName'] = df['Day'].dt.strftime('%B')
+                
+                # Get unique years and months from actual data
+                years = sorted([int(y) for y in df['Year'].dropna().unique() if pd.notna(y)])
+                months = sorted(df['MonthName'].dropna().unique().tolist(), key=lambda x: {
+                    'January': 1, 'February': 2, 'March': 3, 'April': 4,
+                    'May': 5, 'June': 6, 'July': 7, 'August': 8,
+                    'September': 9, 'October': 10, 'November': 11, 'December': 12
+                }.get(x, 999))
+                
+                logger.info(f"✅ Customer insights filters - Years: {years}, Months: {len(months)}")
+                
+                return {
+                    "years": years,
+                    "months": months
+                }
+            except Exception as e:
+                logger.error(f"Error processing date columns for filters: {str(e)}")
+                return {
+                    "years": [],
+                    "months": []
+                }
+        else:
+            logger.warning("⚠️ 'Day' column not found in Shopify data.")
+            return {
+                "years": [],
+                "months": []
+            }
+    except Exception as e:
+        logger.error(f"Error getting customer insights filters: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error getting filter options: {str(e)}")
+
+@api_router.get(
+    "/analytics/customer-insights",
+    summary="Get Customer Insights Data",
+    description="Returns comprehensive customer insights data with optional year and month filters."
+)
+async def get_customer_insights(
+    years: str = None,
+    months: str = None,
+    email: str = Depends(get_current_user)
+):
+    """
+    Customer Insights from Shopify data - Multiple visualizations.
+    
+    Returns aggregated customer data including:
+    - New vs Returning customers
+    - Channel performance
+    - Geographic distribution
+    - Traffic sources
+    - Customer lifetime value
+    - Monthly trends
+    - And more...
+    """
     try:
         # Load Shopify_customer_df.csv
         csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
@@ -2688,11 +3238,170 @@ async def get_customer_insights(email: str = Depends(get_current_user)):
                 df['Year'] = df['Day'].dt.year
                 df['Month'] = df['Day'].dt.month
                 df['MonthName'] = df['Day'].dt.strftime('%B')
+                logger.info(f"✅ Date columns processed. Valid dates: {df['Day'].notna().sum()}/{len(df)}")
             except Exception as e:
                 logger.warning(f"Error processing date columns: {str(e)}")
                 df['Year'] = None
                 df['Month'] = None
                 df['MonthName'] = None
+        else:
+            logger.warning("⚠️ 'Day' column not found in Shopify data. Cannot apply date filters.")
+            df['Year'] = None
+            df['Month'] = None
+            df['MonthName'] = None
+        
+        # Apply filters
+        logger.info(f"🔍 Applying filters - years: {years}, months: {months}")
+        logger.info(f"📊 Data shape before filtering: {df.shape}")
+        logger.info(f"📅 Available years in data: {sorted(df['Year'].dropna().unique().tolist()) if 'Year' in df.columns else 'N/A'}")
+        logger.info(f"📅 Available months in data: {sorted(df['Month'].dropna().unique().tolist()) if 'Month' in df.columns else 'N/A'}")
+        
+        if years:
+            try:
+                year_list = [int(y.strip()) for y in years.split(',') if y.strip()]
+                if year_list:
+                    logger.info(f"🔍 Filtering by years: {year_list}")
+                    # Filter out NaN values and apply year filter
+                    df = df[df['Year'].notna() & df['Year'].isin(year_list)]
+                    logger.info(f"📊 Data shape after year filter: {df.shape}")
+            except Exception as e:
+                logger.error(f"❌ Error filtering by years: {str(e)}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        
+        if months:
+            try:
+                month_list = [m.strip() for m in months.split(',') if m.strip()]
+                if month_list:
+                    logger.info(f"🔍 Received month filter values: {month_list}")
+                    
+                    # Comprehensive month name mapping (handles various formats)
+                    month_map = {
+                        # Full names
+                        'January': 1, 'February': 2, 'March': 3, 'April': 4,
+                        'May': 5, 'June': 6, 'July': 7, 'August': 8,
+                        'September': 9, 'October': 10, 'November': 11, 'December': 12,
+                        # Abbreviations
+                        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
+                        'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Sept': 9,
+                        'Oct': 10, 'Nov': 11, 'Dec': 12,
+                        # Case variations
+                        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+                        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+                        'september': 9, 'october': 10, 'november': 11, 'december': 12,
+                    }
+                    
+                    # Try to map month names to numbers
+                    month_numbers = []
+                    for m in month_list:
+                        # Try exact match first
+                        if m in month_map:
+                            month_numbers.append(month_map[m])
+                        else:
+                            # Try case-insensitive match
+                            m_lower = m.lower()
+                            for key, value in month_map.items():
+                                if key.lower() == m_lower:
+                                    month_numbers.append(value)
+                                    break
+                    
+                    # Also try matching against MonthName column if it exists (for Shopify data)
+                    if 'MonthName' in df.columns:
+                        # Get unique month names in the data
+                        available_months = df['MonthName'].dropna().unique().tolist()
+                        logger.info(f"📅 Available month names in data: {available_months}")
+                        
+                        # Try to match selected months with available month names
+                        for m in month_list:
+                            m_lower = m.lower().strip()
+                            for avail_month in available_months:
+                                if avail_month and str(avail_month).lower().strip() == m_lower:
+                                    # Get month number from the matched month name
+                                    matching_rows = df[df['MonthName'] == avail_month]
+                                    if len(matching_rows) > 0:
+                                        month_num = matching_rows['Month'].iloc[0]
+                                        if pd.notna(month_num) and int(month_num) not in month_numbers:
+                                            month_numbers.append(int(month_num))
+                                            logger.info(f"✅ Matched '{m}' to month number {int(month_num)} via MonthName column")
+                    
+                    # Remove duplicates and None values
+                    month_numbers = sorted(list(set([m for m in month_numbers if m is not None])))
+                    
+                    if month_numbers:
+                        logger.info(f"🔍 Filtering by month numbers: {month_numbers}")
+                        # Filter out NaN values and apply month filter
+                        df_filtered = df[df['Month'].notna() & df['Month'].isin(month_numbers)]
+                        if len(df_filtered) > 0:
+                            df = df_filtered
+                            logger.info(f"📊 Data shape after month filter: {df.shape}")
+                        else:
+                            # Fallback: try filtering by MonthName directly
+                            logger.warning("⚠️ Month number filter returned no results, trying MonthName filter")
+                            if 'MonthName' in df.columns:
+                                # Create a list of month names that match the selected months
+                                matching_month_names = []
+                                for m in month_list:
+                                    m_lower = m.lower().strip()
+                                    for avail_month in df['MonthName'].dropna().unique():
+                                        if str(avail_month).lower().strip() == m_lower:
+                                            matching_month_names.append(avail_month)
+                                
+                                if matching_month_names:
+                                    df = df[df['MonthName'].isin(matching_month_names)]
+                                    logger.info(f"✅ Filtered by MonthName: {matching_month_names}, shape: {df.shape}")
+                                else:
+                                    logger.warning(f"⚠️ Could not match any month names. Selected: {month_list}")
+                    else:
+                        logger.warning(f"⚠️ Could not map any month names to numbers. Month list: {month_list}")
+                        # Last resort: try direct MonthName matching
+                        if 'MonthName' in df.columns:
+                            matching_month_names = []
+                            for m in month_list:
+                                m_lower = m.lower().strip()
+                                for avail_month in df['MonthName'].dropna().unique():
+                                    if str(avail_month).lower().strip() == m_lower:
+                                        matching_month_names.append(avail_month)
+                            
+                            if matching_month_names:
+                                df = df[df['MonthName'].isin(matching_month_names)]
+                                logger.info(f"✅ Filtered by MonthName (fallback): {matching_month_names}, shape: {df.shape}")
+            except Exception as e:
+                logger.error(f"❌ Error filtering by months: {str(e)}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        
+        logger.info(f"📊 Final data shape after all filters: {df.shape}")
+        
+        if df.empty:
+            logger.warning("⚠️ Data is empty after filtering. Returning empty results.")
+            return {
+                "newVsReturning": [],
+                "channelPerformance": [],
+                "regionPerformance": [],
+                "trafficSource": [],
+                "customerLifetimeValue": [],
+                "monthlyTrend": [],
+                "subscriptionStatus": [],
+                "topCustomers": [],
+                "platformAnalysis": [],
+                "trafficType": [],
+                "hourlyPatterns": [],
+                "countryDistribution": [],
+                "smsSubscription": [],
+                "orderReturnAnalysis": [],
+                "mediumAnalysis": [],
+                "topProducts": [],
+                "dayOfWeekAnalysis": [],
+                "returnTrend": [],
+                "summary": {
+                    "totalCustomers": 0,
+                    "totalOrders": 0,
+                    "totalSales": 0,
+                    "avgOrderValue": 0,
+                    "newCustomers": 0,
+                    "returningCustomers": 0
+                }
+            }
         
         # Ensure numeric columns
         numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 'Orders (first-time)', 
@@ -3074,133 +3783,317 @@ async def customer_insights_chat_test_simple(request: CustomerInsightsChatReques
     logger.info("🔵 TEST-SIMPLE endpoint called!")
     return {"status": "ok", "message": "POST route is working", "received": request.message[:50]}
 
-# Customer Insights Chat endpoint - TEMPORARILY WITHOUT AUTH TO TEST
+# Customer Insights Chat endpoint - Uses FastAPI module
 @api_router.post("/analytics/customer-insights/chat", response_model=CustomerInsightsChatResponse, name="customer_insights_chat")
 async def customer_insights_chat(request: CustomerInsightsChatRequest):
     """AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data"""
-    logger.info(f"🔵🔵🔵 Customer insights chat endpoint CALLED (NO AUTH)")
+    logger.info(f"🔵🔵🔵 Customer insights chat endpoint CALLED")
     logger.info(f"🔵🔵🔵 Request received: {request.message[:100] if request.message else 'None'}")
     logger.info(f"🔵🔵🔵 Full request path: /api/analytics/customer-insights/chat")
     
-    # Temporarily use a default email for testing
-    email = "test@test.com"
-    """AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data"""
-    logger.info(f"Customer insights chat endpoint called by {email}")
-    logger.info(f"Request message: {request.message[:100] if request.message else 'None'}")
     try:
-        # Load Shopify_customer_df.csv
-        csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
-        if not csv_path.exists():
-            raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+        # Import the FastAPI functions
+        from customer_insights_fastapi import process_customer_insights_chat
         
-        df = pd.read_csv(csv_path)
-        if df.empty:
-            raise HTTPException(status_code=500, detail="Customer Shopify data is empty")
+        # Process the chat request using the FastAPI functions
+        result = process_customer_insights_chat(
+            message=request.message or "",
+            context=request.context or {},
+            conversation_history=request.conversation_history or [],
+            chart_title=request.chart_title
+        )
         
-        # Convert date columns
-        if 'Day' in df.columns:
-            try:
-                df['Day'] = pd.to_datetime(df['Day'], errors='coerce')
-                df['Year'] = df['Day'].dt.year
-                df['Month'] = df['Day'].dt.month
-                df['MonthName'] = df['Day'].dt.strftime('%B')
-            except Exception as e:
-                logger.warning(f"Error processing date columns: {str(e)}")
+        # Convert result to response model
+        return CustomerInsightsChatResponse(
+            response=result.get("response", "I apologize, but I couldn't process your request."),
+            timestamp=result.get("timestamp", datetime.now().strftime("%I:%M %p IST on %B %d, %Y")),
+            context=result.get("context", ""),
+            data=result.get("data", {})
+        )
+        
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="shopify_data.csv file not found")
+    except ImportError as e:
+        logger.error(f"Failed to import customer_insights_fastapi: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load customer insights FastAPI module: {str(e)}")
+    except Exception as e:
+        logger.error(f"Customer insights chat error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing customer insights chat: {str(e)}")
+
+# ============================================================================
+# Customer Deep Intelligence View Insights API
+# Enhanced endpoint for view insights modal with advanced data processing
+# ============================================================================
+
+class ShopifyDataProcessor:
+    """Data processor for Shopify customer data - for view insights"""
+    def __init__(self, df):
+        self.df = df.copy()
+        self._preprocess_data()
+    
+    def _preprocess_data(self):
+        """Preprocess the Shopify data"""
+        # Convert date column
+        if 'Day' in self.df.columns:
+            self.df['Day'] = pd.to_datetime(self.df['Day'], errors='coerce')
+            
+            # Extract date components
+            self.df['Date'] = self.df['Day'].dt.date
+            self.df['Month'] = self.df['Day'].dt.month_name()
+            self.df['Month_Num'] = self.df['Day'].dt.month
+            self.df['Year'] = self.df['Day'].dt.year
+            self.df['YearMonth'] = self.df['Day'].dt.to_period('M')
+            self.df['DayOfWeek'] = self.df['Day'].dt.day_name()
+            self.df['Week'] = self.df['Day'].dt.isocalendar().week
         
         # Ensure numeric columns
-        numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 'Orders (first-time)', 
-                       'Orders (returning)', 'Quantity ordered', 'Customer number of orders']
+        numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 
+                       'Orders (first-time)', 'Orders (returning)', 
+                       'Quantity ordered', 'Customer number of orders', 'Customers']
         for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            if col in self.df.columns:
+                self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
         
-        # Build comprehensive data context for AI
-        total_customers = df['Customer email'].nunique() if 'Customer email' in df.columns else 0
-        total_orders = df['Orders'].sum() if 'Orders' in df.columns else 0
-        total_sales = df['Total sales'].sum() if 'Total sales' in df.columns else 0
+        # Calculate additional metrics
+        if 'Orders' in self.df.columns and 'Customers' in self.df.columns:
+            self.df['Conversion_Rate'] = self.df['Orders'] / self.df['Customers']
+            self.df['Conversion_Rate'] = self.df['Conversion_Rate'].fillna(0)
+        
+        if 'Total sales' in self.df.columns and 'Orders' in self.df.columns:
+            self.df['Avg_Order_Value'] = self.df['Total sales'] / self.df['Orders']
+            self.df['Avg_Order_Value'] = self.df['Avg_Order_Value'].fillna(0)
+    
+    def get_filtered_data(self, start_date=None, end_date=None, channel=None, 
+                          customer_type=None, month=None, year=None, country=None):
+        """Filter data based on user selections"""
+        filtered_df = self.df.copy()
+        
+        # Date filter
+        if start_date and end_date and 'Date' in filtered_df.columns:
+            filtered_df = filtered_df[
+                (filtered_df['Date'] >= start_date) & 
+                (filtered_df['Date'] <= end_date)
+            ]
+        
+        # Month filter
+        if month and month != 'All' and 'Month' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Month'] == month]
+        
+        # Year filter
+        if year and year != 'All' and 'Year' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Year'] == int(year)]
+        
+        # Channel filter
+        if channel and channel != 'All' and 'Referring channel' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Referring channel'] == channel]
+        
+        # Customer type filter
+        if customer_type and customer_type != 'All' and 'New or returning customer' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['New or returning customer'] == customer_type]
+        
+        # Country filter
+        if country and country != 'All' and 'Shipping country' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Shipping country'] == country]
+        
+        return filtered_df
+    
+    def get_summary_stats(self, filtered_df=None):
+        """Get overall summary statistics"""
+        if filtered_df is None:
+            filtered_df = self.df
+        
+        total_orders = filtered_df['Orders'].sum() if 'Orders' in filtered_df.columns else 0
+        total_sales = filtered_df['Total sales'].sum() if 'Total sales' in filtered_df.columns else 0
+        total_customers = filtered_df['Customers'].sum() if 'Customers' in filtered_df.columns else 0
         avg_order_value = total_sales / total_orders if total_orders > 0 else 0
         
-        # Customer segmentation
-        new_customers = (df['New or returning customer'] == 'New').sum() if 'New or returning customer' in df.columns else 0
-        returning_customers = (df['New or returning customer'] == 'Returning').sum() if 'New or returning customer' in df.columns else 0
+        returning_rate = 0
+        if 'Returning customer rate' in filtered_df.columns:
+            returning_rate = filtered_df['Returning customer rate'].mean() * 100
+        elif 'New or returning customer' in filtered_df.columns:
+            returning_count = (filtered_df['New or returning customer'] == 'Returning').sum()
+            total_cust_count = len(filtered_df)
+            returning_rate = (returning_count / total_cust_count * 100) if total_cust_count > 0 else 0
         
-        # Channel analysis
-        channels = df['Referring channel'].value_counts().head(10).to_dict() if 'Referring channel' in df.columns else {}
-        platforms = df['Referring platform'].value_counts().head(10).to_dict() if 'Referring platform' in df.columns else {}
-        traffic_types = df['Traffic type'].value_counts().to_dict() if 'Traffic type' in df.columns else {}
+        return {
+            'total_orders': int(total_orders),
+            'total_sales': round(total_sales, 2),
+            'total_customers': int(total_customers),
+            'avg_order_value': round(avg_order_value, 2),
+            'returning_customer_rate': round(returning_rate, 2),
+            'data_points': len(filtered_df)
+        }
+    
+    def get_monthly_sales(self, filtered_df=None):
+        """Get sales by month"""
+        if filtered_df is None:
+            filtered_df = self.df
         
-        # Geographic analysis
-        countries = df['Shipping country'].value_counts().head(10).to_dict() if 'Shipping country' in df.columns else {}
-        regions = df['Shipping region'].value_counts().head(10).to_dict() if 'Shipping region' in df.columns else {}
+        if 'Year' not in filtered_df.columns or 'Month' not in filtered_df.columns:
+            return pd.DataFrame()
         
-        # Subscription status
-        email_subscribed = (df['Customer email subscription status'] == 'SUBSCRIBED').sum() if 'Customer email subscription status' in df.columns else 0
-        sms_subscribed = (df['Customer SMS subscription status'] == 'SUBSCRIBED').sum() if 'Customer SMS subscription status' in df.columns else 0
+        monthly_sales = filtered_df.groupby(['Year', 'Month', 'Month_Num']).agg({
+            'Total sales': 'sum',
+            'Orders': 'sum',
+            'Customers': 'sum',
+        }).reset_index().sort_values(['Year', 'Month_Num'])
         
-        # Time-based patterns
-        hourly_patterns = {}
-        peak_hour_orders = 'N/A'
-        peak_hour_sales = 'N/A'
-        hourly_orders_summary = 'N/A'
+        return monthly_sales
+    
+    def get_advanced_metrics(self, filtered_df=None):
+        """Calculate advanced business metrics"""
+        if filtered_df is None:
+            filtered_df = self.df
         
-        if 'Hour of day' in df.columns and 'Orders' in df.columns:
-            hourly_orders = df.groupby('Hour of day')['Orders'].sum()
-            hourly_sales = df.groupby('Hour of day')['Total sales'].sum()
-            
-            if not hourly_orders.empty:
-                peak_hour_orders = int(hourly_orders.idxmax())
-                # Get top 3 hours for orders
-                top_hours = hourly_orders.nlargest(3)
-                hourly_orders_summary = ', '.join([f"{int(hour)}:00 ({int(orders)} orders)" for hour, orders in top_hours.items()])
-            
-            if not hourly_sales.empty:
-                peak_hour_sales = int(hourly_sales.idxmax())
-            
-            hourly_patterns = {
-                'orders_by_hour': hourly_orders.to_dict(),
-                'sales_by_hour': hourly_sales.to_dict(),
-                'peak_hour_orders': peak_hour_orders,
-                'peak_hour_sales': peak_hour_sales
-            }
+        # Customer Lifetime Value
+        if 'Customer email' in filtered_df.columns and 'Total sales' in filtered_df.columns:
+            customer_sales = filtered_df.groupby('Customer email')['Total sales'].sum()
+            clv = customer_sales.mean() if len(customer_sales) > 0 else 0
+        else:
+            clv = 0
         
-        monthly_trends = df.groupby('MonthName')['Total sales'].sum().to_dict() if 'MonthName' in df.columns else {}
+        # Customer Acquisition Cost (simulated)
+        total_sales = filtered_df['Total sales'].sum() if 'Total sales' in filtered_df.columns else 0
+        total_customers = filtered_df['Customers'].sum() if 'Customers' in filtered_df.columns else 0
+        total_marketing_spend = total_sales * 0.2  # 20% of sales
+        cac = total_marketing_spend / total_customers if total_customers > 0 else 0
         
-        # Build context string
-        context = f"""
-You are VectorDeep AI, a customer intelligence assistant for ThriveBrands analyzing Shopify customer data.
+        # Retention Rate
+        if 'New or returning customer' in filtered_df.columns and 'Customers' in filtered_df.columns:
+            returning_customers = filtered_df[filtered_df['New or returning customer'] == 'Returning']['Customers'].sum()
+            retention_rate = (returning_customers / total_customers) * 100 if total_customers > 0 else 0
+        else:
+            retention_rate = 0
+        
+        # Churn Rate
+        churn_rate = 100 - retention_rate
+        
+        # Repeat Purchase Rate
+        if 'New or returning customer' in filtered_df.columns and 'Customer email' in filtered_df.columns:
+            repeat_customers = filtered_df[filtered_df['New or returning customer'] == 'Returning']['Customer email'].nunique()
+            total_unique_customers = filtered_df['Customer email'].nunique()
+            repeat_rate = (repeat_customers / total_unique_customers) * 100 if total_unique_customers > 0 else 0
+        else:
+            repeat_rate = 0
+        
+        return {
+            'customer_lifetime_value': round(clv, 2),
+            'customer_acquisition_cost': round(cac, 2),
+            'retention_rate': round(retention_rate, 2),
+            'churn_rate': round(churn_rate, 2),
+            'repeat_purchase_rate': round(repeat_rate, 2),
+            'clv_to_cac_ratio': round(clv/cac, 2) if cac > 0 else 0
+        }
+    
+    def get_channel_performance(self, filtered_df=None):
+        """Get performance by referring channel"""
+        if filtered_df is None:
+            filtered_df = self.df
+        
+        if 'Referring channel' not in filtered_df.columns:
+            return pd.DataFrame()
+        
+        channel_perf = filtered_df.groupby('Referring channel').agg({
+            'Orders': 'sum',
+            'Total sales': 'sum',
+            'Customers': 'sum'
+        }).reset_index()
+        
+        if 'Customers' in channel_perf.columns:
+            channel_perf['Conversion_Rate'] = (channel_perf['Orders'] / channel_perf['Customers']).fillna(0)
+        
+        return channel_perf
+    
+    def get_geographic_insights(self, filtered_df=None):
+        """Get insights by shipping country"""
+        if filtered_df is None:
+            filtered_df = self.df
+        
+        if 'Shipping country' not in filtered_df.columns:
+            return pd.DataFrame()
+        
+        geo_insights = filtered_df.groupby('Shipping country').agg({
+            'Orders': 'sum',
+            'Total sales': 'sum',
+            'Customers': 'sum'
+        }).reset_index()
+        
+        return geo_insights
 
-DATA OVERVIEW:
-- Total Customers: {total_customers:,}
-- Total Orders: {total_orders:,}
-- Total Sales: €{total_sales:,.2f}
-- Average Order Value: €{avg_order_value:,.2f}
+# Global cache for customer data processor
+_customer_processor_cache = None
 
-CUSTOMER SEGMENTATION:
-- New Customers: {new_customers:,}
-- Returning Customers: {returning_customers:,}
-- Returning Customer Rate: {(returning_customers / total_customers * 100) if total_customers > 0 else 0:.1f}%
+def get_customer_processor():
+    """Get or create customer data processor with caching"""
+    global _customer_processor_cache
+    if _customer_processor_cache is not None:
+        return _customer_processor_cache
+    
+    csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
+    if not csv_path.exists():
+        raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+    
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        raise HTTPException(status_code=500, detail="Customer Shopify data is empty")
+    
+    processor = ShopifyDataProcessor(df)
+    _customer_processor_cache = processor
+    return processor
+
+def generate_customer_data_context(processor, query, filters=None):
+    """Generate data context for AI prompt"""
+    # Apply filters if provided
+    filtered_df = processor.df.copy()
+    
+    if filters:
+        year = filters.get('year') or (filters.get('selectedYears', [None])[0] if filters.get('selectedYears') else None)
+        month = filters.get('month') or (filters.get('selectedMonths', [None])[0] if filters.get('selectedMonths') else None)
+        channel = filters.get('channel') or (filters.get('selectedChannels', [None])[0] if filters.get('selectedChannels') else None)
+        customer_type = filters.get('customer_type') or (filters.get('selectedCustomerTypes', [None])[0] if filters.get('selectedCustomerTypes') else None)
+        country = filters.get('country') or (filters.get('selectedCountries', [None])[0] if filters.get('selectedCountries') else None)
+        
+        filtered_df = processor.get_filtered_data(
+            year=year,
+            month=month,
+            channel=channel,
+            customer_type=customer_type,
+            country=country
+        )
+    
+    # Get summary statistics
+    summary = processor.get_summary_stats(filtered_df)
+    advanced = processor.get_advanced_metrics(filtered_df)
+    monthly_data = processor.get_monthly_sales(filtered_df)
+    channels = processor.get_channel_performance(filtered_df)
+    geography = processor.get_geographic_insights(filtered_df)
+    
+    # Build context string
+    context = f"""
+CUSTOMER DATA OVERVIEW:
+- Total Customers: {summary['total_customers']:,}
+- Total Orders: {summary['total_orders']:,}
+- Total Sales: ${summary['total_sales']:,.2f}
+- Average Order Value: ${summary['avg_order_value']:,.2f}
+- Returning Customer Rate: {summary['returning_customer_rate']:.1f}%
+
+ADVANCED METRICS:
+- Customer Lifetime Value: ${advanced['customer_lifetime_value']:,.2f}
+- Customer Acquisition Cost: ${advanced['customer_acquisition_cost']:,.2f}
+- Retention Rate: {advanced['retention_rate']:.1f}%
+- Repeat Purchase Rate: {advanced['repeat_purchase_rate']:.1f}%
+- CLV to CAC Ratio: {advanced['clv_to_cac_ratio']:.1f}
+
+MONTHLY SALES DATA:
+{monthly_data.to_string(index=False) if not monthly_data.empty else 'No monthly data available'}
 
 CHANNEL PERFORMANCE:
-Top Referring Channels: {', '.join(list(channels.keys())[:5]) if channels else 'N/A'}
-Top Referring Platforms: {', '.join(list(platforms.keys())[:5]) if platforms else 'N/A'}
-Traffic Types: {', '.join(list(traffic_types.keys())) if traffic_types else 'N/A'}
+{channels.to_string(index=False) if not channels.empty else 'No channel data available'}
 
 GEOGRAPHIC DISTRIBUTION:
-Top Countries: {', '.join(list(countries.keys())[:5]) if countries else 'N/A'}
-Top Regions: {', '.join(list(regions.keys())[:5]) if regions else 'N/A'}
-
-SUBSCRIPTION STATUS:
-- Email Subscribed: {email_subscribed:,} ({email_subscribed / total_customers * 100 if total_customers > 0 else 0:.1f}%)
-- SMS Subscribed: {sms_subscribed:,} ({sms_subscribed / total_customers * 100 if total_customers > 0 else 0:.1f}%)
-
-TIME-BASED PATTERNS:
-- Peak Order Hour: {peak_hour_orders}:00 (hour with maximum orders)
-- Peak Sales Hour: {peak_hour_sales}:00 (hour with maximum sales)
-- Top 3 Hours by Orders: {hourly_orders_summary}
-- Hourly order and sales data is available for detailed analysis
-
-AVAILABLE DATA COLUMNS:
-{', '.join(df.columns.tolist())}
+{geography.to_string(index=False) if not geography.empty else 'No geographic data available'}
 
 You can answer questions about:
 - Customer behavior and patterns
@@ -3209,74 +4102,80 @@ You can answer questions about:
 - Customer lifetime value
 - New vs returning customer analysis
 - Traffic sources and platforms
-- Subscription rates and engagement
 - Time-based shopping patterns (hourly, daily, monthly)
 - Product performance
 - Return rates and trends
-
-Provide insights with specific numbers when possible. Highlight opportunities for customer acquisition, retention, and revenue optimization. Be data-driven and actionable.
 """
+    
+    return context, summary, advanced, monthly_data, channels, geography
+
+# Customer Deep Intelligence View Insights endpoint
+@api_router.post(
+    "/analytics/customer-insights/view-insights/chat", 
+    response_model=CustomerInsightsChatResponse,
+    summary="Customer Deep Intelligence View Insights Chat",
+    description="""
+    AI-powered chatbot for Customer Deep Intelligence view insights modal.
+    
+    This endpoint processes natural language questions about Shopify customer data and returns AI-generated insights.
+    
+    **Features:**
+    - Natural language query processing
+    - Context-aware responses using conversation history
+    - Filter support (year, month, channel, customer type, country)
+    - Chart-specific context integration
+    
+    **Example Questions:**
+    - "What is the total gross sales?"
+    - "What are the top performing channels?"
+    - "Show me sales trends by month"
+    - "Which countries have the highest sales?"
+    """
+)
+async def customer_view_insights_chat(request: CustomerInsightsChatRequest, email: str = Depends(get_current_user)):
+    """
+    Enhanced AI Chat Assistant for Customer Deep Intelligence view insights modal using FastAPI.
+    
+    Processes user questions about Shopify customer data and returns AI-generated insights with data context.
+    """
+    logger.info(f"Customer view insights chat endpoint called by {email}")
+    logger.info(f"Request message: {request.message[:100] if request.message else 'None'}")
+    
+    try:
+        # Import the FastAPI functions
+        from customer_insights_fastapi import process_customer_insights_chat
         
-        # Add chart title context if provided
-        chart_context = ""
-        if request.chart_title:
-            chart_context = f"\n\nCurrent Chart Context: {request.chart_title}"
-        
-        # Add additional context from request
-        additional_context = ""
-        if request.context:
-            try:
-                additional_context = f"\n\nAdditional Context: {json.dumps(request.context, default=str)[:1000]}"
-            except Exception:
-                pass
-        
-        # Build full prompt
-        full_prompt = f"{request.message}{chart_context}{additional_context}\n\n{context}"
-        
-        # Convert conversation history to the format expected by query_perplexity
-        conversation_history = []
-        if request.conversation_history:
-            for msg in request.conversation_history:
-                if isinstance(msg, dict):
-                    conversation_history.append({
-                        "role": msg.get("role", "user"),
-                        "content": msg.get("content", "")
-                    })
-        
-        # Query Perplexity API
-        try:
-            logger.info(f"Customer insights chat request: {request.message[:100]}...")
-            logger.info(f"Context length: {len(context)} characters")
-            response_text = await query_perplexity(full_prompt, conversation_history if conversation_history else None)
-            logger.info(f"Perplexity API response received, length: {len(response_text)} characters")
-        except Exception as e:
-            logger.error(f"Perplexity API error: {str(e)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            response_text = f"I apologize, but I'm experiencing technical difficulties. Please try again later. Error: {str(e)}"
-        
-        # Generate timestamp
-        timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
-        
-        return CustomerInsightsChatResponse(
-            response=response_text,
-            timestamp=timestamp,
-            context=context[:500] + "..." if len(context) > 500 else context,  # Truncate for response
-            data={
-                "chart_title": request.chart_title,
-                "total_customers": total_customers,
-                "total_orders": total_orders,
-                "total_sales": float(total_sales)
-            }
+        # Process the chat request using the FastAPI functions
+        result = process_customer_insights_chat(
+            message=request.message or "",
+            context=request.context or {},
+            conversation_history=request.conversation_history or [],
+            chart_title=request.chart_title
         )
         
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+        # Convert result to response model - ensure all data is JSON serializable
+        response_data = CustomerInsightsChatResponse(
+            response=result.get("response", "I apologize, but I couldn't process your request."),
+            timestamp=result.get("timestamp", datetime.now().strftime("%I:%M %p IST on %B %d, %Y")),
+            context=result.get("context", ""),
+            data=result.get("data", {})
+        )
+        
+        return response_data
+        
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {str(e)}")
+        raise HTTPException(status_code=404, detail="shopify_data.csv file not found")
+    except ImportError as e:
+        logger.error(f"Failed to import customer_insights_fastapi: {str(e)}")
+        import traceback
+        logger.error(f"Import traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to load customer insights FastAPI module: {str(e)}")
     except Exception as e:
-        logger.error(f"Customer insights chat error: {str(e)}")
+        logger.error(f"Customer view insights chat error: {str(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Error processing customer insights chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing customer view insights chat: {str(e)}")
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -3288,9 +4187,21 @@ from starlette.requests import Request as StarletteRequest
 async def not_found_handler(request: StarletteRequest, exc):
     logger.error(f"❌❌❌ 404 ERROR: {request.method} {request.url.path}")
     logger.error(f"❌❌❌ Query params: {dict(request.query_params)}")
+    logger.error(f"❌❌❌ Full URL: {request.url}")
+    logger.error(f"❌❌❌ Headers: {dict(request.headers)}")
     # Log available POST routes
     post_routes = [r.path for r in app.routes if hasattr(r, 'path') and hasattr(r, 'methods') and 'POST' in r.methods]
-    logger.error(f"❌❌❌ Available POST routes: {post_routes[:10]}")
+    logger.error(f"❌❌❌ Available POST routes: {post_routes}")
+    # Log available GET routes
+    get_routes = [r.path for r in app.routes if hasattr(r, 'path') and hasattr(r, 'methods') and 'GET' in r.methods]
+    root_cause_routes = [r for r in get_routes + post_routes if 'root-cause' in r]
+    logger.error(f"❌❌❌ Root cause routes: {root_cause_routes}")
+    # Log all routes with their methods
+    all_routes = []
+    for route in app.routes:
+        if hasattr(route, 'path') and hasattr(route, 'methods'):
+            all_routes.append(f"{list(route.methods)} {route.path}")
+    logger.error(f"❌❌❌ ALL ROUTES: {all_routes[:20]}")
     return JSONResponse(
         status_code=404,
         content={"detail": f"Not Found: {request.method} {request.url.path}"}

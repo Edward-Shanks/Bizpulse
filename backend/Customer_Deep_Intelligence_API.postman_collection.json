@@ -1,0 +1,244 @@
+{
+	"info": {
+		"name": "Customer Deep Intelligence APIs",
+		"description": "API collection for Customer Deep Intelligence chatbot endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get Filter Options",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/filters",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "filters"]
+				},
+				"description": "Get available filter options (years and months) from Shopify data"
+			},
+			"response": []
+		},
+		{
+			"name": "Get Customer Insights Data",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights?years=2025&months=January",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights"],
+					"query": [
+						{
+							"key": "years",
+							"value": "2025",
+							"description": "Comma-separated years (optional)"
+						},
+						{
+							"key": "months",
+							"value": "January",
+							"description": "Comma-separated months (optional)"
+						}
+					]
+				},
+				"description": "Get customer insights data with optional filters"
+			},
+			"response": []
+		},
+		{
+			"name": "Customer Insights Chat - Simple",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"message\": \"What is the total gross sales?\",\n  \"context\": {},\n  \"conversation_history\": []\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/chat",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "chat"]
+				},
+				"description": "Main chatbot endpoint for Customer Deep Intelligence"
+			},
+			"response": []
+		},
+		{
+			"name": "View Insights Chat - Basic",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"message\": \"What are the top performing channels?\",\n  \"chart_title\": \"Sales Channel Performance\",\n  \"context\": {\n    \"selectedYears\": [2025],\n    \"selectedMonths\": [\"January\"]\n  },\n  \"conversation_history\": []\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/view-insights/chat",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "view-insights", "chat"]
+				},
+				"description": "Chatbot endpoint for View Insights modal"
+			},
+			"response": []
+		},
+		{
+			"name": "View Insights Chat - With Filters",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"message\": \"What are the sales for January 2025?\",\n  \"chart_title\": \"Monthly Sales Trend\",\n  \"context\": {\n    \"selectedYears\": [2025],\n    \"selectedMonths\": [\"January\"],\n    \"selectedChannels\": []\n  },\n  \"conversation_history\": []\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/view-insights/chat",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "view-insights", "chat"]
+				},
+				"description": "View Insights Chat with year and month filters"
+			},
+			"response": []
+		},
+		{
+			"name": "View Insights Chat - Follow-up",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"message\": \"What about February?\",\n  \"context\": {\n    \"selectedYears\": [2025]\n  },\n  \"conversation_history\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"What are the sales for January 2025?\"\n    },\n    {\n      \"role\": \"assistant\",\n      \"content\": \"The sales for January 2025 were €45,234.56 with 234 orders...\"\n    }\n  ]\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/view-insights/chat",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "view-insights", "chat"]
+				},
+				"description": "Follow-up question example with conversation history"
+			},
+			"response": []
+		},
+		{
+			"name": "Health Check",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/chat/health",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "chat", "health"]
+				},
+				"description": "Check if customer insights chat endpoint is accessible (no auth required)"
+			},
+			"response": []
+		},
+		{
+			"name": "Chat Test Endpoint",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/analytics/customer-insights/chat/test",
+					"host": ["{{base_url}}"],
+					"path": ["analytics", "customer-insights", "chat", "test"]
+				},
+				"description": "Test endpoint to verify customer insights chat route is accessible"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000/api",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "YOUR_JWT_TOKEN_HERE",
+			"type": "string"
+		}
+	]
+}
+

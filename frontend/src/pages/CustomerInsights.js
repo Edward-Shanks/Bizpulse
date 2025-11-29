@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import ChartComponent from '@/components/ChartComponent';
 import InsightModal from '@/components/InsightModal';
+import MultiSelectFilter from '@/components/MultiSelectFilter';
 import { formatNumber, formatCurrency, formatUnits } from '@/utils/formatters';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
@@ -13,6 +14,7 @@ const CustomerInsights = () => {
   const { token } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(null);
   const [insightModal, setInsightModal] = useState({
     isOpen: false,
     chartTitle: '',
@@ -20,24 +22,75 @@ const CustomerInsights = () => {
     recommendations: [],
   });
 
+  // Filter states
+  const [selectedYears, setSelectedYears] = useState([]);
+  const [selectedMonths, setSelectedMonths] = useState([]);
+
   useEffect(() => {
     if (!token) return;
-    fetchData();
+    fetchFilters();
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !filters) return;
+    fetchData();
+  }, [token, selectedYears, selectedMonths, filters]);
+
+  const fetchFilters = async () => {
+    try {
+      // Use customer insights specific filter endpoint that returns only years/months from Shopify data
+      const response = await axios.get(`${API}/analytics/customer-insights/filters`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      // Convert years to strings for the filter component
+      const filterData = {
+        years: (response.data.years || []).map(y => String(y)),
+        months: response.data.months || [],
+      };
+      setFilters(filterData);
+      console.log('✅ Customer insights filters loaded:', filterData);
+    } catch (error) {
+      console.error('Failed to load customer insights filters:', error);
+      // Fallback to empty filters if API fails
+      setFilters({
+        years: [],
+        months: [],
+      });
+    }
+  };
 
   const fetchData = async () => {
     try {
       setLoading(true);
+      const params = {};
+      if (selectedYears.length > 0) {
+        params.years = selectedYears.join(',');
+      }
+      if (selectedMonths.length > 0) {
+        params.months = selectedMonths.join(',');
+      }
+      
+      console.log('🔍 Fetching customer insights with params:', params);
+      
       const response = await axios.get(`${API}/analytics/customer-insights`, {
         headers: { Authorization: `Bearer ${token}` },
+        params,
       });
       setData(response.data);
+      console.log('✅ Customer insights data loaded:', {
+        summary: response.data?.summary,
+        monthlyTrendLength: response.data?.monthlyTrend?.length,
+      });
       // Debug: Log monthly trend data
       if (response.data?.monthlyTrend) {
         console.log('Monthly Trend Data:', response.data.monthlyTrend);
       }
     } catch (error) {
-      console.error('Failed to load customer insights:', error);
+      console.error('❌ Failed to load customer insights:', error);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
       toast.error('Failed to load customer insights data');
     } finally {
       setLoading(false);
@@ -504,6 +557,47 @@ const CustomerInsights = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Customer Deep Intelligence</h1>
           <p className="text-gray-600 text-sm mt-1">Deep dive into customer behavior and Shopify analytics</p>
+        </div>
+
+        {/* Filters */}
+        <div 
+          className="rounded-lg p-4"
+          style={{
+            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+            border: '1px solid rgba(0, 0, 0, 0.1)'
+          }}
+        >
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <MultiSelectFilter
+              label="Year"
+              options={filters?.years || []}
+              selectedValues={selectedYears}
+              onChange={(values) => {
+                console.log('📅 Years selected:', values);
+                setSelectedYears(values);
+              }}
+              placeholder="All Years"
+            />
+            <MultiSelectFilter
+              label="Month"
+              options={filters?.months || []}
+              selectedValues={selectedMonths}
+              onChange={(values) => {
+                console.log('📅 Months selected:', values);
+                setSelectedMonths(values);
+              }}
+              placeholder="All Months"
+            />
+          </div>
+          {(selectedYears.length > 0 || selectedMonths.length > 0) && (
+            <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-800">
+              <strong>Active Filters:</strong>{' '}
+              {selectedYears.length > 0 && `Years: ${selectedYears.join(', ')}`}
+              {selectedYears.length > 0 && selectedMonths.length > 0 && ' | '}
+              {selectedMonths.length > 0 && `Months: ${selectedMonths.join(', ')}`}
+            </div>
+          )}
         </div>
 
         {/* Summary Cards */}
