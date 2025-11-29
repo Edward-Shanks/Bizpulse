@@ -24,8 +24,8 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
 async def check_and_update_admin():
-    email = 'admin@thrivebrands.ai'
-    password = 'Thrive@123'
+    email = os.getenv('ADMIN_EMAIL', 'admin@thrivebrands.ai')
+    password = os.getenv('ADMIN_PASSWORD', 'Thrive@123')
     
     print(f"Checking user: {email}")
     

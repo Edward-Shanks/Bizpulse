@@ -5,6 +5,12 @@ import asyncio
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
 import bcrypt
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load environment variables
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.getenv('MONGO_URL', 'mongodb://localhost:27017')
@@ -13,8 +19,8 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
 async def check_user():
-    email = 'Barry@thrivebrands.ai'
-    password = 'Barry@123'
+    email = os.getenv('TEST_USER_EMAIL', 'Barry@thrivebrands.ai')
+    password = os.getenv('TEST_USER_PASSWORD', 'Barry@123')
     
     print(f"Checking user: {email}")
     

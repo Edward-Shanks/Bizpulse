@@ -7,6 +7,17 @@ from openai import OpenAI
 import numpy as np
 from datetime import datetime, timedelta
 import io
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+ROOT_DIR = Path(__file__).resolve().parent
+env_path = ROOT_DIR / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    # Try to load from parent directory
+    load_dotenv(ROOT_DIR.parent / '.env')
 
 # Page configuration
 st.set_page_config(
@@ -535,10 +546,18 @@ def main():
     # Header
     st.markdown('<h1 class="main-header">🚀 Shopify AI Analytics Bot Pro</h1>', unsafe_allow_html=True)
     
-    # HARDCODED CONFIGURATION - UPDATE THESE VALUES
+    # Load configuration from environment variables
     # ==============================================
-    DATA_FILE_PATH = r"C:\Users\Sumit Mishra\Downloads\shopify_data.csv"  
-    PERPLEXITY_API_KEY = "REMOVED_SECRETXcgtQ8j0QXURm7eyj3aOLgIHBrNrFwTswl3LiTj5Ni5dFT5"  
+    # Get data file path from environment or use default relative path
+    DATA_FILE_PATH = os.getenv('SHOPIFY_DATA_PATH', str(ROOT_DIR / 'shopify_data.csv'))
+    
+    # Get Perplexity API key from environment
+    PERPLEXITY_API_KEY = os.getenv('PPLX_API_KEY1') or os.getenv('PERPLEXITY_API_KEY')
+    
+    if not PERPLEXITY_API_KEY:
+        st.error("❌ PERPLEXITY_API_KEY or PPLX_API_KEY1 not found in environment variables.")
+        st.info("Please set PPLX_API_KEY1 or PERPLEXITY_API_KEY in your .env file.")
+        return  
     
     # Initialize configuration
     try:

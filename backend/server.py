@@ -289,7 +289,8 @@ async def lifespan(app: FastAPI):
     # Create default user if not exists
     existing_user = await db.users.find_one({"email": "data.admin@thrivebrands.ai"})
     if not existing_user:
-        password_hash = bcrypt.hashpw("123456User".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        default_password = os.getenv('DEFAULT_USER_PASSWORD', '123456User')
+        password_hash = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         user = User(email="data.admin@thrivebrands.ai", password_hash=password_hash)
         user_dict = user.model_dump()
         user_dict['created_at'] = user_dict['created_at'].isoformat()
@@ -299,7 +300,8 @@ async def lifespan(app: FastAPI):
     # Create admin user if not exists
     existing_admin = await db.users.find_one({"email": "admin@thrivebrands.ai"})
     if not existing_admin:
-        password_hash = bcrypt.hashpw("Thrive@123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        admin_password = os.getenv('ADMIN_PASSWORD', 'Thrive@123')
+        password_hash = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         user = User(email="admin@thrivebrands.ai", password_hash=password_hash)
         user_dict = user.model_dump()
         user_dict['created_at'] = user_dict['created_at'].isoformat()

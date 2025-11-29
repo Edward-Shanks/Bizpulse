@@ -23,6 +23,8 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   const [loading, setLoading] = useState(false);
   const [lastPivot, setLastPivot] = useState([]);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [dynamicRecommendations, setDynamicRecommendations] = useState([]);
+  const [dynamicFollowUps, setDynamicFollowUps] = useState([]);
   const sessionId = `insight-${Date.now()}`;
 
   if (!isOpen) return null;
@@ -55,15 +57,22 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
     }
   ];
 
+  // Use dynamic recommendations from API if available, otherwise use props or defaults
+  const recommendationsToUse = dynamicRecommendations.length > 0 
+    ? dynamicRecommendations 
+    : (recommendations && recommendations.length > 0 ? recommendations : []);
+  
   // Convert string recommendations to proper format if needed
-  const aiRecommendations = recommendations && recommendations.length > 0 
-    ? recommendations.map((rec, index) => {
+  const aiRecommendations = recommendationsToUse.length > 0
+    ? recommendationsToUse.map((rec, index) => {
         if (typeof rec === 'string') {
           // Convert string to recommendation object
           const colors = [
             { bg: '#d1fae5', border: '#10b981', text: '#065f46', icon: '#10b981' },
             { bg: '#fef3c7', border: '#f59e0b', text: '#92400e', icon: '#f59e0b' },
-            { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af', icon: '#3b82f6' }
+            { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af', icon: '#3b82f6' },
+            { bg: '#e0e7ff', border: '#6366f1', text: '#312e81', icon: '#6366f1' },
+            { bg: '#fce7f3', border: '#ec4899', text: '#831843', icon: '#ec4899' }
           ];
           return {
             type: 'info',
@@ -90,12 +99,15 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
     'Forecast'
   ];
 
-  const followUpPrompts = [
-    'Show sales overview',
-    'Analyze profitability',
-    'Customer insights',
-    'Brand performance'
-  ];
+  // Use dynamic follow-ups from API if available, otherwise use defaults
+  const followUpPrompts = dynamicFollowUps.length > 0 
+    ? dynamicFollowUps 
+    : [
+        'Show sales overview',
+        'Analyze profitability',
+        'Customer insights',
+        'Channel performance'
+      ];
 
   // Simulated streaming function to display text word by word
   const streamMessage = (fullText, onComplete) => {
@@ -170,6 +182,18 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       const fullResponse = response.data?.response || 'No response';
       const pivot = response?.data?.data?.pivot_table || [];
       setLastPivot(Array.isArray(pivot) ? pivot : []);
+      
+      // Extract dynamic recommendations and follow-up questions from API response
+      const apiRecommendations = response?.data?.data?.recommendations || [];
+      const apiFollowUps = response?.data?.data?.follow_up_questions || [];
+      
+      // Update dynamic recommendations and follow-ups
+      if (apiRecommendations.length > 0) {
+        setDynamicRecommendations(apiRecommendations);
+      }
+      if (apiFollowUps.length > 0) {
+        setDynamicFollowUps(apiFollowUps);
+      }
       
       // Start streaming the message word by word
       setLoading(false);

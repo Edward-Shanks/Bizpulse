@@ -83,14 +83,19 @@ def load_shopify_data():
         # Normalize column names
         df.columns = df.columns.str.strip()
         
-        # Convert date column
+        # Convert date column - matching app.py logic exactly
         if 'Day' in df.columns:
             df['Day'] = pd.to_datetime(df['Day'], errors='coerce')
-            df['Year'] = df['Day'].dt.year
-            df['Month'] = df['Day'].dt.month
-            df['MonthName'] = df['Day'].dt.strftime('%B')
+            # Extract date components exactly like app.py
             df['Date'] = df['Day'].dt.date
+            df['Month'] = df['Day'].dt.month_name()  # Full month name (e.g., "January")
+            df['Month_Num'] = df['Day'].dt.month  # Month number (1-12)
+            df['Year'] = df['Day'].dt.year
+            df['YearMonth'] = df['Day'].dt.to_period('M')
             df['DayOfWeek'] = df['Day'].dt.day_name()
+            df['Week'] = df['Day'].dt.isocalendar().week
+            # Keep MonthName for backward compatibility
+            df['MonthName'] = df['Month']
         
         # Ensure numeric columns
         numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 
@@ -138,7 +143,8 @@ def query_perplexity(prompt, conversation_history=None):
             "For customer behavior questions, identify patterns with specific numbers. "
             "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
             "Use conversation history for context in follow-ups. "
-            "Keep it engaging and provide comprehensive analysis."
+            "Keep it engaging and provide comprehensive analysis. "
+            "At the end of your response, include a section with 3-5 numbered recommendations, each on a new line starting with a number."
         )
     }]
     
@@ -157,6 +163,99 @@ def query_perplexity(prompt, conversation_history=None):
     except Exception as e:
         logger.error(f"Perplexity API error: {e}")
         return f"Error querying AI: {str(e)}"
+
+def generate_recommendations_and_followups(query, ai_response, filtered_df, context_data):
+    """Generate dynamic recommendations and follow-up questions based on query and response"""
+    query_lower = query.lower()
+    
+    # Extract recommendations from AI response (they should be at the end)
+    recommendations = []
+    
+    # Try to extract recommendations from the AI response
+    # Look for numbered list at the end
+    lines = ai_response.split('\n')
+    in_recommendations_section = False
+    
+    for line in reversed(lines):  # Start from the end
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Check if this looks like a recommendation (starts with number or bullet)
+        if re.match(r'^\d+[\.\)]\s+', line) or line.startswith('-') or line.startswith('•'):
+            in_recommendations_section = True
+            # Remove numbering/bullets and clean up
+            rec_text = re.sub(r'^\d+[\.\)]\s*', '', line)
+            rec_text = re.sub(r'^[-•]\s*', '', rec_text)
+            rec_text = rec_text.strip()
+            
+            if rec_text and len(rec_text) > 10:  # Valid recommendation
+                recommendations.insert(0, rec_text)  # Insert at beginning to maintain order
+                if len(recommendations) >= 5:
+                    break
+        elif in_recommendations_section and ('recommendation' in line.lower() or 'suggestion' in line.lower()):
+            # We've reached the recommendations header, stop
+            break
+    
+    # If no recommendations found, try to extract from the response text
+    if len(recommendations) == 0:
+        # Look for patterns like "1.", "2.", etc. anywhere in the response
+        for line in lines:
+            line = line.strip()
+            if re.match(r'^\d+[\.\)]\s+', line):
+                rec_text = re.sub(r'^\d+[\.\)]\s*', '', line).strip()
+                if rec_text and len(rec_text) > 10:
+                    recommendations.append(rec_text)
+                    if len(recommendations) >= 5:
+                        break
+    
+    # Fallback recommendations if none found
+    if len(recommendations) == 0:
+        recommendations = [
+            "Focus on retention programs to increase returning customer rate",
+            "Improve new customer onboarding to enhance first-time purchase experience",
+            "Create loyalty incentives to boost customer lifetime value"
+        ]
+    
+    # Generate follow-up questions based on query type
+    if "sales" in query_lower or "revenue" in query_lower:
+        follow_up_questions = [
+            "Show me sales trends by month",
+            "Which channels drive the most sales?",
+            "Compare sales performance across regions",
+            "What is the average order value trend?"
+        ]
+    elif "customer" in query_lower or "retention" in query_lower:
+        follow_up_questions = [
+            "What is the customer lifetime value?",
+            "Show me new vs returning customer breakdown",
+            "Which customer segments are most valuable?",
+            "What is the customer acquisition cost?"
+        ]
+    elif "channel" in query_lower or "traffic" in query_lower:
+        follow_up_questions = [
+            "Which channels have the best conversion rates?",
+            "Show me channel performance by month",
+            "What is the ROI by marketing channel?",
+            "Compare channel customer acquisition costs"
+        ]
+    elif "month" in query_lower or "trend" in query_lower:
+        follow_up_questions = [
+            "Show me month-over-month growth",
+            "What are the seasonal trends?",
+            "Compare this month to last month",
+            "Which months perform best?"
+        ]
+    else:
+        # Default follow-up questions
+        follow_up_questions = [
+            "Show sales overview",
+            "Analyze profitability",
+            "Customer insights",
+            "Channel performance"
+        ]
+    
+    return recommendations[:5], follow_up_questions[:4]
 
 def parse_query(query):
     """Parse user query to extract filters and columns of interest"""
@@ -194,11 +293,16 @@ def parse_query(query):
             "january": "January", "february": "February", "march": "March",
             "april": "April", "may": "May", "june": "June",
             "july": "July", "august": "August", "september": "September",
-            "october": "October", "november": "November", "december": "December"
+            "october": "October", "november": "November", "december": "December",
+            "jan": "January", "feb": "February", "mar": "March",
+            "apr": "April", "jun": "June", "jul": "July",
+            "aug": "August", "sep": "September", "sept": "September",
+            "oct": "October", "nov": "November", "dec": "December"
         }
         for month_key, month_name in month_map.items():
             if month_key in query_lower:
-                filters["MonthName"] = month_name
+                # Use 'Month' column to match app.py filtering logic
+                filters["Month"] = month_name
                 break
     
     if "new customer" in query_lower or "new" in query_lower:
@@ -233,10 +337,18 @@ def pivot_shopify_data(df, columns, filters, is_trend_query, query_lower=""):
     """Pivot and aggregate Shopify data based on query"""
     filtered_df = df.copy()
     
-    # Apply filters
+    # Apply filters - matching app.py filtering logic
     for key, value in filters.items():
         if value is not None and key in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df[key] == value]
+            # Handle month filtering - check both Month and MonthName columns
+            if key == "Month" or key == "MonthName":
+                # Try Month first (as per app.py), then MonthName for backward compatibility
+                if "Month" in filtered_df.columns:
+                    filtered_df = filtered_df[filtered_df["Month"] == value]
+                elif "MonthName" in filtered_df.columns:
+                    filtered_df = filtered_df[filtered_df["MonthName"] == value]
+            else:
+                filtered_df = filtered_df[filtered_df[key] == value]
     
     # Default columns if none specified
     if not columns:
@@ -257,11 +369,13 @@ def pivot_shopify_data(df, columns, filters, is_trend_query, query_lower=""):
     
     if is_trend_query:
         if "month" in query_lower:
-            pivot_columns = ["Year", "MonthName"]
+            # Use Month column to match app.py grouping
+            pivot_columns = ["Year", "Month", "Month_Num"]
         elif "day" in query_lower or "daily" in query_lower:
             pivot_columns = ["Date"]
         else:
-            pivot_columns = ["Year", "MonthName"]
+            # Default to monthly grouping
+            pivot_columns = ["Year", "Month", "Month_Num"]
     else:
         # Group by relevant dimensions
         if "channel" in query_lower:
@@ -317,7 +431,8 @@ def generate_shopify_data_context(df, query, prev_messages=None, preset_filters:
                 if k == 'year':
                     filters['Year'] = int(v)
                 elif k == 'month':
-                    filters['MonthName'] = str(v)
+                    # Use Month column to match app.py
+                    filters['Month'] = str(v)
                 elif k == 'channel':
                     filters['Referring channel'] = str(v)
                 elif k == 'customer_type':
@@ -347,6 +462,38 @@ def generate_shopify_data_context(df, query, prev_messages=None, preset_filters:
             avg_order_value = float(total_sales / total_orders)
             context += f"- Average Order Value: €{avg_order_value:,.2f}\n"
         context += "\n"
+    
+    # Add monthly sales data (matching app.py logic)
+    if 'Month' in filtered_df.columns and 'Year' in filtered_df.columns:
+        monthly_sales = filtered_df.groupby(['Year', 'Month', 'Month_Num']).agg({
+            'Total sales': 'sum',
+            'Orders': 'sum',
+            'Customers': 'sum',
+            'Gross sales': 'sum' if 'Gross sales' in filtered_df.columns else 'Total sales',
+            'Net sales': 'sum' if 'Net sales' in filtered_df.columns else 'Total sales'
+        }).reset_index().sort_values(['Year', 'Month_Num'])
+        
+        if not monthly_sales.empty:
+            context += "Monthly Sales Data:\n"
+            for _, row in monthly_sales.iterrows():
+                context += f"- {row['Year']}-{row['Month']}: €{row['Total sales']:,.2f} ({int(row['Orders'])} orders, {int(row['Customers'])} customers)\n"
+            context += "\n"
+    
+    # Add monthly sales data (matching app.py logic) - BEFORE pivot table
+    if 'Month' in filtered_df.columns and 'Year' in filtered_df.columns:
+        monthly_sales = filtered_df.groupby(['Year', 'Month', 'Month_Num']).agg({
+            'Total sales': 'sum',
+            'Orders': 'sum',
+            'Customers': 'sum',
+            'Gross sales': 'sum' if 'Gross sales' in filtered_df.columns else 'Total sales',
+            'Net sales': 'sum' if 'Net sales' in filtered_df.columns else 'Total sales'
+        }).reset_index().sort_values(['Year', 'Month_Num'])
+        
+        if not monthly_sales.empty:
+            context += "Monthly Sales Breakdown:\n"
+            for _, row in monthly_sales.iterrows():
+                context += f"- {row['Year']}-{row['Month']}: €{row['Total sales']:,.2f} ({int(row['Orders'])} orders, {int(row['Customers'])} customers)\n"
+            context += "\n"
     
     # Add pivot table data
     if not pivot_table.empty:
@@ -407,7 +554,20 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
             if 'month' in context or 'selectedMonths' in context:
                 month_val = context.get('month') or (context.get('selectedMonths') or [None])[0]
                 if month_val:
-                    preset_filters['month'] = str(month_val)
+                    # Ensure month name is properly formatted (capitalize first letter)
+                    month_str = str(month_val)
+                    # Capitalize first letter and keep rest lowercase, then capitalize first letter of each word
+                    month_str = month_str.capitalize()
+                    # Handle full month names
+                    month_map = {
+                        'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
+                        'Apr': 'April', 'May': 'May', 'Jun': 'June',
+                        'Jul': 'July', 'Aug': 'August', 'Sep': 'September',
+                        'Oct': 'October', 'Nov': 'November', 'Dec': 'December'
+                    }
+                    if month_str in month_map:
+                        month_str = month_map[month_str]
+                    preset_filters['month'] = month_str
             
             if 'channel' in context or 'selectedChannels' in context:
                 channel_val = context.get('channel') or (context.get('selectedChannels') or [None])[0]
@@ -452,6 +612,17 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
         # Query AI
         response_text = query_perplexity(full_prompt, conv_history if conv_history else None)
         
+        # Generate recommendations and follow-up questions based on query and response
+        context_summary = {
+            'total_sales': float(filtered_df['Total sales'].sum()) if 'Total sales' in filtered_df.columns else 0.0,
+            'total_orders': int(filtered_df['Orders'].sum()) if 'Orders' in filtered_df.columns else 0,
+            'total_customers': int(filtered_df['Customer email'].nunique()) if 'Customer email' in filtered_df.columns else 0
+        }
+        
+        recommendations, follow_up_questions = generate_recommendations_and_followups(
+            message, response_text, filtered_df, context_summary
+        )
+        
         # Prepare response - convert numpy types to native Python types
         timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
         
@@ -475,7 +646,9 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
                 "filters": serializable_filters,
                 "is_trend_query": bool(is_trend),
                 "total_rows": int(len(filtered_df)),
-                "chart_title": chart_title
+                "chart_title": chart_title,
+                "recommendations": recommendations,  # Add recommendations
+                "follow_up_questions": follow_up_questions  # Add follow-up questions
             }
         }
     except Exception as e:
