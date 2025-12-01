@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import {
 import { toast } from 'sonner';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const Cockpit = () => {
   const navigate = useNavigate();
@@ -82,8 +83,9 @@ const Cockpit = () => {
     impact: []
   });
   
-  // Fetch AI-generated action items from API
+  // Fetch action items from API
   useEffect(() => {
+    let isMounted = true;
     const fetchActionItems = async () => {
       if (!token) return;
       
@@ -93,252 +95,269 @@ const Cockpit = () => {
           headers: { Authorization: `Bearer ${token}` }
         });
         
-        if (response.data) {
+        if (isMounted && response.data) {
           setActionItems({
             critical: response.data.critical || [],
             impact: response.data.impact || []
           });
         }
       } catch (error) {
-        console.error('Failed to fetch action items:', error);
-        toast.error('Failed to load action items. Using default data.');
-        // Fallback to default items
-        setActionItems({
-          critical: [
-            { id: 1, title: 'Review Revenue Trends', dueDate: '2025-01-30', priority: 'high' },
-            { id: 2, title: 'Optimize Channel Performance', dueDate: '2025-02-15', priority: 'medium' },
-            { id: 3, title: 'Address Profit Margin Issues', dueDate: '2025-02-20', priority: 'high' }
-          ],
-          impact: [
-            { id: 4, title: 'Expand Top Business Segment', dueDate: '2025-02-20', priority: 'high' },
-            { id: 5, title: 'Improve Profit Margins', dueDate: '2025-03-01', priority: 'medium' },
-            { id: 6, title: 'Diversify Channel Strategy', dueDate: '2025-03-15', priority: 'low' }
-          ]
-        });
+        if (!isMounted) return;
+        
+        // Only log 404 errors, don't show toast for missing data
+        if (error.response?.status === 404) {
+          console.log('No action items found in database. Using empty state.');
+          setActionItems({
+            critical: [],
+            impact: []
+          });
+        } else {
+          console.error('Failed to fetch action items:', error);
+          // Only show toast for non-404 errors
+          toast.error('Failed to load action items.');
+          setActionItems({
+            critical: [],
+            impact: []
+          });
+        }
       } finally {
-        setLoadingActionItems(false);
+        if (isMounted) {
+          setLoadingActionItems(false);
+        }
       }
     };
     
     fetchActionItems();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [token]);
   
-  const getFilteredItems = (items, filter) => {
-    if (filter === 'all') return items;
-    return items.filter(item => item.priority === filter);
+  const getFilteredItems = (items, priorityFilter) => {
+    if (priorityFilter === 'all') return items;
+    return items.filter(item => item.priority === priorityFilter);
   };
 
-  // Campaign data
+  // Skeleton loader component for action items
+  const ActionItemSkeleton = () => (
+    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center gap-3 flex-1">
+        <Skeleton className="w-4 h-4" />
+        <div className="flex-1">
+          <Skeleton className="h-4 w-3/4 mb-2" />
+          <Skeleton className="h-3 w-1/2" />
+        </div>
+      </div>
+      <Skeleton className="h-6 w-16 rounded" />
+    </div>
+  );
+
+  // Campaign data - fetch from API
   const [campaigns, setCampaigns] = useState({
-    recommended: [
-      {
-        id: 1,
-        name: 'Summer Sales Boost',
-        description: 'Targeted campaign for summer season with focus on outdoor products',
-        aiScore: 72,
-        budget: '€50K',
-        growth: '323%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
-      },
-      {
-        id: 2,
-        name: 'Holiday Campaign 2025',
-        description: 'Targeted campaign for holiday season with focus on outdoor products',
-        aiScore: 78,
-        budget: '€75K',
-        growth: '450%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
-      },
-      {
-        id: 3,
-        name: 'New Product Launch',
-        description: 'Launch campaign for new premium product line',
-        aiScore: 75,
-        budget: '€60K',
-        growth: '380%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
-      },
-      {
-        id: 4,
-        name: 'Back to School Promo',
-        description: 'Targeted campaign for students and parents',
-        aiScore: 77,
-        budget: '€45K',
-        growth: '340%',
-        channels: ['Email', 'Display Ads', 'Social Media'],
-        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
-      },
-      {
-        id: 5,
-        name: 'Customer Loyalty Program',
-        description: 'Retention campaign for existing high-value customers',
-        aiScore: 81,
-        budget: '€35K',
-        growth: '520%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
-      },
-      {
-        id: 6,
-        name: 'Spring Flash Sale',
-        description: 'Limited-time promotional campaign for spring season',
-        aiScore: 73,
-        budget: '€28K',
-        growth: '290%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        aiRecommendation: 'AI recommendation to increase reach by 30% through influencer marketing'
-      }
-    ],
-    active: [
-      {
-        id: 7,
-        name: 'Brand Awareness Drive',
-        description: 'Ongoing brand building across multiple touchpoints',
-        aiScore: 68,
-        budget: '€40K',
-        growth: '280%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        startDate: '2025-01-05',
-        status: 'running'
-      },
-      {
-        id: 8,
-        name: 'Winter Clearance Sale',
-        description: 'End of season inventory clearance',
-        aiScore: 72,
-        budget: '€55K',
-        growth: '310%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        startDate: '2025-01-10',
-        status: 'running'
-      },
-      {
-        id: 9,
-        name: 'Digital Transformation Series',
-        description: 'Webinar series for lead generation',
-        aiScore: 66,
-        budget: '€30K',
-        growth: '240%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        startDate: '2025-01-08',
-        status: 'running'
-      },
-      {
-        id: 10,
-        name: 'Partner Co-Marketing',
-        description: 'Joint marketing initiative with strategic partners',
-        aiScore: 74,
-        budget: '€65K',
-        growth: '380%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        startDate: '2025-01-12',
-        status: 'running'
-      }
-    ],
-    archived: [
-      {
-        id: 11,
-        name: 'Black Friday 2025',
-        description: 'Successful Black Friday promotional campaign',
-        aiScore: 75,
-        budget: '€85K',
-        growth: '520%',
-        actualGrowth: '548%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        endDate: '2025-11-29'
-      },
-      {
-        id: 12,
-        name: 'Cyber Monday Special',
-        description: 'Online-focused promotional campaign',
-        aiScore: 73,
-        budget: '€70K',
-        growth: '480%',
-        actualGrowth: '495%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        endDate: '2025-12-02'
-      },
-      {
-        id: 13,
-        name: 'Q3 Product Showcase',
-        description: 'Virtual product demonstration series',
-        aiScore: 71,
-        budget: '€42K',
-        growth: '300%',
-        actualGrowth: '315%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        endDate: '2025-09-30'
-      },
-      {
-        id: 14,
-        name: 'Summer Festival Sponsorship',
-        description: 'Event sponsorship and brand activation',
-        aiScore: 69,
-        budget: '€50K',
-        growth: '270%',
-        actualGrowth: '285%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        endDate: '2025-07-15'
-      },
-      {
-        id: 15,
-        name: 'Spring Product Launch 2025',
-        description: 'Major product line introduction campaign',
-        aiScore: 78,
-        budget: '€95K',
-        growth: '420%',
-        actualGrowth: '442%',
-        channels: ['Email', 'Social Media', 'Display Ads'],
-        endDate: '2025-05-31'
-      }
-    ]
+    recommended: [],
+    active: [],
+    archived: []
   });
+  const [loadingCampaigns, setLoadingCampaigns] = useState(true);
 
-  const handleActivate = (campaignId, campaignName, fromTab = 'recommended') => {
-    // Move campaign from recommended or archived to active
-    const campaign = fromTab === 'archived' 
-      ? campaigns.archived.find(c => c.id === campaignId)
-      : campaigns.recommended.find(c => c.id === campaignId);
+  // Fetch campaigns from API
+  useEffect(() => {
+    let isMounted = true;
+    const fetchCampaigns = async () => {
+      if (!token) return;
       
-    if (campaign) {
-      setCampaigns(prev => ({
-        ...prev,
-        [fromTab]: prev[fromTab].filter(c => c.id !== campaignId),
-        active: [...prev.active, { ...campaign, startDate: new Date().toISOString().split('T')[0], status: 'running' }]
-      }));
+      try {
+        setLoadingCampaigns(true);
+        const response = await axios.get(`${API}/kanban/recommendations`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (isMounted && response.data) {
+          // Map API response to frontend format
+          const mapCampaign = (campaign, index) => {
+            // Calculate ROI from impact data
+            let roiPercentage = '0%';
+            if (campaign.impact) {
+              if (typeof campaign.impact.percentage === 'number' && campaign.impact.percentage > 0) {
+                roiPercentage = `${Math.round(campaign.impact.percentage)}%`;
+              } else if (campaign.impact.value && campaign.budget && campaign.budget > 0) {
+                // Calculate ROI from value and budget: (value / budget) * 100
+                const calculatedROI = (campaign.impact.value / campaign.budget) * 100;
+                if (calculatedROI > 0) {
+                  roiPercentage = `${Math.round(calculatedROI)}%`;
+                }
+              } else if (campaign.impact.expectedROI) {
+                roiPercentage = `${Math.round(campaign.impact.expectedROI * 100)}%`;
+              }
+            }
+            
+            return {
+              id: campaign.id || index,
+              name: campaign.title || 'Untitled Campaign',
+              description: campaign.description || '',
+              aiScore: campaign.aiScore || 0,
+              budget: campaign.budget ? `€${(campaign.budget / 1000).toFixed(0)}K` : '€0K',
+              growth: roiPercentage,
+              channels: campaign.channels || [],
+              aiRecommendation: campaign.reasoning || campaign.impact?.recommendation || 'No recommendation available',
+              startDate: campaign.startDate,
+              endDate: campaign.endDate,
+              status: campaign.status || 'recommended'
+            };
+          };
+          
+          setCampaigns({
+            recommended: (response.data.recommended || []).map(mapCampaign),
+            active: (response.data.live || []).map(mapCampaign),
+            archived: (response.data.past || []).map(mapCampaign)
+          });
+        }
+      } catch (error) {
+        if (!isMounted) return;
+        console.error('Failed to fetch campaigns:', error);
+        // Keep empty arrays on error
+        setCampaigns({
+          recommended: [],
+          active: [],
+          archived: []
+        });
+      } finally {
+        if (isMounted) {
+          setLoadingCampaigns(false);
+        }
+      }
+    };
+    
+    fetchCampaigns();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [token]);
+
+  // Memoize current campaigns based on activeTab to ensure proper filtering
+  const currentCampaigns = useMemo(() => {
+    if (activeTab === 'recommended') {
+      return campaigns.recommended || [];
+    } else if (activeTab === 'active') {
+      return campaigns.active || [];
+    } else if (activeTab === 'archived') {
+      return campaigns.archived || [];
+    }
+    return [];
+  }, [activeTab, campaigns.recommended, campaigns.active, campaigns.archived]);
+
+  // Refetch campaigns after any change
+  const refetchCampaigns = async () => {
+    if (!token) return;
+    
+    try {
+      const response = await axios.get(`${API}/kanban/recommendations`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data) {
+        const mapCampaign = (campaign, index) => {
+          // Calculate ROI from impact data
+          let roiPercentage = '0%';
+          if (campaign.impact) {
+            if (typeof campaign.impact.percentage === 'number' && campaign.impact.percentage > 0) {
+              roiPercentage = `${Math.round(campaign.impact.percentage)}%`;
+            } else if (campaign.impact.value && campaign.budget && campaign.budget > 0) {
+              const calculatedROI = (campaign.impact.value / campaign.budget) * 100;
+              if (calculatedROI > 0) {
+                roiPercentage = `${Math.round(calculatedROI)}%`;
+              }
+            } else if (campaign.impact.expectedROI) {
+              roiPercentage = `${Math.round(campaign.impact.expectedROI * 100)}%`;
+            }
+          }
+          
+          return {
+            id: campaign.id || index,
+            name: campaign.title || 'Untitled Campaign',
+            description: campaign.description || '',
+            aiScore: campaign.aiScore || 0,
+            budget: campaign.budget ? `€${(campaign.budget / 1000).toFixed(0)}K` : '€0K',
+            growth: roiPercentage,
+            channels: campaign.channels || [],
+            aiRecommendation: campaign.reasoning || campaign.impact?.recommendation || 'No recommendation available',
+            startDate: campaign.startDate,
+            endDate: campaign.endDate,
+            status: campaign.status || 'recommended'
+          };
+        };
+        
+        setCampaigns({
+          recommended: (response.data.recommended || []).map(mapCampaign),
+          active: (response.data.live || []).map(mapCampaign),
+          archived: (response.data.past || []).map(mapCampaign)
+        });
+      }
+    } catch (error) {
+      console.error('Failed to refetch campaigns:', error);
+      toast.error('Failed to refresh campaigns');
+    }
+  };
+
+  const handleActivate = async (campaignId, campaignName, fromTab = 'recommended') => {
+    try {
+      // If from archived, use move-to-live endpoint
+      if (fromTab === 'archived') {
+        await axios.post(`${API}/kanban/move-to-live`, 
+          { campaignId: campaignId, fromCollection: 'past' },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } else {
+        // Call backend API to move campaign from recommended to live
+        await axios.post(`${API}/kanban/accept`, 
+          { campaignId: campaignId, fromCollection: 'recommended' },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      }
+      
       toast.success(`Campaign "${campaignName}" activated successfully!`);
+      // Refetch campaigns to get updated state
+      await refetchCampaigns();
+    } catch (error) {
+      console.error('Failed to activate campaign:', error);
+      toast.error(`Failed to activate campaign: ${error.response?.data?.detail || error.message}`);
     }
   };
 
-  const handleDeactivate = (campaignId, campaignName) => {
-    // Move campaign from active to archived
-    const campaign = campaigns.active.find(c => c.id === campaignId);
-    if (campaign) {
-      setCampaigns(prev => ({
-        ...prev,
-        active: prev.active.filter(c => c.id !== campaignId),
-        archived: [...prev.archived, { ...campaign, endDate: new Date().toISOString().split('T')[0], actualROI: campaign.roi }]
-      }));
-      toast.success(`Campaign "${campaignName}" deactivated and archived successfully!`);
-    }
-  };
-
-  const handleArchive = (campaignId, campaignName, fromTab = 'recommended') => {
-    // Move campaign from recommended or active to archived
-    const campaign = fromTab === 'active'
-      ? campaigns.active.find(c => c.id === campaignId)
-      : campaigns.recommended.find(c => c.id === campaignId);
+  const handleDeactivate = async (campaignId, campaignName) => {
+    try {
+      // Move campaign from live to past (archive)
+      await axios.post(`${API}/kanban/archive`, 
+        { campaignId: campaignId, fromCollection: 'live' },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       
-    if (campaign) {
-      setCampaigns(prev => ({
-        ...prev,
-        [fromTab]: prev[fromTab].filter(c => c.id !== campaignId),
-        archived: [...prev.archived, { ...campaign, endDate: new Date().toISOString().split('T')[0] }]
-      }));
+      toast.success(`Campaign "${campaignName}" deactivated and archived successfully!`);
+      // Refetch campaigns to get updated state
+      await refetchCampaigns();
+    } catch (error) {
+      console.error('Failed to deactivate campaign:', error);
+      toast.error(`Failed to deactivate campaign: ${error.response?.data?.detail || error.message}`);
+    }
+  };
+
+  const handleArchive = async (campaignId, campaignName, fromTab = 'recommended') => {
+    try {
+      // Move campaign to archived (past)
+      const fromCollection = fromTab === 'active' ? 'live' : 'recommended';
+      await axios.post(`${API}/kanban/archive`, 
+        { campaignId: campaignId, fromCollection: fromCollection },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
       toast.success(`Campaign "${campaignName}" archived successfully!`);
+      // Refetch campaigns to get updated state
+      await refetchCampaigns();
+    } catch (error) {
+      console.error('Failed to archive campaign:', error);
+      toast.error(`Failed to archive campaign: ${error.response?.data?.detail || error.message}`);
     }
   };
 
@@ -422,20 +441,23 @@ const Cockpit = () => {
               </div>
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 {loadingActionItems ? (
-                  <div className="p-8 text-center text-gray-500">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-2"></div>
-                    <p className="text-sm">Loading action items...</p>
-                  </div>
+                  <>
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                  </>
                 ) : getFilteredItems(actionItems.critical, criticalPriorityFilter).length === 0 ? (
                   <div className="p-8 text-center text-gray-500">
                     <p className="text-sm">No critical action items found</p>
                   </div>
                 ) : (
-                  getFilteredItems(actionItems.critical, criticalPriorityFilter).map((item, idx) => (
+                  getFilteredItems(actionItems.critical, criticalPriorityFilter).map((item, idx, arr) => (
                   <div
-                    key={item.id}
+                    key={`critical-${item.id}-${idx}`}
                     className={`flex items-center justify-between p-4 ${
-                      idx !== getFilteredItems(actionItems.critical, criticalPriorityFilter).length - 1 ? 'border-b border-gray-200' : ''
+                      idx !== arr.length - 1 ? 'border-b border-gray-200' : ''
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -477,20 +499,23 @@ const Cockpit = () => {
               </div>
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 {loadingActionItems ? (
-                  <div className="p-8 text-center text-gray-500">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-2"></div>
-                    <p className="text-sm">Loading action items...</p>
-                  </div>
+                  <>
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                    <ActionItemSkeleton />
+                  </>
                 ) : getFilteredItems(actionItems.impact, impactPriorityFilter).length === 0 ? (
                   <div className="p-8 text-center text-gray-500">
                     <p className="text-sm">No impact action items found</p>
                   </div>
                 ) : (
-                  getFilteredItems(actionItems.impact, impactPriorityFilter).map((item, idx) => (
+                  getFilteredItems(actionItems.impact, impactPriorityFilter).map((item, idx, arr) => (
                   <div
-                    key={item.id}
+                    key={`impact-${item.id}-${idx}`}
                     className={`flex items-center justify-between p-4 ${
-                      idx !== getFilteredItems(actionItems.impact, impactPriorityFilter).length - 1 ? 'border-b border-gray-200' : ''
+                      idx !== arr.length - 1 ? 'border-b border-gray-200' : ''
                     }`}
                   >
                     <div className="flex items-center gap-3">
@@ -540,11 +565,26 @@ const Cockpit = () => {
           </div>
 
           {/* Campaign Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {campaigns[activeTab].map((campaign) => {
-              return (
+          <div key={activeTab} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {loadingCampaigns ? (
+              // Skeleton loaders for campaigns
+              Array.from({ length: 6 }).map((_, idx) => (
+                <div key={idx} className="rounded-[10px] border border-gray-200 p-6 bg-gray-50">
+                  <Skeleton className="h-6 w-3/4 mb-2" />
+                  <Skeleton className="h-4 w-full mb-4" />
+                  <Skeleton className="h-8 w-16 mb-4" />
+                  <Skeleton className="h-20 w-full mb-4" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              ))
+            ) : currentCampaigns.length === 0 ? (
+              <div className="col-span-2 p-8 text-center text-gray-500">
+                <p className="text-sm">No {activeTab} campaigns found</p>
+              </div>
+            ) : (
+              currentCampaigns.map((campaign) => (
                 <div 
-                  key={campaign.id} 
+                  key={`${activeTab}-${campaign.id}`} 
                   className="rounded-[10px] border border-gray-200 p-6"
                   style={{
                     background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -570,25 +610,15 @@ const Cockpit = () => {
                   {/* Channels - White Card */}
                   <div className="flex-1 bg-white rounded-lg p-3 border border-gray-200">
                     <p className="text-sm font-medium text-gray-900 mb-2">{campaign.channels.length} Channels</p>
-                    <div className="flex items-center gap-3">
-                      {campaign.channels.map((channel, idx) => {
-                        const channelLogos = {
-                          'Email': '/email_logo.svg',
-                          'Social Media': '/social_logo.svg',
-                          'Video': '/video_logo.svg',
-                          'Display Ads': '/display_ads_logo.svg',
-                          'Influencer': '/social_logo.svg'
-                        };
-                        const logoPath = channelLogos[channel] || '/display_ads_logo.svg';
-                        return (
-                          <div key={idx} className="flex flex-col items-center gap-1.5">
-                            <div className="w-6 h-6 flex items-center justify-center">
-                              <img src={logoPath} alt={channel} className="w-full h-full object-contain" />
-                            </div>
-                            <span className="text-xs text-gray-600">{channel}</span>
-                          </div>
-                        );
-                      })}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {campaign.channels.map((channel, idx) => (
+                        <span 
+                          key={idx} 
+                          className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded"
+                        >
+                          {channel}
+                        </span>
+                      ))}
                     </div>
                   </div>
 
@@ -599,8 +629,8 @@ const Cockpit = () => {
                   </div>
                 </div>
 
-                {/* Row 2: AI Recommendation and Expected ROI */}
-                {activeTab === 'recommended' && campaign.aiRecommendation && (
+                {/* Row 2: AI Recommendation and Expected ROI - Show for all tabs */}
+                {campaign.aiRecommendation && (
                   <div className="flex items-center justify-between gap-4 mb-4">
                     {/* AI Recommendation - Light Beige Background */}
                     <div 
@@ -620,21 +650,14 @@ const Cockpit = () => {
 
                     {/* Expected ROI on Right */}
                     <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
-                      <p className="text-lg font-semibold text-gray-900">{activeTab === 'archived' && campaign.actualGrowth ? campaign.actualGrowth : (campaign.growth || campaign.roi)}</p>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {campaign.growth && campaign.growth !== '0%' ? campaign.growth : 'N/A'}
+                      </p>
                       <p className="text-xs text-gray-500 mt-1">Expected ROI</p>
                     </div>
                   </div>
                 )}
 
-                {/* For active and archived tabs, show Expected ROI separately */}
-                {(activeTab === 'active' || activeTab === 'archived') && (
-                  <div className="flex items-start justify-end gap-4 mb-4">
-                    <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
-                      <p className="text-lg font-semibold text-gray-900">{activeTab === 'archived' && campaign.actualGrowth ? campaign.actualGrowth : (campaign.growth || campaign.roi)}</p>
-                      <p className="text-xs text-gray-500 mt-1">Expected ROI</p>
-                    </div>
-                  </div>
-                )}
 
                 {activeTab === 'active' && (
                   <div className="mb-4">
@@ -704,8 +727,8 @@ const Cockpit = () => {
                   </div>
                 )}
                 </div>
-              );
-            })}
+              ))
+            )}
           </div>
         </div>
       </div>

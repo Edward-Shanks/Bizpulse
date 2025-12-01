@@ -2464,6 +2464,8 @@ async def accept_campaign(request: AcceptCampaignRequest, email: str = Depends(g
         # Add to live with acceptance timestamp
         campaign_to_move['status'] = 'live'
         campaign_to_move['acceptedAt'] = datetime.now(timezone.utc).isoformat()
+        if not campaign_to_move.get('startDate'):
+            campaign_to_move['startDate'] = datetime.now(timezone.utc).isoformat().split('T')[0]
         live.append(campaign_to_move)
         
         # Update MongoDB
@@ -2486,6 +2488,127 @@ async def accept_campaign(request: AcceptCampaignRequest, email: str = Depends(g
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error accepting campaign: {str(e)}")
+
+@api_router.post("/kanban/archive")
+async def archive_campaign(request: AcceptCampaignRequest, email: str = Depends(get_current_user)):
+    """Move a campaign from recommended or live to past (archived)"""
+    try:
+        kanban_doc = await db.kanban.find_one({})
+        if not kanban_doc:
+            raise HTTPException(status_code=404, detail="Kanban data not found")
+        
+        recommended = kanban_doc.get('recommended', [])
+        live = kanban_doc.get('live', [])
+        past = kanban_doc.get('past', [])
+        
+        # Find the campaign in the source collection
+        campaign_to_move = None
+        source_collection = request.fromCollection
+        
+        if source_collection == 'recommended':
+            updated_source = []
+            for campaign in recommended:
+                if campaign.get('id') == request.campaignId:
+                    campaign_to_move = campaign
+                else:
+                    updated_source.append(campaign)
+            if campaign_to_move:
+                recommended = updated_source
+        elif source_collection == 'live':
+            updated_source = []
+            for campaign in live:
+                if campaign.get('id') == request.campaignId:
+                    campaign_to_move = campaign
+                else:
+                    updated_source.append(campaign)
+            if campaign_to_move:
+                live = updated_source
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid fromCollection: {source_collection}")
+        
+        if not campaign_to_move:
+            raise HTTPException(status_code=404, detail=f"Campaign not found in {source_collection}")
+        
+        # Add to past with archive timestamp
+        campaign_to_move['status'] = 'past'
+        campaign_to_move['archivedAt'] = datetime.now(timezone.utc).isoformat()
+        if not campaign_to_move.get('endDate'):
+            campaign_to_move['endDate'] = datetime.now(timezone.utc).isoformat().split('T')[0]
+        past.append(campaign_to_move)
+        
+        # Update MongoDB
+        await db.kanban.update_one(
+            {},
+            {"$set": {
+                "recommended": recommended,
+                "live": live,
+                "past": past,
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        logger.info(f"Campaign '{campaign_to_move.get('title')}' moved to past")
+        
+        return {"success": True, "message": "Campaign archived successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error archiving campaign: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error archiving campaign: {str(e)}")
+
+@api_router.post("/kanban/move-to-live")
+async def move_to_live(request: AcceptCampaignRequest, email: str = Depends(get_current_user)):
+    """Move a campaign from past (archived) to live (active)"""
+    try:
+        kanban_doc = await db.kanban.find_one({})
+        if not kanban_doc:
+            raise HTTPException(status_code=404, detail="Kanban data not found")
+        
+        past = kanban_doc.get('past', [])
+        live = kanban_doc.get('live', [])
+        
+        # Find the campaign in past
+        campaign_to_move = None
+        updated_past = []
+        
+        for campaign in past:
+            if campaign.get('id') == request.campaignId:
+                campaign_to_move = campaign
+            else:
+                updated_past.append(campaign)
+        
+        if not campaign_to_move:
+            raise HTTPException(status_code=404, detail="Campaign not found in archived")
+        
+        # Add to live with reactivation timestamp
+        campaign_to_move['status'] = 'live'
+        campaign_to_move['reactivatedAt'] = datetime.now(timezone.utc).isoformat()
+        if not campaign_to_move.get('startDate'):
+            campaign_to_move['startDate'] = datetime.now(timezone.utc).isoformat().split('T')[0]
+        live.append(campaign_to_move)
+        
+        # Update MongoDB
+        await db.kanban.update_one(
+            {},
+            {"$set": {
+                "past": updated_past,
+                "live": live,
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        
+        logger.info(f"Campaign '{campaign_to_move.get('title')}' moved from archived to live")
+        
+        return {"success": True, "message": "Campaign reactivated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error moving campaign to live: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error moving campaign to live: {str(e)}")
 
 @api_router.get("/analytics/strategic-recommendations", response_model=StrategicRecommendationsResponse)
 async def generate_strategic_recommendations(email: str = Depends(get_current_user)):
@@ -2868,6 +2991,7 @@ class ActionItem(BaseModel):
     priority: str  # high, medium, low
     category: str  # critical, impact
     description: Optional[str] = None
+    impact: Optional[str] = None  # high, medium, low
 
 class ActionItemsResponse(BaseModel):
     critical: List[ActionItem]
@@ -2875,14 +2999,302 @@ class ActionItemsResponse(BaseModel):
 
 @api_router.get("/cockpit/action-items", response_model=ActionItemsResponse)
 async def get_action_items(email: str = Depends(get_current_user)):
-    """Generate AI-powered action items based on business data analysis"""
+    """Get action items directly from MongoDB"""
     try:
-        logger.info("🔍 Generating AI-powered action items from business data")
+        logger.info("🔍 Fetching action items from MongoDB")
         
-        # Get comprehensive business data
-        data = await db.business_data.find({}, {"_id": 0}).to_list(10000)
-        if not data:
-            raise HTTPException(status_code=404, detail="No data available")
+        # Get action items directly from MongoDB
+        cached_doc = await db.cockpit_action_items.find_one({})
+        if cached_doc:
+            logger.info("✅ Found action items document in MongoDB")
+            logger.info(f"   Document keys: {list(cached_doc.keys())}")
+            logger.info(f"   Critical items count: {len(cached_doc.get('critical', []))}")
+            logger.info(f"   Impact items count: {len(cached_doc.get('impact', []))}")
+            
+            critical_items = []
+            impact_items = []
+            
+            # Parse critical items with error handling
+            for idx, item in enumerate(cached_doc.get('critical', [])):
+                try:
+                    # Log item structure for debugging
+                    if idx == 0:
+                        logger.info(f"   Sample critical item keys: {list(item.keys()) if isinstance(item, dict) else 'Not a dict'}")
+                    critical_items.append(ActionItem(**item))
+                except Exception as e:
+                    logger.warning(f"⚠️ Skipping invalid critical item {idx}: {e}")
+                    logger.warning(f"   Item data: {item}")
+                    continue
+            
+            # Parse impact items with error handling
+            for idx, item in enumerate(cached_doc.get('impact', [])):
+                try:
+                    # Log item structure for debugging
+                    if idx == 0:
+                        logger.info(f"   Sample impact item keys: {list(item.keys()) if isinstance(item, dict) else 'Not a dict'}")
+                    impact_items.append(ActionItem(**item))
+                except Exception as e:
+                    logger.warning(f"⚠️ Skipping invalid impact item {idx}: {e}")
+                    logger.warning(f"   Item data: {item}")
+                    continue
+            
+            logger.info(f"✅ Successfully loaded {len(critical_items)} critical and {len(impact_items)} impact items")
+            
+            # Return items (empty arrays if none found)
+            return ActionItemsResponse(
+                critical=critical_items,
+                impact=impact_items
+            )
+        else:
+            logger.warning("⚠️ No action items document found in MongoDB")
+            logger.info("ℹ️ Auto-seeding action items...")
+            
+            # Auto-seed action items if collection is empty
+            action_items_data = {
+                "critical": [
+                    {
+                        "id": 1,
+                        "title": "Reverse 45% YoY Revenue Decline: Emergency Recovery Plan",
+                        "dueDate": "2025-12-15",
+                        "priority": "high",
+                        "impact": "high",
+                        "category": "critical",
+                        "description": "Urgent action required to address significant year-over-year revenue decline"
+                    },
+                    {
+                        "id": 2,
+                        "title": "Reduce Grocery Channel Concentration from 73.4%",
+                        "dueDate": "2025-01-20",
+                        "priority": "high",
+                        "impact": "high",
+                        "category": "critical",
+                        "description": "Diversify channel mix to reduce dependency on grocery channel"
+                    },
+                    {
+                        "id": 3,
+                        "title": "Stabilize Top 5 Customer Relationships",
+                        "dueDate": "2025-01-15",
+                        "priority": "medium",
+                        "impact": "high",
+                        "category": "critical",
+                        "description": "Focus on maintaining and strengthening relationships with top customers"
+                    },
+                    {
+                        "id": 4,
+                        "title": "Audit Food Business Unit Margin Compression",
+                        "dueDate": "2025-02-01",
+                        "priority": "medium",
+                        "impact": "medium",
+                        "category": "critical",
+                        "description": "Investigate and address margin compression in food business unit"
+                    },
+                    {
+                        "id": 5,
+                        "title": "Launch Online Channel Growth Initiative",
+                        "dueDate": "2025-02-28",
+                        "priority": "low",
+                        "impact": "medium",
+                        "category": "critical",
+                        "description": "Develop and execute strategy to grow online channel presence"
+                    }
+                ],
+                "impact": [
+                    {
+                        "id": 6,
+                        "title": "Scale Food Business to €22M+ via Category Expansion",
+                        "dueDate": "2025-03-15",
+                        "priority": "high",
+                        "impact": "high",
+                        "category": "impact",
+                        "description": "Expand food business categories to achieve revenue target of €22M+"
+                    },
+                    {
+                        "id": 7,
+                        "title": "Develop Wholesale Channel Acceleration Program",
+                        "dueDate": "2025-02-28",
+                        "priority": "high",
+                        "impact": "high",
+                        "category": "impact",
+                        "description": "Create program to accelerate growth in wholesale channel"
+                    },
+                    {
+                        "id": 8,
+                        "title": "Optimize Household & Beauty Segment Efficiency",
+                        "dueDate": "2025-03-20",
+                        "priority": "medium",
+                        "impact": "medium",
+                        "category": "impact",
+                        "description": "Improve operational efficiency in household and beauty segments"
+                    },
+                    {
+                        "id": 9,
+                        "title": "Build International Channel to 5% of Revenue Mix",
+                        "dueDate": "2025-03-31",
+                        "priority": "low",
+                        "impact": "medium",
+                        "category": "impact",
+                        "description": "Develop international channel to reach 5% of total revenue"
+                    }
+                ],
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Save to MongoDB
+            await db.cockpit_action_items.update_one(
+                {},
+                {"$set": action_items_data},
+                upsert=True
+            )
+            
+            logger.info(f"✅ Auto-seeded {len(action_items_data['critical'])} critical and {len(action_items_data['impact'])} impact items")
+            
+            # Parse and return the seeded items
+            critical_items = [ActionItem(**item) for item in action_items_data['critical']]
+            impact_items = [ActionItem(**item) for item in action_items_data['impact']]
+            
+            return ActionItemsResponse(
+                critical=critical_items,
+                impact=impact_items
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Action items error: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Action items error: {str(e)}")
+
+@api_router.post("/cockpit/action-items/seed")
+async def seed_action_items_endpoint(email: str = Depends(get_current_user)):
+    """Seed action items in MongoDB if collection is empty"""
+    try:
+        # Check if data already exists
+        existing = await db.cockpit_action_items.find_one({})
+        if existing and (existing.get('critical') or existing.get('impact')):
+            critical_count = len(existing.get('critical', []))
+            impact_count = len(existing.get('impact', []))
+            logger.info(f"Action items already exist: {critical_count} critical, {impact_count} impact")
+            return {
+                "message": "Action items already exist",
+                "critical_count": critical_count,
+                "impact_count": impact_count
+            }
+        
+        # Action items data based on screenshot/requirements
+        action_items_data = {
+            "critical": [
+                {
+                    "id": 1,
+                    "title": "Reverse 45% YoY Revenue Decline: Emergency Recovery Plan",
+                    "dueDate": "2025-12-15",
+                    "priority": "high",
+                    "impact": "high",
+                    "category": "critical",
+                    "description": "Urgent action required to address significant year-over-year revenue decline"
+                },
+                {
+                    "id": 2,
+                    "title": "Reduce Grocery Channel Concentration from 73.4%",
+                    "dueDate": "2025-01-20",
+                    "priority": "high",
+                    "impact": "high",
+                    "category": "critical",
+                    "description": "Diversify channel mix to reduce dependency on grocery channel"
+                },
+                {
+                    "id": 3,
+                    "title": "Stabilize Top 5 Customer Relationships",
+                    "dueDate": "2025-01-15",
+                    "priority": "medium",
+                    "impact": "high",
+                    "category": "critical",
+                    "description": "Focus on maintaining and strengthening relationships with top customers"
+                },
+                {
+                    "id": 4,
+                    "title": "Audit Food Business Unit Margin Compression",
+                    "dueDate": "2025-02-01",
+                    "priority": "medium",
+                    "impact": "medium",
+                    "category": "critical",
+                    "description": "Investigate and address margin compression in food business unit"
+                },
+                {
+                    "id": 5,
+                    "title": "Launch Online Channel Growth Initiative",
+                    "dueDate": "2025-02-28",
+                    "priority": "low",
+                    "impact": "medium",
+                    "category": "critical",
+                    "description": "Develop and execute strategy to grow online channel presence"
+                }
+            ],
+            "impact": [
+                {
+                    "id": 6,
+                    "title": "Scale Food Business to €22M+ via Category Expansion",
+                    "dueDate": "2025-03-15",
+                    "priority": "high",
+                    "impact": "high",
+                    "category": "impact",
+                    "description": "Expand food business categories to achieve revenue target of €22M+"
+                },
+                {
+                    "id": 7,
+                    "title": "Develop Wholesale Channel Acceleration Program",
+                    "dueDate": "2025-02-28",
+                    "priority": "high",
+                    "impact": "high",
+                    "category": "impact",
+                    "description": "Create program to accelerate growth in wholesale channel"
+                },
+                {
+                    "id": 8,
+                    "title": "Optimize Household & Beauty Segment Efficiency",
+                    "dueDate": "2025-03-20",
+                    "priority": "medium",
+                    "impact": "medium",
+                    "category": "impact",
+                    "description": "Improve operational efficiency in household and beauty segments"
+                },
+                {
+                    "id": 9,
+                    "title": "Build International Channel to 5% of Revenue Mix",
+                    "dueDate": "2025-03-31",
+                    "priority": "low",
+                    "impact": "medium",
+                    "category": "impact",
+                    "description": "Develop international channel to reach 5% of total revenue"
+                }
+            ],
+            "cached_at": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Insert into MongoDB
+        result = await db.cockpit_action_items.update_one(
+            {},
+            {"$set": action_items_data},
+            upsert=True
+        )
+        
+        logger.info(f"✅ Seeded action items: {len(action_items_data['critical'])} critical, {len(action_items_data['impact'])} impact")
+        
+        return {
+            "message": "Action items seeded successfully",
+            "critical_count": len(action_items_data['critical']),
+            "impact_count": len(action_items_data['impact'])
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error seeding action items: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error seeding action items: {str(e)}")
+
+# Root Cause Analysis Endpoints
         
         df = pd.DataFrame(data)
         
@@ -3003,6 +3415,7 @@ REQUIREMENTS:
    - A specific, actionable title (max 60 characters)
    - A due date within the next 30-90 days (format: YYYY-MM-DD)
    - A priority level: "high", "medium", or "low"
+   - An impact level: "high", "medium", or "low" (expected business impact)
    - A brief description (1-2 sentences)
 4. CRITICAL REQUIREMENT: Each category (critical AND impact) MUST have at least one item with EACH priority level (high, medium, low)
    - Critical category: must have at least 1 high, 1 medium, and 1 low priority item
@@ -3017,6 +3430,7 @@ OUTPUT FORMAT (JSON array):
       "title": "Specific critical action title",
       "dueDate": "2025-01-30",
       "priority": "high|medium|low",
+      "impact": "high|medium|low",
       "description": "Brief description of why this is critical"
     }}
   ],
@@ -3025,6 +3439,7 @@ OUTPUT FORMAT (JSON array):
       "title": "Specific impact action title",
       "dueDate": "2025-02-15",
       "priority": "high|medium|low",
+      "impact": "high|medium|low",
       "description": "Brief description of expected impact"
     }}
   ]
@@ -3078,6 +3493,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                         title=item.get('title', f'Critical Action {idx}')[:60],
                         dueDate=item.get('dueDate', '2025-02-15'),
                         priority=item.get('priority', 'high') if item.get('priority') in ['high', 'medium', 'low'] else 'high',
+                        impact=item.get('impact', item.get('priority', 'high')) if item.get('impact', item.get('priority', 'high')) in ['high', 'medium', 'low'] else item.get('priority', 'high'),
                         category='critical',
                         description=item.get('description', '')
                     ))
@@ -3093,6 +3509,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                         title=item.get('title', f'Impact Action {idx}')[:60],
                         dueDate=item.get('dueDate', '2025-02-20'),
                         priority=item.get('priority', 'medium') if item.get('priority') in ['high', 'medium', 'low'] else 'medium',
+                        impact=item.get('impact', item.get('priority', 'medium')) if item.get('impact', item.get('priority', 'medium')) in ['high', 'medium', 'low'] else item.get('priority', 'medium'),
                         category='impact',
                         description=item.get('description', '')
                     ))
@@ -3129,6 +3546,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                             title="Address Critical Business Issue",
                             dueDate=due_date,
                             priority='medium',
+                            impact='medium',
                             category='critical',
                             description="Address identified critical business issue based on data analysis"
                         ))
@@ -3149,6 +3567,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                             title="Review and Optimize Operations",
                             dueDate=due_date,
                             priority='low',
+                            impact='low',
                             category='critical',
                             description="Review operational processes for optimization opportunities"
                         ))
@@ -3180,6 +3599,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                             title="Optimize Growth Opportunities",
                             dueDate=due_date,
                             priority='medium',
+                            impact='high',
                             category='impact',
                             description="Optimize identified growth opportunities for maximum impact"
                         ))
@@ -3200,6 +3620,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                             title="Explore Long-term Strategic Initiatives",
                             dueDate=due_date,
                             priority='low',
+                            impact='medium',
                             category='impact',
                             description="Explore long-term strategic initiatives for sustainable growth"
                         ))
@@ -3219,6 +3640,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                         title=f"Critical Action Item {len(critical_items) + 1}",
                         dueDate=due_date,
                         priority=missing_priority[0],
+                        impact=missing_priority[0],
                         category='critical',
                         description="Critical action item based on business data analysis"
                     ))
@@ -3238,6 +3660,7 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                         title=f"Impact Action Item {len(impact_items) + 1}",
                         dueDate=due_date,
                         priority=missing_priority[0],
+                        impact=missing_priority[0],
                         category='impact',
                         description="High-impact action item based on business data analysis"
                     ))
@@ -3249,17 +3672,34 @@ Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
                 # Fallback to default items with all priority levels
                 from datetime import datetime, timedelta
                 critical_items = [
-                    ActionItem(id=1, title="Review Revenue Trends", dueDate=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), priority="high", category="critical", description="Analyze revenue trends and identify growth opportunities"),
-                    ActionItem(id=2, title="Optimize Channel Performance", dueDate=(datetime.now() + timedelta(days=45)).strftime('%Y-%m-%d'), priority="medium", category="critical", description="Review and optimize underperforming channels"),
-                    ActionItem(id=3, title="Address Operational Issues", dueDate=(datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d'), priority="low", category="critical", description="Review and address operational inefficiencies"),
+                    ActionItem(id=1, title="Review Revenue Trends", dueDate=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), priority="high", impact="high", category="critical", description="Analyze revenue trends and identify growth opportunities"),
+                    ActionItem(id=2, title="Optimize Channel Performance", dueDate=(datetime.now() + timedelta(days=45)).strftime('%Y-%m-%d'), priority="medium", impact="medium", category="critical", description="Review and optimize underperforming channels"),
+                    ActionItem(id=3, title="Address Operational Issues", dueDate=(datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d'), priority="low", impact="low", category="critical", description="Review and address operational inefficiencies"),
                 ]
                 impact_items = [
-                    ActionItem(id=4, title="Expand Top Business Segment", dueDate=(datetime.now() + timedelta(days=35)).strftime('%Y-%m-%d'), priority="high", category="impact", description="Leverage top-performing business segment for expansion"),
-                    ActionItem(id=5, title="Improve Profit Margins", dueDate=(datetime.now() + timedelta(days=50)).strftime('%Y-%m-%d'), priority="medium", category="impact", description="Identify cost optimization opportunities"),
-                    ActionItem(id=6, title="Explore New Market Opportunities", dueDate=(datetime.now() + timedelta(days=75)).strftime('%Y-%m-%d'), priority="low", category="impact", description="Research and explore new market segments for growth"),
+                    ActionItem(id=4, title="Expand Top Business Segment", dueDate=(datetime.now() + timedelta(days=35)).strftime('%Y-%m-%d'), priority="high", impact="high", category="impact", description="Leverage top-performing business segment for expansion"),
+                    ActionItem(id=5, title="Improve Profit Margins", dueDate=(datetime.now() + timedelta(days=50)).strftime('%Y-%m-%d'), priority="medium", impact="high", category="impact", description="Identify cost optimization opportunities"),
+                    ActionItem(id=6, title="Explore New Market Opportunities", dueDate=(datetime.now() + timedelta(days=75)).strftime('%Y-%m-%d'), priority="low", impact="medium", category="impact", description="Research and explore new market segments for growth"),
                 ]
             
             logger.info(f"✅ Generated {len(critical_items)} critical and {len(impact_items)} impact action items")
+            
+            # Save to MongoDB cache
+            cache_doc = {
+                "critical": [item.model_dump() for item in critical_items],
+                "impact": [item.model_dump() for item in impact_items],
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+                "last_updated": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Update or insert cache document
+            await db.cockpit_action_items.update_one(
+                {},
+                {"$set": cache_doc},
+                upsert=True
+            )
+            
+            logger.info("✅ Action items saved to MongoDB cache")
             
             return ActionItemsResponse(
                 critical=critical_items,
