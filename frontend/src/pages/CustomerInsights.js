@@ -769,6 +769,60 @@ const CustomerInsights = () => {
             </div>
           </ChartCard>
 
+          {/* Top Products by Sales */}
+          <ChartCard
+            title="Top 15 Products by Sales"
+            icon={Package}
+            onViewInsight={() =>
+              handleViewInsight(
+                'Top Products',
+                [{ type: 'positive', text: 'Top products driving revenue' }],
+                ['Promote best-selling products', 'Analyze product performance']
+              )
+            }
+          >
+            <div className="h-64">
+              <ChartComponent type="bar" data={topProductsChart} options={chartOptions} />
+            </div>
+          </ChartCard>
+
+          {/* Day of Week Analysis */}
+          <ChartCard
+            title="Day of Week Sales Performance"
+            icon={Calendar}
+            onViewInsight={() =>
+              handleViewInsight(
+                'Day of Week Patterns',
+                [{ type: 'neutral', text: 'Weekday vs weekend patterns' }],
+                ['Optimize campaigns for best performing days', 'Plan promotions strategically']
+              )
+            }
+          >
+            <div className="h-64">
+              <ChartComponent type="bar" data={dayOfWeekChart} options={chartOptions} />
+            </div>
+          </ChartCard>
+        </div>
+
+          {/* Monthly/Daily Trend - Full Width */}
+        <ChartCard
+          title={monthlyTrend.length <= 31 ? "Daily Sales & Customer Trends" : "Monthly Sales & Customer Trends"}
+          icon={TrendingUp}
+          onViewInsight={() =>
+            handleViewInsight(
+              monthlyTrend.length <= 31 ? 'Daily Trends' : 'Monthly Trends',
+              [{ type: 'positive', text: 'Steady growth in sales and customer acquisition' }],
+              ['Maintain current growth trajectory', 'Identify seasonal patterns', 'Monitor daily performance']
+            )
+          }
+        >
+          <div className="h-80">
+            <ChartComponent type="bar" data={monthlyTrendChart} options={lineChartOptions} />
+          </div>
+        </ChartCard>
+
+        {/* Charts Grid - Continued */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Platform Analysis */}
           <ChartCard
             title="Referring Platform Analysis"
@@ -870,58 +924,7 @@ const CustomerInsights = () => {
               <ChartComponent type="bar" data={mediumAnalysisChart} options={chartOptions} />
             </div>
           </ChartCard>
-
-          {/* Top Products by Sales */}
-          <ChartCard
-            title="Top 15 Products by Sales"
-            icon={Package}
-            onViewInsight={() =>
-              handleViewInsight(
-                'Top Products',
-                [{ type: 'positive', text: 'Top products driving revenue' }],
-                ['Promote best-selling products', 'Analyze product performance']
-              )
-            }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={topProductsChart} options={chartOptions} />
-            </div>
-          </ChartCard>
-
-          {/* Day of Week Analysis */}
-          <ChartCard
-            title="Day of Week Sales Performance"
-            icon={Calendar}
-            onViewInsight={() =>
-              handleViewInsight(
-                'Day of Week Patterns',
-                [{ type: 'neutral', text: 'Weekday vs weekend patterns' }],
-                ['Optimize campaigns for best performing days', 'Plan promotions strategically']
-              )
-            }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={dayOfWeekChart} options={chartOptions} />
-            </div>
-          </ChartCard>
         </div>
-
-          {/* Monthly/Daily Trend - Full Width */}
-        <ChartCard
-          title={monthlyTrend.length <= 31 ? "Daily Sales & Customer Trends" : "Monthly Sales & Customer Trends"}
-          icon={TrendingUp}
-          onViewInsight={() =>
-            handleViewInsight(
-              monthlyTrend.length <= 31 ? 'Daily Trends' : 'Monthly Trends',
-              [{ type: 'positive', text: 'Steady growth in sales and customer acquisition' }],
-              ['Maintain current growth trajectory', 'Identify seasonal patterns', 'Monitor daily performance']
-            )
-          }
-        >
-          <div className="h-80">
-            <ChartComponent type="bar" data={monthlyTrendChart} options={lineChartOptions} />
-          </div>
-        </ChartCard>
 
         {/* Return Rate Trend - Full Width */}
         {returnTrend.length > 0 && (
