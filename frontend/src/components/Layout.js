@@ -30,17 +30,15 @@ const Layout = ({ children }) => {
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
-  const [businessCompassOpen, setBusinessCompassOpen] = React.useState(false);
+  const [businessCompassOpen, setBusinessCompassOpen] = React.useState(true); // Always open by default
 
   // Check if any Business Compass sub-item is active
   const businessCompassPaths = ['/compass', '/brands', '/customers', '/categories', '/sales-analysis'];
   const isBusinessCompassActive = businessCompassPaths.includes(location.pathname);
 
-  // Auto-open Business Compass dropdown if a sub-item is active (only on pathname change)
+  // Keep Business Compass dropdown always open
   React.useEffect(() => {
-    if (isBusinessCompassActive) {
-      setBusinessCompassOpen(true);
-    }
+    setBusinessCompassOpen(true);
   }, [location.pathname]);
 
   const menuItems = [
@@ -178,6 +176,10 @@ const Layout = ({ children }) => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            // Keep Business Compass always open - prevent toggle
+                            if (item.label === 'Business Compass') {
+                              return;
+                            }
                             setBusinessCompassOpen(!businessCompassOpen);
                           }}
                           className="p-1 hover:bg-gray-200 rounded transition flex-shrink-0"
