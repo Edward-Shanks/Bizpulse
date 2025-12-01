@@ -3040,13 +3040,20 @@ async def get_action_items(email: str = Depends(get_current_user)):
             
             logger.info(f"✅ Successfully loaded {len(critical_items)} critical and {len(impact_items)} impact items")
             
-            # Return items (empty arrays if none found)
-            return ActionItemsResponse(
-                critical=critical_items,
-                impact=impact_items
-            )
-        else:
-            logger.warning("⚠️ No action items document found in MongoDB")
+            # If we have valid items, return them
+            if critical_items or impact_items:
+                return ActionItemsResponse(
+                    critical=critical_items,
+                    impact=impact_items
+                )
+            else:
+                # Document exists but has no valid items - need to re-seed
+                logger.warning("⚠️ Document exists but has no valid items, re-seeding...")
+                cached_doc = None  # Force re-seeding
+        
+        # Auto-seed action items if collection is empty or has no valid items
+        if not cached_doc:
+            logger.warning("⚠️ No action items document found in MongoDB or document has no valid items")
             logger.info("ℹ️ Auto-seeding action items...")
             
             # Auto-seed action items if collection is empty
@@ -3140,23 +3147,39 @@ async def get_action_items(email: str = Depends(get_current_user)):
                 "last_updated": datetime.now(timezone.utc).isoformat()
             }
             
-            # Save to MongoDB
-            await db.cockpit_action_items.update_one(
-                {},
-                {"$set": action_items_data},
-                upsert=True
-            )
+            # Save to MongoDB with upsert to ensure it always exists
+            try:
+                result = await db.cockpit_action_items.update_one(
+                    {},
+                    {"$set": action_items_data},
+                    upsert=True
+                )
+                logger.info(f"✅ MongoDB update result: matched={result.matched_count}, modified={result.modified_count}, upserted_id={result.upserted_id}")
+            except Exception as e:
+                logger.error(f"❌ Failed to save action items to MongoDB: {e}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
             
             logger.info(f"✅ Auto-seeded {len(action_items_data['critical'])} critical and {len(action_items_data['impact'])} impact items")
             
             # Parse and return the seeded items
-            critical_items = [ActionItem(**item) for item in action_items_data['critical']]
-            impact_items = [ActionItem(**item) for item in action_items_data['impact']]
-            
-            return ActionItemsResponse(
-                critical=critical_items,
-                impact=impact_items
-            )
+            try:
+                critical_items = [ActionItem(**item) for item in action_items_data['critical']]
+                impact_items = [ActionItem(**item) for item in action_items_data['impact']]
+                
+                return ActionItemsResponse(
+                    critical=critical_items,
+                    impact=impact_items
+                )
+            except Exception as e:
+                logger.error(f"❌ Failed to parse seeded action items: {e}")
+                import traceback
+                logger.error(f"❌ Traceback: {traceback.format_exc()}")
+                # Return empty arrays as fallback
+                return ActionItemsResponse(
+                    critical=[],
+                    impact=[]
+                )
             
     except HTTPException:
         raise
