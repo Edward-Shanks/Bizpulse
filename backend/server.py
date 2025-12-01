@@ -4035,10 +4035,10 @@ async def get_customer_insights_filters(email: str = Depends(get_current_user)):
     Returns only years and months that exist in the Shopify data, ensuring filters are accurate.
     """
     try:
-        # Load Shopify_customer_df.csv
-        csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
+        # Load Shopify_customer_df_new.csv
+        csv_path = ROOT_DIR / 'Shopify_customer_df_new.csv'
         if not csv_path.exists():
-            raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+            raise HTTPException(status_code=404, detail="Shopify_customer_df_new.csv file not found")
         
         df = pd.read_csv(csv_path)
         if df.empty:
@@ -4108,10 +4108,10 @@ async def get_customer_insights(
     - And more...
     """
     try:
-        # Load Shopify_customer_df.csv
-        csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
+        # Load Shopify_customer_df_new.csv
+        csv_path = ROOT_DIR / 'Shopify_customer_df_new.csv'
         if not csv_path.exists():
-            raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+            raise HTTPException(status_code=404, detail="Shopify_customer_df_new.csv file not found")
         
         df = pd.read_csv(csv_path)
         if df.empty:
@@ -4427,17 +4427,39 @@ async def get_customer_insights(
                 # Sort again after adding previous month data
                 monthly_trend = monthly_trend.sort_values(['Year', 'Month']).reset_index(drop=True)
                 
+                # Filter out December from both daily and monthly trends BEFORE deciding which to use
+                if not daily_trend.empty and 'Month' in daily_trend.columns:
+                    daily_trend = daily_trend[daily_trend['Month'] != 12]
+                    logger.info(f"✅ Filtered December from daily_trend. Remaining: {len(daily_trend)} records")
+                
+                if not monthly_trend.empty and 'Month' in monthly_trend.columns:
+                    monthly_trend = monthly_trend[monthly_trend['Month'] != 12]
+                    logger.info(f"✅ Filtered December from monthly_trend. Remaining: {len(monthly_trend)} records")
+                
                 # Use daily trend for more granular view if only one month, otherwise use monthly
                 # Check if we have multiple months - if so, use monthly aggregation
-                unique_months = monthly_trend[['Year', 'Month']].drop_duplicates()
-                if len(unique_months) <= 1:  # If we have only 1 month, show daily trends
+                # Check AFTER filtering December
+                unique_months = monthly_trend[['Year', 'Month']].drop_duplicates() if not monthly_trend.empty else pd.DataFrame(columns=['Year', 'Month'])
+                if len(unique_months) <= 1 and not daily_trend.empty:  # If we have only 1 month, show daily trends
                     monthly_trend = daily_trend.copy()
-                    monthly_trend['month_label'] = monthly_trend['day_label']  # Use day labels for daily view
+                    # Ensure month_label exists - use day_label if available, otherwise create from Day
+                    if 'day_label' in monthly_trend.columns:
+                        monthly_trend['month_label'] = monthly_trend['day_label']
+                    elif 'Day' in monthly_trend.columns:
+                        monthly_trend['month_label'] = pd.to_datetime(monthly_trend['Day']).dt.strftime('%b %d, %Y')
+                    # Ensure MonthName exists for frontend compatibility
+                    if 'MonthName' not in monthly_trend.columns and 'Month' in monthly_trend.columns:
+                        monthly_trend['MonthName'] = pd.to_datetime(monthly_trend[['Year', 'Month']].assign(Day=1)).dt.strftime('%B')
+                    logger.info(f"✅ Using daily trend view with {len(monthly_trend)} daily records")
+                else:
+                    logger.info(f"✅ Using monthly trend view with {len(unique_months)} unique months")
                 # Otherwise, keep monthly aggregation (which we already have)
             except Exception as e:
                 logger.error(f"Error processing daily/monthly trends: {str(e)}")
                 # Fallback to simple monthly grouping
                 df_valid_dates = df[(df['Year'].notna()) & (df['Month'].notna())]
+                # Filter out December in fallback path
+                df_valid_dates = df_valid_dates[df_valid_dates['Month'] != 12]
                 if not df_valid_dates.empty:
                     monthly_trend = df_valid_dates.groupby(['Year', 'Month']).agg({
                         'Total sales': 'sum',
@@ -4454,6 +4476,8 @@ async def get_customer_insights(
         else:
             # Fallback to monthly grouping if Day column not available
             df_valid_dates = df[(df['Year'].notna()) & (df['Month'].notna())]
+            # Filter out December in fallback path
+            df_valid_dates = df_valid_dates[df_valid_dates['Month'] != 12]
             if not df_valid_dates.empty:
                 monthly_trend = df_valid_dates.groupby(['Year', 'Month']).agg({
                     'Total sales': 'sum',
@@ -4468,14 +4492,47 @@ async def get_customer_insights(
             else:
                 monthly_trend = pd.DataFrame(columns=['Year', 'Month', 'MonthName', 'month_label', 'Total sales', 'Orders', 'Customer email', 'Orders (first-time)', 'Orders (returning)'])
         
+        # Final safety filter: Filter out December months from monthly/daily trend data (in case we missed it in fallback paths)
+        if not monthly_trend.empty and 'Month' in monthly_trend.columns:
+            before_count = len(monthly_trend)
+            monthly_trend = monthly_trend[monthly_trend['Month'] != 12]
+            if len(monthly_trend) < before_count:
+                logger.info(f"✅ Final filter: Removed December data. Remaining: {len(monthly_trend)} records (was {before_count})")
+        
         # Rename columns to ensure consistent keys in JSON response
-        if not monthly_trend.empty and 'Total sales' in monthly_trend.columns:
-            monthly_trend = monthly_trend.rename(columns={
-                'Total sales': 'Total_sales',
-                'Orders (first-time)': 'Orders_first_time',
-                'Orders (returning)': 'Orders_returning',
-                'Customer email': 'Customer_email'
-            })
+        if not monthly_trend.empty:
+            # Log current columns for debugging
+            logger.info(f"📊 Monthly trend columns before rename: {list(monthly_trend.columns)}")
+            logger.info(f"📊 Monthly trend shape: {monthly_trend.shape}")
+            
+            # Rename columns if they exist
+            rename_map = {}
+            if 'Total sales' in monthly_trend.columns:
+                rename_map['Total sales'] = 'Total_sales'
+            if 'Orders (first-time)' in monthly_trend.columns:
+                rename_map['Orders (first-time)'] = 'Orders_first_time'
+            if 'Orders (returning)' in monthly_trend.columns:
+                rename_map['Orders (returning)'] = 'Orders_returning'
+            if 'Customer email' in monthly_trend.columns:
+                rename_map['Customer email'] = 'Customer_email'
+            
+            if rename_map:
+                monthly_trend = monthly_trend.rename(columns=rename_map)
+                logger.info(f"✅ Renamed columns: {rename_map}")
+            
+            # Ensure required columns exist for frontend
+            if 'month_label' not in monthly_trend.columns:
+                if 'MonthName' in monthly_trend.columns and 'Year' in monthly_trend.columns:
+                    monthly_trend['month_label'] = monthly_trend['MonthName'] + ' ' + monthly_trend['Year'].astype(str)
+                elif 'Day' in monthly_trend.columns:
+                    monthly_trend['month_label'] = pd.to_datetime(monthly_trend['Day']).dt.strftime('%b %d, %Y')
+            
+            # Log sample data for debugging
+            if len(monthly_trend) > 0:
+                logger.info(f"📊 Sample trend data (first row): {monthly_trend.iloc[0].to_dict()}")
+                logger.info(f"📊 Total trend records: {len(monthly_trend)}")
+        else:
+            logger.warning("⚠️ Monthly trend is empty after all processing!")
         
         # 7. Email Subscription Status
         subscription_status = df.groupby('Customer email subscription status').agg({
@@ -4917,9 +4974,9 @@ def get_customer_processor():
     if _customer_processor_cache is not None:
         return _customer_processor_cache
     
-    csv_path = ROOT_DIR / 'Shopify_customer_df.csv'
+    csv_path = ROOT_DIR / 'Shopify_customer_df_new.csv'
     if not csv_path.exists():
-        raise HTTPException(status_code=404, detail="Shopify_customer_df.csv file not found")
+        raise HTTPException(status_code=404, detail="Shopify_customer_df_new.csv file not found")
     
     df = pd.read_csv(csv_path)
     if df.empty:

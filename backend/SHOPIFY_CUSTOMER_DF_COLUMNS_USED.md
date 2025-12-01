@@ -1,4 +1,4 @@
-# Shopify_customer_df.csv - Columns Used in Backend API and Chatbot
+# Shopify_customer_df_new.csv - Columns Used in Backend API and Chatbot
 
 ## Complete List of Columns Used
 
