@@ -395,7 +395,7 @@ const Kanban = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-              Strategic Kanban
+              Revenue Sentinel
             </h1>
             <p className="text-gray-600 text-sm mt-1">
               Manage strategic initiatives and marketing projects
@@ -434,7 +434,7 @@ const Kanban = () => {
               style={activeTab === 'strategic-kanban' ? { background: '#184464' } : {}}
             >
               <Zap className="w-4 h-4" />
-              Strategic Kanban
+              Revenue Sentinel
             </button>
             <button
               onClick={() => setActiveTab('marketing-strategy')}
@@ -451,7 +451,7 @@ const Kanban = () => {
           </div>
         </div>
 
-        {/* Strategic Kanban Content */}
+        {/* Revenue Sentinel Content */}
         {activeTab === 'strategic-kanban' && (
           <>
             {loadingRecommendations ? (
@@ -821,12 +821,14 @@ const Kanban = () => {
                       style={{ background: '#F2E9DB' }}
                     >
                       <p className="text-xs text-gray-500 mb-1">Current Impact</p>
-                      <p className="text-lg font-bold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
-                        {initiative.impact?.percentage || 0}%
-                      </p>
-                      <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
-                        {formatNumber(initiative.impact?.value || 0)}
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+                          {formatNumber(initiative.impact?.value || 0)}
+                        </p>
+                        <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+                          {initiative.impact?.percentage || 0}%
+                        </p>
+                      </div>
                     </div>
 
 
@@ -883,7 +885,7 @@ const Kanban = () => {
                         <h5 className="text-sm font-semibold text-gray-900 mb-3">Campaign Goals</h5>
                         {campaignGoals[initiative.id]?.length > 0 ? (
                           <div className="space-y-3">
-                            {campaignGoals[initiative.id].map((goal, goalIdx) => (
+                            {campaignGoals[initiative.id].slice(-5).map((goal, goalIdx) => (
                               <div
                                 key={goal.id || `goal-${initiative.id}-${goalIdx}`}
                                 onClick={() => {
