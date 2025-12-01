@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -21,10 +21,14 @@ import {
   Info
 } from 'lucide-react';
 import { toast } from 'sonner';
+import axios from 'axios';
+import { API, useAuth } from '@/App';
 
 const Cockpit = () => {
   const navigate = useNavigate();
+  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState('recommended');
+  const [loadingActionItems, setLoadingActionItems] = useState(true);
 
   // Key Insights data - 4 cards with gradient backgrounds matching Figma
   const insights = [
@@ -73,19 +77,51 @@ const Cockpit = () => {
   // Action Items - split into Critical and Impact
   const [criticalPriorityFilter, setCriticalPriorityFilter] = useState('all');
   const [impactPriorityFilter, setImpactPriorityFilter] = useState('all');
+  const [actionItems, setActionItems] = useState({
+    critical: [],
+    impact: []
+  });
   
-  const actionItems = {
-    critical: [
-      { id: 1, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' },
-      { id: 2, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' },
-      { id: 3, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' }
-    ],
-    impact: [
-      { id: 4, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' },
-      { id: 5, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'medium' },
-      { id: 6, title: 'Launch QA Campaign', dueDate: '2025-01-15', priority: 'high' }
-    ]
-  };
+  // Fetch AI-generated action items from API
+  useEffect(() => {
+    const fetchActionItems = async () => {
+      if (!token) return;
+      
+      try {
+        setLoadingActionItems(true);
+        const response = await axios.get(`${API}/cockpit/action-items`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.data) {
+          setActionItems({
+            critical: response.data.critical || [],
+            impact: response.data.impact || []
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch action items:', error);
+        toast.error('Failed to load action items. Using default data.');
+        // Fallback to default items
+        setActionItems({
+          critical: [
+            { id: 1, title: 'Review Revenue Trends', dueDate: '2025-01-30', priority: 'high' },
+            { id: 2, title: 'Optimize Channel Performance', dueDate: '2025-02-15', priority: 'medium' },
+            { id: 3, title: 'Address Profit Margin Issues', dueDate: '2025-02-20', priority: 'high' }
+          ],
+          impact: [
+            { id: 4, title: 'Expand Top Business Segment', dueDate: '2025-02-20', priority: 'high' },
+            { id: 5, title: 'Improve Profit Margins', dueDate: '2025-03-01', priority: 'medium' },
+            { id: 6, title: 'Diversify Channel Strategy', dueDate: '2025-03-15', priority: 'low' }
+          ]
+        });
+      } finally {
+        setLoadingActionItems(false);
+      }
+    };
+    
+    fetchActionItems();
+  }, [token]);
   
   const getFilteredItems = (items, filter) => {
     if (filter === 'all') return items;
@@ -385,7 +421,17 @@ const Cockpit = () => {
                 </select>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                {getFilteredItems(actionItems.critical, criticalPriorityFilter).map((item, idx) => (
+                {loadingActionItems ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-2"></div>
+                    <p className="text-sm">Loading action items...</p>
+                  </div>
+                ) : getFilteredItems(actionItems.critical, criticalPriorityFilter).length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <p className="text-sm">No critical action items found</p>
+                  </div>
+                ) : (
+                  getFilteredItems(actionItems.critical, criticalPriorityFilter).map((item, idx) => (
                   <div
                     key={item.id}
                     className={`flex items-center justify-between p-4 ${
@@ -396,7 +442,7 @@ const Cockpit = () => {
                       <FileText className="w-4 h-4 text-gray-400" />
                       <div>
                         <h4 className="font-medium text-gray-900 text-sm">{item.title}</h4>
-                        <p className="text-xs text-gray-500">Due - {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                        <p className="text-xs text-gray-500">Due: {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       </div>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
@@ -409,7 +455,8 @@ const Cockpit = () => {
                       {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
                     </span>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
 
@@ -429,7 +476,17 @@ const Cockpit = () => {
                 </select>
               </div>
               <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                {getFilteredItems(actionItems.impact, impactPriorityFilter).map((item, idx) => (
+                {loadingActionItems ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600 mx-auto mb-2"></div>
+                    <p className="text-sm">Loading action items...</p>
+                  </div>
+                ) : getFilteredItems(actionItems.impact, impactPriorityFilter).length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">
+                    <p className="text-sm">No impact action items found</p>
+                  </div>
+                ) : (
+                  getFilteredItems(actionItems.impact, impactPriorityFilter).map((item, idx) => (
                   <div
                     key={item.id}
                     className={`flex items-center justify-between p-4 ${
@@ -440,7 +497,7 @@ const Cockpit = () => {
                       <FileText className="w-4 h-4 text-gray-400" />
                       <div>
                         <h4 className="font-medium text-gray-900 text-sm">{item.title}</h4>
-                        <p className="text-xs text-gray-500">Due - {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                        <p className="text-xs text-gray-500">Due: {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       </div>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
@@ -453,7 +510,8 @@ const Cockpit = () => {
                       {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
                     </span>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>

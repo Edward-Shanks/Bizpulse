@@ -2861,6 +2861,427 @@ async def test_customer_insights_chat(email: str = Depends(get_current_user)):
         "method": "POST"
     }
 
+class ActionItem(BaseModel):
+    id: int
+    title: str
+    dueDate: str
+    priority: str  # high, medium, low
+    category: str  # critical, impact
+    description: Optional[str] = None
+
+class ActionItemsResponse(BaseModel):
+    critical: List[ActionItem]
+    impact: List[ActionItem]
+
+@api_router.get("/cockpit/action-items", response_model=ActionItemsResponse)
+async def get_action_items(email: str = Depends(get_current_user)):
+    """Generate AI-powered action items based on business data analysis"""
+    try:
+        logger.info("🔍 Generating AI-powered action items from business data")
+        
+        # Get comprehensive business data
+        data = await db.business_data.find({}, {"_id": 0}).to_list(10000)
+        if not data:
+            raise HTTPException(status_code=404, detail="No data available")
+        
+        df = pd.DataFrame(data)
+        
+        if df.empty:
+            raise HTTPException(status_code=404, detail="No data available in database")
+        
+        # Check for required columns
+        required_columns = ['Revenue', 'Gross_Profit', 'Units', 'Year', 'Business', 'Channel', 'Customer', 'Brand']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            logger.error(f"Missing required columns: {missing_columns}")
+            raise HTTPException(status_code=500, detail=f"Missing required columns: {missing_columns}")
+        
+        # Calculate key metrics for context
+        total_revenue = float(df['Revenue'].sum()) if not df.empty else 0
+        total_profit = float(df['Gross_Profit'].sum()) if not df.empty else 0
+        profit_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
+        
+        # Year-over-year analysis
+        yearly_data = df.groupby('Year').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum',
+            'Units': 'sum'
+        }).reset_index()
+        
+        # Top performing businesses
+        business_perf = df.groupby('Business').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum'
+        }).reset_index().sort_values('Revenue', ascending=False).head(5)
+        
+        # Top channels
+        channel_perf = df.groupby('Channel').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum'
+        }).reset_index().sort_values('Revenue', ascending=False).head(5)
+        
+        # Top customers
+        customer_perf = df.groupby('Customer').agg({
+            'Revenue': 'sum',
+            'Gross_Profit': 'sum'
+        }).reset_index().sort_values('Revenue', ascending=False).head(5)
+        
+        # Identify issues and opportunities
+        issues = []
+        opportunities = []
+        
+        # Check for declining revenue
+        if len(yearly_data) > 1:
+            latest_year = yearly_data.iloc[-1]['Revenue']
+            prev_year = yearly_data.iloc[-2]['Revenue'] if len(yearly_data) > 1 else latest_year
+            if latest_year < prev_year:
+                decline_pct = ((prev_year - latest_year) / prev_year * 100) if prev_year > 0 else 0
+                issues.append(f"Revenue declined by {decline_pct:.1f}% year-over-year")
+        
+        # Check profit margin
+        if profit_margin < 20:
+            issues.append(f"Profit margin is low at {profit_margin:.1f}%, below industry standard")
+        
+        # Check channel concentration
+        top_channel_revenue = channel_perf.iloc[0]['Revenue'] if not channel_perf.empty else 0
+        channel_concentration = (top_channel_revenue / total_revenue * 100) if total_revenue > 0 else 0
+        if channel_concentration > 70:
+            issues.append(f"High channel concentration: {channel_concentration:.1f}% of revenue from single channel")
+        
+        # Opportunities
+        if not business_perf.empty:
+            top_business = business_perf.iloc[0]
+            opportunities.append(f"Expand {top_business['Business']} business segment (€{top_business['Revenue']:,.0f} revenue)")
+        
+        if len(channel_perf) > 1:
+            underperforming_channels = channel_perf[channel_perf['Revenue'] < channel_perf.iloc[0]['Revenue'] * 0.3]
+            if not underperforming_channels.empty:
+                opportunities.append(f"Optimize {underperforming_channels.iloc[0]['Channel']} channel performance")
+        
+        # Build data context for AI
+        data_context = f"""
+Business Performance Analysis:
+
+OVERALL METRICS:
+- Total Revenue: €{total_revenue:,.2f}
+- Total Gross Profit: €{total_profit:,.2f}
+- Profit Margin: {profit_margin:.2f}%
+
+YEAR-OVER-YEAR PERFORMANCE:
+{yearly_data.to_string(index=False) if not yearly_data.empty else 'No yearly data'}
+
+TOP 5 BUSINESSES BY REVENUE:
+{business_perf.to_string(index=False) if not business_perf.empty else 'No business data'}
+
+TOP 5 CHANNELS BY REVENUE:
+{channel_perf.to_string(index=False) if not channel_perf.empty else 'No channel data'}
+
+TOP 5 CUSTOMERS BY REVENUE:
+{customer_perf.to_string(index=False) if not customer_perf.empty else 'No customer data'}
+
+IDENTIFIED ISSUES:
+{chr(10).join(f"- {issue}" for issue in issues) if issues else "- No critical issues identified"}
+
+OPPORTUNITIES:
+{chr(10).join(f"- {opp}" for opp in opportunities) if opportunities else "- No specific opportunities identified"}
+"""
+        
+        # Generate AI action items
+        ai_prompt = f"""
+Based on the following business data analysis, generate 6-9 strategic action items.
+Split them into two categories:
+1. CRITICAL: Urgent issues that need immediate attention (revenue decline, profit margin issues, operational problems)
+2. IMPACT: High-impact opportunities for growth (expansion, optimization, new initiatives)
+
+DATA CONTEXT:
+{data_context}
+
+REQUIREMENTS:
+1. Generate 3-5 CRITICAL action items (urgent, time-sensitive issues)
+2. Generate 3-4 IMPACT action items (growth opportunities, optimizations)
+3. Each action item must have:
+   - A specific, actionable title (max 60 characters)
+   - A due date within the next 30-90 days (format: YYYY-MM-DD)
+   - A priority level: "high", "medium", or "low"
+   - A brief description (1-2 sentences)
+4. CRITICAL REQUIREMENT: Each category (critical AND impact) MUST have at least one item with EACH priority level (high, medium, low)
+   - Critical category: must have at least 1 high, 1 medium, and 1 low priority item
+   - Impact category: must have at least 1 high, 1 medium, and 1 low priority item
+5. Base recommendations on actual data patterns and metrics shown above
+6. Make titles specific and data-driven (mention actual numbers, channels, businesses when relevant)
+
+OUTPUT FORMAT (JSON array):
+{{
+  "critical": [
+    {{
+      "title": "Specific critical action title",
+      "dueDate": "2025-01-30",
+      "priority": "high|medium|low",
+      "description": "Brief description of why this is critical"
+    }}
+  ],
+  "impact": [
+    {{
+      "title": "Specific impact action title",
+      "dueDate": "2025-02-15",
+      "priority": "high|medium|low",
+      "description": "Brief description of expected impact"
+    }}
+  ]
+}}
+
+Return ONLY valid JSON object, no markdown, no code blocks, no additional text.
+"""
+        
+        try:
+            logger.info("🤖 Calling Perplexity AI to generate action items...")
+            ai_response = await query_perplexity(ai_prompt)
+            
+            if not ai_response:
+                raise HTTPException(status_code=500, detail="AI service returned empty response")
+            
+            # Parse JSON response
+            ai_response_clean = ai_response.strip()
+            if ai_response_clean.startswith('```json'):
+                ai_response_clean = ai_response_clean[7:]
+            if ai_response_clean.startswith('```'):
+                ai_response_clean = ai_response_clean[3:]
+            if ai_response_clean.endswith('```'):
+                ai_response_clean = ai_response_clean[:-3]
+            ai_response_clean = ai_response_clean.strip()
+            
+            try:
+                action_items_data = json.loads(ai_response_clean)
+            except json.JSONDecodeError as e:
+                # Try to extract JSON using regex as fallback
+                import re
+                try:
+                    # Try to find JSON object in the response
+                    json_match = re.search(r'\{[\s\S]*"critical"[\s\S]*"impact"[\s\S]*\}', ai_response_clean)
+                    if json_match:
+                        action_items_data = json.loads(json_match.group(0))
+                    else:
+                        raise HTTPException(status_code=500, detail="Failed to parse AI response as JSON")
+                except:
+                    logger.error(f"Failed to parse action items JSON: {e}")
+                    raise HTTPException(status_code=500, detail="Failed to parse AI response as JSON")
+            
+            # Validate and structure response
+            critical_items = []
+            impact_items = []
+            
+            # Process critical items
+            for idx, item in enumerate(action_items_data.get('critical', [])[:5], 1):
+                try:
+                    critical_items.append(ActionItem(
+                        id=idx,
+                        title=item.get('title', f'Critical Action {idx}')[:60],
+                        dueDate=item.get('dueDate', '2025-02-15'),
+                        priority=item.get('priority', 'high') if item.get('priority') in ['high', 'medium', 'low'] else 'high',
+                        category='critical',
+                        description=item.get('description', '')
+                    ))
+                except Exception as e:
+                    logger.warning(f"Error processing critical item {idx}: {e}")
+                    continue
+            
+            # Process impact items
+            for idx, item in enumerate(action_items_data.get('impact', [])[:5], 1):
+                try:
+                    impact_items.append(ActionItem(
+                        id=len(critical_items) + idx,
+                        title=item.get('title', f'Impact Action {idx}')[:60],
+                        dueDate=item.get('dueDate', '2025-02-20'),
+                        priority=item.get('priority', 'medium') if item.get('priority') in ['high', 'medium', 'low'] else 'medium',
+                        category='impact',
+                        description=item.get('description', '')
+                    ))
+                except Exception as e:
+                    logger.warning(f"Error processing impact item {idx}: {e}")
+                    continue
+            
+            # Ensure EACH category has items with ALL priority levels (high, medium, low)
+            # Check Critical category
+            critical_priorities = [item.priority for item in critical_items]
+            if critical_items:
+                # Ensure Critical has high priority
+                if 'high' not in critical_priorities:
+                    # Find first item and set to high
+                    if len(critical_items) > 0:
+                        critical_items[0].priority = 'high'
+                        critical_priorities[0] = 'high'
+                
+                # Ensure Critical has medium priority
+                if 'medium' not in critical_priorities:
+                    # Find second item or last item and set to medium
+                    if len(critical_items) > 1:
+                        critical_items[1].priority = 'medium'
+                        critical_priorities[1] = 'medium'
+                    elif len(critical_items) == 1:
+                        # If only one item, we need to add another or change this one
+                        # Change to medium and add a high priority item
+                        critical_items[0].priority = 'high'
+                        # Add a medium priority item
+                        from datetime import datetime, timedelta
+                        due_date = (datetime.now() + timedelta(days=45)).strftime('%Y-%m-%d')
+                        critical_items.append(ActionItem(
+                            id=len(critical_items) + 1,
+                            title="Address Critical Business Issue",
+                            dueDate=due_date,
+                            priority='medium',
+                            category='critical',
+                            description="Address identified critical business issue based on data analysis"
+                        ))
+                        critical_priorities.append('medium')
+                
+                # Ensure Critical has low priority
+                if 'low' not in critical_priorities:
+                    # Find last item and set to low, or add new item
+                    if len(critical_items) > 2:
+                        critical_items[-1].priority = 'low'
+                        critical_priorities[-1] = 'low'
+                    else:
+                        # Add a low priority item
+                        from datetime import datetime, timedelta
+                        due_date = (datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d')
+                        critical_items.append(ActionItem(
+                            id=len(critical_items) + 1,
+                            title="Review and Optimize Operations",
+                            dueDate=due_date,
+                            priority='low',
+                            category='critical',
+                            description="Review operational processes for optimization opportunities"
+                        ))
+                        critical_priorities.append('low')
+            
+            # Check Impact category
+            impact_priorities = [item.priority for item in impact_items]
+            if impact_items:
+                # Ensure Impact has high priority
+                if 'high' not in impact_priorities:
+                    # Find first item and set to high
+                    if len(impact_items) > 0:
+                        impact_items[0].priority = 'high'
+                        impact_priorities[0] = 'high'
+                
+                # Ensure Impact has medium priority
+                if 'medium' not in impact_priorities:
+                    # Find second item or add new item
+                    if len(impact_items) > 1:
+                        impact_items[1].priority = 'medium'
+                        impact_priorities[1] = 'medium'
+                    elif len(impact_items) == 1:
+                        # Change to high and add medium
+                        impact_items[0].priority = 'high'
+                        from datetime import datetime, timedelta
+                        due_date = (datetime.now() + timedelta(days=50)).strftime('%Y-%m-%d')
+                        impact_items.append(ActionItem(
+                            id=len(critical_items) + len(impact_items) + 1,
+                            title="Optimize Growth Opportunities",
+                            dueDate=due_date,
+                            priority='medium',
+                            category='impact',
+                            description="Optimize identified growth opportunities for maximum impact"
+                        ))
+                        impact_priorities.append('medium')
+                
+                # Ensure Impact has low priority
+                if 'low' not in impact_priorities:
+                    # Find last item and set to low, or add new item
+                    if len(impact_items) > 2:
+                        impact_items[-1].priority = 'low'
+                        impact_priorities[-1] = 'low'
+                    else:
+                        # Add a low priority item
+                        from datetime import datetime, timedelta
+                        due_date = (datetime.now() + timedelta(days=75)).strftime('%Y-%m-%d')
+                        impact_items.append(ActionItem(
+                            id=len(critical_items) + len(impact_items) + 1,
+                            title="Explore Long-term Strategic Initiatives",
+                            dueDate=due_date,
+                            priority='low',
+                            category='impact',
+                            description="Explore long-term strategic initiatives for sustainable growth"
+                        ))
+                        impact_priorities.append('low')
+            
+            # Final validation: Ensure minimum items in each category
+            # Critical should have at least 3 items (one of each priority)
+            while len(critical_items) < 3:
+                from datetime import datetime, timedelta
+                priorities_needed = ['high', 'medium', 'low']
+                existing_priorities = [item.priority for item in critical_items]
+                missing_priority = [p for p in priorities_needed if p not in existing_priorities]
+                if missing_priority:
+                    due_date = (datetime.now() + timedelta(days=30 + len(critical_items) * 15)).strftime('%Y-%m-%d')
+                    critical_items.append(ActionItem(
+                        id=len(critical_items) + 1,
+                        title=f"Critical Action Item {len(critical_items) + 1}",
+                        dueDate=due_date,
+                        priority=missing_priority[0],
+                        category='critical',
+                        description="Critical action item based on business data analysis"
+                    ))
+                else:
+                    break
+            
+            # Impact should have at least 3 items (one of each priority)
+            while len(impact_items) < 3:
+                from datetime import datetime, timedelta
+                priorities_needed = ['high', 'medium', 'low']
+                existing_priorities = [item.priority for item in impact_items]
+                missing_priority = [p for p in priorities_needed if p not in existing_priorities]
+                if missing_priority:
+                    due_date = (datetime.now() + timedelta(days=40 + len(impact_items) * 15)).strftime('%Y-%m-%d')
+                    impact_items.append(ActionItem(
+                        id=len(critical_items) + len(impact_items) + 1,
+                        title=f"Impact Action Item {len(impact_items) + 1}",
+                        dueDate=due_date,
+                        priority=missing_priority[0],
+                        category='impact',
+                        description="High-impact action item based on business data analysis"
+                    ))
+                else:
+                    break
+            
+            # Ensure we have at least some items with all priorities
+            if not critical_items and not impact_items:
+                # Fallback to default items with all priority levels
+                from datetime import datetime, timedelta
+                critical_items = [
+                    ActionItem(id=1, title="Review Revenue Trends", dueDate=(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d'), priority="high", category="critical", description="Analyze revenue trends and identify growth opportunities"),
+                    ActionItem(id=2, title="Optimize Channel Performance", dueDate=(datetime.now() + timedelta(days=45)).strftime('%Y-%m-%d'), priority="medium", category="critical", description="Review and optimize underperforming channels"),
+                    ActionItem(id=3, title="Address Operational Issues", dueDate=(datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d'), priority="low", category="critical", description="Review and address operational inefficiencies"),
+                ]
+                impact_items = [
+                    ActionItem(id=4, title="Expand Top Business Segment", dueDate=(datetime.now() + timedelta(days=35)).strftime('%Y-%m-%d'), priority="high", category="impact", description="Leverage top-performing business segment for expansion"),
+                    ActionItem(id=5, title="Improve Profit Margins", dueDate=(datetime.now() + timedelta(days=50)).strftime('%Y-%m-%d'), priority="medium", category="impact", description="Identify cost optimization opportunities"),
+                    ActionItem(id=6, title="Explore New Market Opportunities", dueDate=(datetime.now() + timedelta(days=75)).strftime('%Y-%m-%d'), priority="low", category="impact", description="Research and explore new market segments for growth"),
+                ]
+            
+            logger.info(f"✅ Generated {len(critical_items)} critical and {len(impact_items)} impact action items")
+            
+            return ActionItemsResponse(
+                critical=critical_items,
+                impact=impact_items
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error generating action items: {str(e)}")
+            import traceback
+            logger.error(f"❌ Traceback: {traceback.format_exc()}")
+            raise HTTPException(status_code=500, detail=f"Error generating action items: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Action items error: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Action items error: {str(e)}")
+
 # Root Cause Analysis Endpoints
 @api_router.get("/root-cause-analysis/test", name="test_root_cause")
 async def test_root_cause_route():
