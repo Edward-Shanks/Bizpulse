@@ -341,8 +341,8 @@ export const staticData = {
     businessPlans: [
       {
         id: 1,
-        planName: 'Q2 2025 Strategic Initiatives',
-        period: 'Q2 2025',
+        planName: 'Q4 2025 Strategic Initiatives',
+        period: 'Q4 2025',
         totalBudget: 3200000,
         allocatedBudget: 2850000,
         expectedRevenue: 12400000,
@@ -354,11 +354,11 @@ export const staticData = {
           { name: 'Technology Infrastructure', budget: 400000, revenue: 1600000, priority: 'high', status: 'approved' }
         ],
         milestones: [
-          { name: 'Budget Approval', date: '2025-03-15', status: 'completed', progress: 100 },
-          { name: 'Resource Allocation', date: '2025-03-30', status: 'in-progress', progress: 75 },
-          { name: 'Initiative Kickoff', date: '2025-04-10', status: 'pending', progress: 0 },
-          { name: 'Mid-Quarter Review', date: '2025-05-15', status: 'pending', progress: 0 },
-          { name: 'Final Review & Optimization', date: '2025-06-25', status: 'pending', progress: 0 }
+          { name: 'Budget Approval', date: '2025-09-15', status: 'completed', progress: 100 },
+          { name: 'Resource Allocation', date: '2025-09-30', status: 'in-progress', progress: 75 },
+          { name: 'Initiative Kickoff', date: '2025-10-10', status: 'pending', progress: 0 },
+          { name: 'Mid-Quarter Review', date: '2025-11-15', status: 'pending', progress: 0 },
+          { name: 'Final Review & Optimization', date: '2025-12-25', status: 'pending', progress: 0 }
         ],
         aiInsights: [
           'Marketing Campaign budget should increase by 12% based on Q1 performance and seasonal trends',
