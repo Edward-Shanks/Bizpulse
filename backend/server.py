@@ -556,6 +556,7 @@ async def get_executive_overview(
     months: str = None,
     businesses: str = None,
     channels: str = None,
+    brands: str = None,
     email: str = Depends(get_current_user)
 ):
     """Executive Overview - YoY comparison, KPIs with multi-select filters"""
@@ -583,6 +584,11 @@ async def get_executive_overview(
             channel_list = [c.strip() for c in channels.split(',') if c.strip()]
             if channel_list:
                 query['Channel'] = {'$in': channel_list}
+        
+        if brands:
+            brand_list = [b.strip() for b in brands.split(',') if b.strip()]
+            if brand_list:
+                query['Brand'] = {'$in': brand_list}
             
         # Helper to handle NaN values in float conversions
         import math

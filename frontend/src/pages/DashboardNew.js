@@ -106,10 +106,11 @@ const Dashboard = () => {
         if (selectedMonths.length) params.set('months', selectedMonths.join(','));
         if (selectedBusinesses.length) params.set('businesses', selectedBusinesses.join(','));
         if (selectedChannels.length) params.set('channels', selectedChannels.join(','));
+        if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
         const url = `${API}/analytics/executive-overview${params.toString() ? `?${params.toString()}` : ''}`;
         if (isDevelopment) {
           console.log('Loading data with URL:', url);
-          console.log('Filter values:', { selectedYears, selectedMonths, selectedBusinesses, selectedChannels });
+          console.log('Filter values:', { selectedYears, selectedMonths, selectedBusinesses, selectedChannels, selectedBrands });
         }
         const res = await axios.get(url, {
           headers: { 
@@ -127,7 +128,7 @@ const Dashboard = () => {
       }
     };
     loadData();
-  }, [token, selectedYears, selectedMonths, selectedBusinesses, selectedChannels]);
+  }, [token, selectedYears, selectedMonths, selectedBusinesses, selectedChannels, selectedBrands]);
 
   const handleSyncData = async () => {
     try {
@@ -146,6 +147,7 @@ const Dashboard = () => {
       if (selectedMonths.length) params.set('months', selectedMonths.join(','));
       if (selectedBusinesses.length) params.set('businesses', selectedBusinesses.join(','));
       if (selectedChannels.length) params.set('channels', selectedChannels.join(','));
+      if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
       const url = `${API}/analytics/executive-overview${params.toString() ? `?${params.toString()}` : ''}`;
       const dataRes = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -469,7 +471,7 @@ const Dashboard = () => {
           </div>
           
           {/* Debug: Show current filter selections */}
-          {(selectedYears.length > 0 || selectedMonths.length > 0 || selectedBusinesses.length > 0 || selectedChannels.length > 0) && (
+          {(selectedYears.length > 0 || selectedMonths.length > 0 || selectedBusinesses.length > 0 || selectedChannels.length > 0 || selectedBrands.length > 0) && (
             <div className="mt-4 p-3 bg-blue-50 rounded-lg">
               <h4 className="text-sm font-medium text-blue-900 mb-2">Active Filters:</h4>
               <div className="flex flex-wrap gap-2 text-xs">
@@ -491,6 +493,11 @@ const Dashboard = () => {
                 {selectedChannels.length > 0 && (
                   <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded">
                     Channels: {selectedChannels.join(', ')}
+                  </span>
+                )}
+                {selectedBrands.length > 0 && (
+                  <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded">
+                    Brands: {selectedBrands.join(', ')}
                   </span>
                 )}
               </div>
