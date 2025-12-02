@@ -1334,8 +1334,14 @@ async def get_filter_options_test():
         raise HTTPException(status_code=500, detail=str(e))
 
 # Perplexity API helper function
-async def query_perplexity(prompt: str, conversation_history: Optional[List[Dict]] = None) -> str:
-    """Query Perplexity API for AI responses"""
+async def query_perplexity(prompt: str, conversation_history: Optional[List[Dict]] = None, custom_system_message: Optional[str] = None) -> str:
+    """Query Perplexity API for AI responses
+    
+    Args:
+        prompt: User prompt/question
+        conversation_history: Previous conversation messages
+        custom_system_message: Optional custom system message to override default
+    """
     
     PPLX_API_KEY = os.getenv("PPLX_API_KEY1")
     if not PPLX_API_KEY:
@@ -1348,15 +1354,18 @@ async def query_perplexity(prompt: str, conversation_history: Optional[List[Dict
         "Content-Type": "application/json"
     }
     
+    # Use custom system message if provided, otherwise use default
+    system_content = custom_system_message or (
+        "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
+        "Analyze the provided business data and generate strategic marketing and business recommendations. "
+        "All monetary values are in Euros (€). Be specific, data-driven, and actionable. "
+        "Focus on growth opportunities, customer acquisition, retention strategies, and revenue optimization. "
+        "Provide recommendations with clear reasoning, expected impact, and implementation channels."
+    )
+    
     messages = [{
         "role": "system",
-        "content": (
-            "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
-            "Analyze the provided business data and generate strategic marketing and business recommendations. "
-            "All monetary values are in Euros (€). Be specific, data-driven, and actionable. "
-            "Focus on growth opportunities, customer acquisition, retention strategies, and revenue optimization. "
-            "Provide recommendations with clear reasoning, expected impact, and implementation channels."
-        )
+        "content": system_content
     }]
     
     if conversation_history:
@@ -5170,6 +5179,651 @@ async def customer_view_insights_chat(request: CustomerInsightsChatRequest, emai
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error processing customer view insights chat: {str(e)}")
+
+# ============================================================================
+# MongoDB-Based View Insights Chatbot API
+# ============================================================================
+# This API provides AI-powered insights for all screens using MongoDB data
+# Screens: Business Compass, Brands, Customers, Categories, Sales Analysis
+
+class InsightsChatRequest(BaseModel):
+    """Request model for View Insights chatbot"""
+    message: str = Field(..., description="User's question or message")
+    chart_title: Optional[str] = Field(None, description="Title of the chart being viewed")
+    context: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Filter context including selectedYears, selectedMonths, selectedBusinesses, selectedBrands, selectedChannels, etc."
+    )
+    session_id: Optional[str] = Field(None, description="Session identifier for tracking conversations")
+    conversation_history: Optional[List[Dict[str, str]]] = Field(
+        default_factory=list,
+        description="Previous conversation messages for context"
+    )
+
+class InsightsChatResponse(BaseModel):
+    """Response model for View Insights chatbot"""
+    response: str = Field(..., description="AI-generated response")
+    timestamp: Optional[str] = Field(None, description="Response timestamp")
+    context: Optional[str] = Field(None, description="Data context used for generating the response")
+    data: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Additional data including pivot_table, columns, filters, etc."
+    )
+
+def parse_list(value: Optional[str], cast=None):
+    """Parse comma-separated string into list"""
+    if not value:
+        return []
+    items = []
+    for part in value.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            items.append(cast(part) if cast else part)
+        except Exception:
+            continue
+    return items
+
+def safe_float(value: Any) -> float:
+    """Safely convert value to float"""
+    try:
+        if value is None:
+            return 0.0
+        if isinstance(value, (int, float)):
+            if pd.isna(value) or pd.isnull(value):
+                return 0.0
+            return float(value)
+        return float(value)
+    except Exception:
+        return 0.0
+
+def format_currency(value: float) -> str:
+    """Format currency value to M/k format like charts (e.g., €59.0M, €1.2k)"""
+    try:
+        v = abs(float(value))
+        if v >= 1_000_000:
+            return f"€{v/1_000_000:.1f}M"
+        elif v >= 1_000:
+            return f"€{v/1_000:.1f}k"
+        else:
+            return f"€{v:,.0f}"
+    except Exception:
+        return f"€{value:,.0f}"
+
+def format_units(value: float) -> str:
+    """Format units to M/k format (e.g., 2.7M, 1.2k)"""
+    try:
+        v = abs(float(value))
+        if v >= 1_000_000:
+            return f"{v/1_000_000:.1f}M"
+        elif v >= 1_000:
+            return f"{v/1_000:.1f}k"
+        else:
+            return f"{v:,.0f}"
+    except Exception:
+        return f"{value:,.0f}"
+
+async def build_mongodb_query_from_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Build MongoDB query from frontend context filters"""
+    query = {}
+    
+    # Years
+    years = context.get('selectedYears') or context.get('year') or []
+    if isinstance(years, str):
+        years = parse_list(years, int)
+    if years and len(years) > 0:
+        query['Year'] = {'$in': [int(y) for y in years]}
+    
+    # Months
+    months = context.get('selectedMonths') or context.get('month') or []
+    if isinstance(months, str):
+        months = parse_list(months)
+    if months and len(months) > 0:
+        query['Month_Name'] = {'$in': months}
+    
+    # Businesses
+    businesses = context.get('selectedBusinesses') or context.get('business') or []
+    if isinstance(businesses, str):
+        businesses = parse_list(businesses)
+    if businesses and len(businesses) > 0:
+        query['Business'] = {'$in': businesses}
+    
+    # Brands
+    brands = context.get('selectedBrands') or context.get('brand') or []
+    if isinstance(brands, str):
+        brands = parse_list(brands)
+    if brands and len(brands) > 0:
+        query['Brand'] = {'$in': brands}
+    
+    # Channels
+    channels = context.get('selectedChannels') or context.get('channel') or []
+    if isinstance(channels, str):
+        channels = parse_list(channels)
+    if channels and len(channels) > 0:
+        query['Channel'] = {'$in': channels}
+    
+    # Customers
+    customers = context.get('selectedCustomers') or context.get('customer') or []
+    if isinstance(customers, str):
+        customers = parse_list(customers)
+    if customers and len(customers) > 0:
+        query['Customer'] = {'$in': customers}
+    
+    # Categories
+    categories = context.get('selectedCategories') or context.get('category') or []
+    if isinstance(categories, str):
+        categories = parse_list(categories)
+    if categories and len(categories) > 0:
+        query['Category'] = {'$in': categories}
+    
+    return query
+
+async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], user_message: Optional[str] = None) -> str:
+    """Get relevant data context from MongoDB based on chart title"""
+    context_parts = []
+    
+    try:
+        # Determine chart type from title
+        chart_lower = chart_title.lower() if chart_title else ""
+        
+        # Build match stage
+        match_stage = {"$match": query} if query else {"$match": {}}
+        
+        # Get totals first
+        pipeline_totals = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": None,
+                    "total_revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "total_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "total_units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                }
+            }
+        ]
+        totals_result = await db.business_data.aggregate(pipeline_totals).to_list(1)
+        totals = totals_result[0] if totals_result else {}
+        
+        context_parts.append(f"Overall Totals:")
+        context_parts.append(f"  Total Revenue: {format_currency(safe_float(totals.get('total_revenue', 0)))}")
+        context_parts.append(f"  Total Gross Profit: {format_currency(safe_float(totals.get('total_profit', 0)))}")
+        context_parts.append(f"  Total Units: {format_units(safe_float(totals.get('total_units', 0)))}")
+        
+        # Chart-specific aggregations
+        if "business" in chart_lower or "compass" in chart_lower:
+            # Business performance
+            pipeline_business = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Business",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}},
+                {"$limit": 10}
+            ]
+            business_results = await db.business_data.aggregate(pipeline_business).to_list(10)
+            if business_results:
+                context_parts.append("\nTop Businesses by Revenue:")
+                for item in business_results:
+                    business_name = str(item.get("_id", "Unknown"))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    units = safe_float(item.get("Units", 0))
+                    margin = (profit / revenue * 100) if revenue > 0 else 0
+                    context_parts.append(f"  {business_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+        
+        if "brand" in chart_lower:
+            # Brand performance - detect how many brands to show
+            # Check if user asked for specific number (e.g., "top 15", "15 brands")
+            import re
+            brand_limit = 15  # Default to 15 for brand analysis charts
+            # Check both chart title and user message for numbers
+            search_text = (chart_title or "").lower()
+            if user_message:
+                search_text += " " + user_message.lower()
+            numbers = re.findall(r'\b(\d+)\b', search_text)
+            if numbers:
+                try:
+                    # Find numbers that make sense (between 5 and 50)
+                    valid_numbers = [int(num) for num in numbers if 5 <= int(num) <= 50]
+                    if valid_numbers:
+                        brand_limit = max(valid_numbers)
+                except:
+                    pass
+            
+            # Use EXACT same aggregation as Brand Analysis endpoint
+            # Build match stage with query filters
+            match_stage = {"$match": query} if query else {"$match": {}}
+            
+            pipeline_brand = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Brand",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}},
+                {"$limit": brand_limit + 10}  # Get extra to filter out nulls
+            ]
+            brand_results = await db.business_data.aggregate(pipeline_brand).to_list(brand_limit + 10)
+            
+            # Filter and format results
+            valid_brands = []
+            for item in brand_results:
+                brand_name = str(item.get("_id", "")).strip()
+                if brand_name and brand_name.lower() not in ["unknown", "none", "", "null"]:
+                    revenue = safe_float(item.get("Revenue", 0))
+                    if revenue > 0:  # Only include brands with revenue
+                        valid_brands.append({
+                            "Brand": brand_name,
+                            "Revenue": revenue,
+                            "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                            "Units": safe_float(item.get("Units", 0))
+                        })
+            
+            # Take only the requested number
+            valid_brands = valid_brands[:brand_limit]
+            
+            if valid_brands:
+                context_parts.append(f"\nTop {len(valid_brands)} Brands by Revenue:")
+                for idx, brand in enumerate(valid_brands, 1):
+                    brand_name = brand["Brand"]
+                    revenue = brand["Revenue"]
+                    profit = brand["Gross_Profit"]
+                    units = brand["Units"]
+                    margin = (profit / revenue * 100) if revenue > 0 else 0
+                    # Format with M/k format to match chart display
+                    revenue_formatted = format_currency(revenue)
+                    profit_formatted = format_currency(profit)
+                    units_formatted = format_units(units)
+                    context_parts.append(f"  {idx}. {brand_name}: Revenue {revenue_formatted}, Profit {profit_formatted} ({margin:.1f}% margin), Units {units_formatted}")
+        
+        if "customer" in chart_lower:
+            # Customer performance
+            pipeline_customer = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Customer",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}},
+                {"$limit": 10}
+            ]
+            customer_results = await db.business_data.aggregate(pipeline_customer).to_list(10)
+            if customer_results:
+                context_parts.append("\nTop Customers by Revenue:")
+                for item in customer_results:
+                    customer_name = str(item.get("_id", "Unknown"))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    units = safe_float(item.get("Units", 0))
+                    margin = (profit / revenue * 100) if revenue > 0 else 0
+                    context_parts.append(f"  {customer_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+        
+        if "category" in chart_lower:
+            # Category performance
+            pipeline_category = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Category",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}},
+                {"$limit": 10}
+            ]
+            category_results = await db.business_data.aggregate(pipeline_category).to_list(10)
+            if category_results:
+                context_parts.append("\nTop Categories by Revenue:")
+                for item in category_results:
+                    category_name = str(item.get("_id", "Unknown"))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    units = safe_float(item.get("Units", 0))
+                    margin = (profit / revenue * 100) if revenue > 0 else 0
+                    context_parts.append(f"  {category_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+        
+        if "channel" in chart_lower or "sales" in chart_lower:
+            # Channel performance
+            pipeline_channel = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Channel",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}},
+                {"$limit": 10}
+            ]
+            channel_results = await db.business_data.aggregate(pipeline_channel).to_list(10)
+            if channel_results:
+                context_parts.append("\nTop Channels by Revenue:")
+                for item in channel_results:
+                    channel_name = str(item.get("_id", "Unknown"))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    units = safe_float(item.get("Units", 0))
+                    margin = (profit / revenue * 100) if revenue > 0 else 0
+                    context_parts.append(f"  {channel_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+        
+        # Monthly trend if available
+        if "trend" in chart_lower or "monthly" in chart_lower or "ytd" in chart_lower:
+            pipeline_monthly = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Month_Name",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            monthly_results = await db.business_data.aggregate(pipeline_monthly).to_list(12)
+            if monthly_results:
+                context_parts.append("\nMonthly Trend:")
+                for item in monthly_results:
+                    month = str(item.get("_id", "Unknown"))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    context_parts.append(f"  {month}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)}")
+        
+        # Yearly trend
+        if "year" in chart_lower or "yoy" in chart_lower or "yearly" in chart_lower:
+            pipeline_yearly = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Year",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            yearly_results = await db.business_data.aggregate(pipeline_yearly).to_list(10)
+            if yearly_results:
+                context_parts.append("\nYearly Performance:")
+                for item in yearly_results:
+                    year = int(item.get("_id", 0))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    margin = (profit / revenue * 100) if revenue > 0 else 0
+                    context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+        
+    except Exception as e:
+        logger.error(f"Error building data context: {str(e)}")
+        context_parts.append(f"\nError retrieving detailed data: {str(e)}")
+    
+    return "\n".join(context_parts)
+
+@api_router.post("/insights/chat", response_model=InsightsChatResponse)
+async def insights_chat(
+    request: InsightsChatRequest,
+    email: str = Depends(get_current_user)
+):
+    """
+    MongoDB-based View Insights Chatbot for all screens
+    Supports: Business Compass, Brands, Customers, Categories, Sales Analysis
+    """
+    try:
+        logger.info(f"📊 View Insights Chat Request - Chart: {request.chart_title}, Message: {request.message[:100]}")
+        
+        # Build MongoDB query from context
+        query = await build_mongodb_query_from_context(request.context or {})
+        logger.info(f"🔍 MongoDB Query: {query}")
+        
+        # Get data context from MongoDB (pass user message to detect requested number)
+        data_context = await get_data_context_for_chart(request.chart_title or "", query, request.message)
+        
+        # Build conversation history for Perplexity
+        conversation_history = []
+        if request.conversation_history:
+            for msg in request.conversation_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role in ["user", "assistant"]:
+                    conversation_history.append({"role": role, "content": content})
+        
+        # Build comprehensive prompt
+        chart_context = f"Chart: {request.chart_title}\n" if request.chart_title else ""
+        system_context = (
+            "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
+            "You provide business insights and recommendations to non-technical executives and managers. "
+            "CRITICAL: NEVER mention technical terms like 'MongoDB', 'database', 'query', 'aggregation', 'pipeline', 'API', 'system', or any other technical implementation details. "
+            "Speak ONLY in business language. Focus on business outcomes, strategies, and actionable insights. "
+            "When suggesting data analysis, say 'analyze your sales data' or 'review your performance metrics', NOT 'query the database' or 'use MongoDB'. "
+            "When suggesting automation, say 'automate your reporting' or 'set up automated alerts', NOT 'deploy MongoDB-powered analytics' or 'use aggregation framework'. "
+            "IMPORTANT: If the user asks for a specific number (e.g., 'top 15 brands', '15 brands'), you MUST provide exactly that number of items in your response. "
+            "CRITICAL: Use the EXACT numbers from the data provided to you. Do NOT round, estimate, or modify the numbers. The data contains precise values - use them exactly as shown. "
+            "List all items from the data provided, maintaining the ranking order. Format numbers exactly as provided (e.g., if data shows €1,600,000.00, use that exact value, not €1.6M or €1.8M). "
+            "All monetary values are in Euros (€). Be specific, data-driven, and actionable. "
+            "Include trends, growth rates (%), and percentage of total revenue where relevant. "
+            "For underperformers, identify the lowest performers with specific numbers. "
+            "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
+            "Use conversation history for context in follow-ups. "
+            "Keep it engaging and provide comprehensive analysis in plain business language that any executive can understand."
+        )
+        
+        # Build user prompt with data context
+        user_prompt = f"{chart_context}\n\nBusiness Data:\n{data_context}\n\nUser Question: {request.message}"
+        
+        # Query Perplexity API with custom system message to ensure non-technical language
+        ai_response = await query_perplexity(user_prompt, conversation_history, custom_system_message=system_context)
+        
+        # Get pivot table data for visualization - make it relevant to the question
+        pivot_table = []
+        try:
+            user_msg_lower = (request.message or "").lower()
+            chart_title_lower = (request.chart_title or "").lower()
+            
+            # Determine what data to show based on the question
+            if "brand" in user_msg_lower or "brand" in chart_title_lower:
+                # User asked about brands - show brand-level aggregated data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                # Filter out null brands
+                if 'Brand' not in match_stage["$match"]:
+                    match_stage["$match"]["Brand"] = {"$exists": True, "$nin": [None, "", "Unknown", "null", "None"]}
+                
+                # Detect how many brands requested
+                import re
+                numbers = re.findall(r'\b(\d+)\b', user_msg_lower + " " + chart_title_lower)
+                brand_limit = 20  # Default
+                if numbers:
+                    try:
+                        valid_numbers = [int(num) for num in numbers if 5 <= int(num) <= 50]
+                        if valid_numbers:
+                            brand_limit = max(valid_numbers)
+                    except:
+                        pass
+                
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Brand",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": brand_limit}
+                ]
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(brand_limit)
+                for item in pivot_results:
+                    brand_name = str(item.get("_id", ""))
+                    if brand_name and brand_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Brand": brand_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+            
+            elif "customer" in user_msg_lower or "customer" in chart_title_lower:
+                # User asked about customers - show customer-level aggregated data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Customer",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": 15}
+                ]
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(15)
+                for item in pivot_results:
+                    customer_name = str(item.get("_id", ""))
+                    if customer_name and customer_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Customer": customer_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+            
+            elif "category" in user_msg_lower or "category" in chart_title_lower:
+                # User asked about categories - show category-level aggregated data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Category",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": 15}
+                ]
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(15)
+                for item in pivot_results:
+                    category_name = str(item.get("_id", ""))
+                    if category_name and category_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Category": category_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+            
+            else:
+                # Default: show brand-level data (most common)
+                match_stage = {"$match": query} if query else {"$match": {}}
+                if 'Brand' not in match_stage["$match"]:
+                    match_stage["$match"]["Brand"] = {"$exists": True, "$nin": [None, "", "Unknown", "null", "None"]}
+                
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Brand",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": 15}
+                ]
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(15)
+                for item in pivot_results:
+                    brand_name = str(item.get("_id", ""))
+                    if brand_name and brand_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Brand": brand_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+        except Exception as e:
+            logger.error(f"Error building pivot table: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Get total row count
+        total_rows = await db.business_data.count_documents(query) if query else await db.business_data.count_documents({})
+        
+        # Format timestamp
+        timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
+        
+        return InsightsChatResponse(
+            response=ai_response,
+            timestamp=timestamp,
+            context=data_context,
+            data={
+                "pivot_table": pivot_table,
+                "columns": ["Revenue", "Gross_Profit", "Units"],
+                "filters": query,
+                "is_trend_query": "trend" in (request.message or "").lower(),
+                "is_loser_query": any(word in (request.message or "").lower() for word in ["worst", "lowest", "loser", "least"]),
+                "total_rows": total_rows
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"View Insights Chat error: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing view insights chat: {str(e)}")
 
 # Include the router in the main app
 app.include_router(api_router)

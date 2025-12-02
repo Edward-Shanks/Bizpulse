@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import axios from 'axios';
-import { useAuth } from '@/App';
+import { useAuth, API } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -158,15 +158,17 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       };
 
       // Determine the correct endpoint based on API URL
-      // If apiUrl is provided (from Customer Deep Intelligence), use the backend API
-      // Note: apiUrl already includes /api prefix (e.g., http://localhost:8000/api)
-      // Otherwise, use the external insights API
+      // Priority: 1) apiUrl prop (Customer Deep Intelligence), 2) Backend API (MongoDB-based), 3) External insights API
       let endpoint;
       if (apiUrl) {
         // apiUrl is like "http://localhost:8000/api", so we append the path
         // Use view-insights/chat endpoint for Customer Deep Intelligence view insights modal
         endpoint = `${apiUrl}/analytics/customer-insights/view-insights/chat`;
+      } else if (API) {
+        // Use backend MongoDB-based insights API for all screens (Business Compass, Brands, Customers, Categories, Sales Analysis)
+        endpoint = `${API}/insights/chat`;
       } else {
+        // Fallback to external insights API
         endpoint = `${INSIGHTS_API}/insights/chat`;
       }
       
