@@ -22,7 +22,7 @@ if not PPLX_API_KEY1:
 ROOT_DIR = Path(__file__).resolve().parent
 SHOPIFY_CSV_PATH = None
 # Try different possible file names
-for filename in ['shopify_data.csv', 'Shopify_customer_df_new.csv', 'customer_shopify.csv']:
+for filename in ['Shopify_customer_df_new2.csv', 'shopify_data.csv', 'Shopify_customer_df_new.csv', 'customer_shopify.csv']:
     potential_path = ROOT_DIR / filename
     if potential_path.exists():
         SHOPIFY_CSV_PATH = potential_path

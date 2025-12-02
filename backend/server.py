@@ -4035,10 +4035,10 @@ async def get_customer_insights_filters(email: str = Depends(get_current_user)):
     Returns only years and months that exist in the Shopify data, ensuring filters are accurate.
     """
     try:
-        # Load Shopify_customer_df_new.csv
-        csv_path = ROOT_DIR / 'Shopify_customer_df_new.csv'
+        # Load Shopify_customer_df_new2.csv
+        csv_path = ROOT_DIR / 'Shopify_customer_df_new2.csv'
         if not csv_path.exists():
-            raise HTTPException(status_code=404, detail="Shopify_customer_df_new.csv file not found")
+            raise HTTPException(status_code=404, detail="Shopify_customer_df_new2.csv file not found")
         
         df = pd.read_csv(csv_path)
         if df.empty:
@@ -4108,23 +4108,67 @@ async def get_customer_insights(
     - And more...
     """
     try:
-        # Load Shopify_customer_df_new.csv
-        csv_path = ROOT_DIR / 'Shopify_customer_df_new.csv'
+        # Load Shopify_customer_df_new2.csv
+        csv_path = ROOT_DIR / 'Shopify_customer_df_new2.csv'
         if not csv_path.exists():
-            raise HTTPException(status_code=404, detail="Shopify_customer_df_new.csv file not found")
+            raise HTTPException(status_code=404, detail="Shopify_customer_df_new2.csv file not found")
         
         df = pd.read_csv(csv_path)
         if df.empty:
             raise HTTPException(status_code=500, detail="Customer Shopify data is empty")
         
-        # Convert date columns
+        logger.info(f"📊 CSV loaded: {len(df)} total rows")
+        
+        # Ensure numeric columns FIRST - before any filtering or date parsing
+        numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 'Orders (first-time)', 
+                       'Orders (returning)', 'Quantity ordered', 'Customer number of orders']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        logger.info(f"📊 After numeric conversion: {len(df)} rows, Total sales sum (ALL rows): {df['Total sales'].sum():,.2f}")
+        
+        # Debug: Check November rows in raw data (before date parsing)
+        if 'Month' in df.columns:
+            nov_raw = df[df['Month'].astype(str).str.contains('2025-11', na=False)]
+            logger.info(f"📊 Raw November rows (from Month column): {len(nov_raw)}, Total sales: {nov_raw['Total sales'].sum():,.2f}")
+        
+        # Rename Month column from CSV to avoid conflict (it contains "2025-11" format)
+        if 'Month' in df.columns:
+            df['Month_Column'] = df['Month'].copy()
+        
+        # Convert date columns - Use Month_Column as PRIMARY source, Day as fallback
+        # This ensures all rows are included even if Day parsing fails
+        if 'Month_Column' in df.columns:
+            # Parse Month_Column first (format: "2025-11" or "2025-01") - this is the most reliable source
+            month_col = df['Month_Column'].astype(str)
+            for idx in df.index:
+                month_val = month_col.loc[idx]
+                if pd.notna(month_val) and month_val != 'nan' and '-' in str(month_val):
+                    try:
+                        year_month = str(month_val).split('-')
+                        if len(year_month) >= 2:
+                            year_val = int(year_month[0])
+                            month_num = int(year_month[1])
+                            df.loc[idx, 'Year'] = year_val
+                            df.loc[idx, 'Month'] = month_num
+                            df.loc[idx, 'MonthName'] = pd.to_datetime(f"{year_val}-{month_num}-01").strftime('%B')
+                    except (ValueError, IndexError):
+                        pass
+            logger.info(f"✅ Month_Column parsed: Valid Year/Month: {(df['Year'].notna() & df['Month'].notna()).sum()}/{len(df)}")
+        
+        # Now parse Day column as fallback for any rows still missing Year/Month
         if 'Day' in df.columns:
             try:
                 df['Day'] = pd.to_datetime(df['Day'], errors='coerce')
-                df['Year'] = df['Day'].dt.year
-                df['Month'] = df['Day'].dt.month
-                df['MonthName'] = df['Day'].dt.strftime('%B')
-                logger.info(f"✅ Date columns processed. Valid dates: {df['Day'].notna().sum()}/{len(df)}")
+                # Only use Day for rows where Year/Month are still missing
+                missing_mask = df['Year'].isna() | df['Month'].isna()
+                if missing_mask.any():
+                    df.loc[missing_mask & df['Day'].notna(), 'Year'] = df.loc[missing_mask & df['Day'].notna(), 'Day'].dt.year
+                    df.loc[missing_mask & df['Day'].notna(), 'Month'] = df.loc[missing_mask & df['Day'].notna(), 'Day'].dt.month
+                    df.loc[missing_mask & df['Day'].notna(), 'MonthName'] = df.loc[missing_mask & df['Day'].notna(), 'Day'].dt.strftime('%B')
+                logger.info(f"✅ Day column processed. Valid dates: {df['Day'].notna().sum()}/{len(df)}")
+                logger.info(f"✅ Final: Valid Year/Month: {(df['Year'].notna() & df['Month'].notna()).sum()}/{len(df)}")
             except Exception as e:
                 logger.warning(f"Error processing date columns: {str(e)}")
                 df['Year'] = None
@@ -4135,6 +4179,8 @@ async def get_customer_insights(
             df['Year'] = None
             df['Month'] = None
             df['MonthName'] = None
+        
+        # Month_Column is already parsed above as primary source, so no additional fallback needed
         
         # Apply filters
         logger.info(f"🔍 Applying filters - years: {years}, months: {months}")
@@ -4289,13 +4335,6 @@ async def get_customer_insights(
                 }
             }
         
-        # Ensure numeric columns
-        numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 'Orders (first-time)', 
-                       'Orders (returning)', 'Quantity ordered', 'Customer number of orders']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        
         # 1. Customer Acquisition vs Retention (New vs Returning)
         new_vs_returning = df.groupby('New or returning customer').agg({
             'Orders': 'sum',
@@ -4364,8 +4403,18 @@ async def get_customer_insights(
                 daily_trend['month_label'] = daily_trend['MonthName'] + ' ' + daily_trend['Year'].astype(str)
                 
                 # Monthly aggregation (for months with data)
-                # Filter out rows where Year or Month is null
+                # Use ALL rows for aggregation - filter only invalid Year/Month after fallback processing
                 df_valid_dates = df[(df['Year'].notna()) & (df['Month'].notna())]
+                logger.info(f"📊 Aggregating monthly trend from {len(df_valid_dates)} valid rows (out of {len(df)} total rows)")
+                
+                # Debug: Check November data specifically
+                nov_data = df_valid_dates[(df_valid_dates['Year'] == 2025) & (df_valid_dates['Month'] == 11)]
+                logger.info(f"📊 November 2025: {len(nov_data)} rows, Total sales: {nov_data['Total sales'].sum():,.2f}")
+                if len(nov_data) > 0:
+                    logger.info(f"📊 November sample - First 5 rows Total sales: {nov_data['Total sales'].head(5).tolist()}")
+                    logger.info(f"📊 November - Rows with Total sales > 0: {(nov_data['Total sales'] > 0).sum()}")
+                    logger.info(f"📊 November - Rows with Total sales = 0: {(nov_data['Total sales'] == 0).sum()}")
+                
                 if not df_valid_dates.empty:
                     monthly_trend = df_valid_dates.groupby(['Year', 'Month']).agg({
                         'Total sales': 'sum',
@@ -4374,8 +4423,19 @@ async def get_customer_insights(
                         'Orders (first-time)': 'sum',
                         'Orders (returning)': 'sum'
                     }).reset_index()
+                    logger.info(f"📊 Monthly trend aggregation complete. Total sales sum: {monthly_trend['Total sales'].sum():,.2f}")
+                    logger.info(f"📊 Monthly trend records: {len(monthly_trend)}")
+                    # Log each month's total for debugging
+                    for _, row in monthly_trend.iterrows():
+                        logger.info(f"📊 {row['Year']}-{row['Month']:02d}: Total sales = {row['Total sales']:,.2f}")
+                    
+                    # Specifically log November
+                    nov_trend = monthly_trend[(monthly_trend['Year'] == 2025) & (monthly_trend['Month'] == 11)]
+                    if not nov_trend.empty:
+                        logger.info(f"📊 NOVEMBER 2025 IN TREND: Total sales = {nov_trend.iloc[0]['Total sales']:,.2f}")
                 else:
                     monthly_trend = pd.DataFrame(columns=['Year', 'Month', 'Total sales', 'Orders', 'Customer email', 'Orders (first-time)', 'Orders (returning)'])
+                    logger.warning("⚠️ No valid dates found for monthly aggregation")
                 
                 # Add month names
                 monthly_trend['MonthName'] = pd.to_datetime(monthly_trend[['Year', 'Month']].assign(Day=1)).dt.strftime('%B')
@@ -4427,18 +4487,10 @@ async def get_customer_insights(
                 # Sort again after adding previous month data
                 monthly_trend = monthly_trend.sort_values(['Year', 'Month']).reset_index(drop=True)
                 
-                # Filter out December from both daily and monthly trends BEFORE deciding which to use
-                if not daily_trend.empty and 'Month' in daily_trend.columns:
-                    daily_trend = daily_trend[daily_trend['Month'] != 12]
-                    logger.info(f"✅ Filtered December from daily_trend. Remaining: {len(daily_trend)} records")
-                
-                if not monthly_trend.empty and 'Month' in monthly_trend.columns:
-                    monthly_trend = monthly_trend[monthly_trend['Month'] != 12]
-                    logger.info(f"✅ Filtered December from monthly_trend. Remaining: {len(monthly_trend)} records")
+                # Note: December filtering removed since December data is already excluded from CSV
                 
                 # Use daily trend for more granular view if only one month, otherwise use monthly
                 # Check if we have multiple months - if so, use monthly aggregation
-                # Check AFTER filtering December
                 unique_months = monthly_trend[['Year', 'Month']].drop_duplicates() if not monthly_trend.empty else pd.DataFrame(columns=['Year', 'Month'])
                 if len(unique_months) <= 1 and not daily_trend.empty:  # If we have only 1 month, show daily trends
                     monthly_trend = daily_trend.copy()
@@ -4458,8 +4510,7 @@ async def get_customer_insights(
                 logger.error(f"Error processing daily/monthly trends: {str(e)}")
                 # Fallback to simple monthly grouping
                 df_valid_dates = df[(df['Year'].notna()) & (df['Month'].notna())]
-                # Filter out December in fallback path
-                df_valid_dates = df_valid_dates[df_valid_dates['Month'] != 12]
+                # Note: December filtering removed since December data is already excluded from CSV
                 if not df_valid_dates.empty:
                     monthly_trend = df_valid_dates.groupby(['Year', 'Month']).agg({
                         'Total sales': 'sum',
@@ -4476,8 +4527,7 @@ async def get_customer_insights(
         else:
             # Fallback to monthly grouping if Day column not available
             df_valid_dates = df[(df['Year'].notna()) & (df['Month'].notna())]
-            # Filter out December in fallback path
-            df_valid_dates = df_valid_dates[df_valid_dates['Month'] != 12]
+            # Note: December filtering removed since December data is already excluded from CSV
             if not df_valid_dates.empty:
                 monthly_trend = df_valid_dates.groupby(['Year', 'Month']).agg({
                     'Total sales': 'sum',
@@ -4492,12 +4542,7 @@ async def get_customer_insights(
             else:
                 monthly_trend = pd.DataFrame(columns=['Year', 'Month', 'MonthName', 'month_label', 'Total sales', 'Orders', 'Customer email', 'Orders (first-time)', 'Orders (returning)'])
         
-        # Final safety filter: Filter out December months from monthly/daily trend data (in case we missed it in fallback paths)
-        if not monthly_trend.empty and 'Month' in monthly_trend.columns:
-            before_count = len(monthly_trend)
-            monthly_trend = monthly_trend[monthly_trend['Month'] != 12]
-            if len(monthly_trend) < before_count:
-                logger.info(f"✅ Final filter: Removed December data. Remaining: {len(monthly_trend)} records (was {before_count})")
+        # Note: December filtering removed since December data is already excluded from CSV
         
         # Rename columns to ensure consistent keys in JSON response
         if not monthly_trend.empty:
@@ -4974,9 +5019,9 @@ def get_customer_processor():
     if _customer_processor_cache is not None:
         return _customer_processor_cache
     
-    csv_path = ROOT_DIR / 'Shopify_customer_df_new.csv'
+    csv_path = ROOT_DIR / 'Shopify_customer_df_new2.csv'
     if not csv_path.exists():
-        raise HTTPException(status_code=404, detail="Shopify_customer_df_new.csv file not found")
+        raise HTTPException(status_code=404, detail="Shopify_customer_df_new2.csv file not found")
     
     df = pd.read_csv(csv_path)
     if df.empty:
