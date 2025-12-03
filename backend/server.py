@@ -5637,8 +5637,13 @@ async def insights_chat(
             user_msg_lower = (request.message or "").lower()
             chart_title_lower = (request.chart_title or "").lower()
             
+            # Log for debugging
+            logger.info(f"Pivot table generation - Message: {request.message}, Chart Title: {request.chart_title}")
+            
             # Determine what data to show based on the question
+            # Check for brand questions FIRST (most common case)
             if "brand" in user_msg_lower or "brand" in chart_title_lower:
+                logger.info("Detected BRAND question - generating brand-level pivot table")
                 # User asked about brands - show brand-level aggregated data
                 match_stage = {"$match": query} if query else {"$match": {}}
                 # Filter out null brands
@@ -5651,11 +5656,14 @@ async def insights_chat(
                 brand_limit = 20  # Default
                 if numbers:
                     try:
-                        valid_numbers = [int(num) for num in numbers if 5 <= int(num) <= 50]
+                        valid_numbers = [int(num) for num in numbers if 1 <= int(num) <= 50]
                         if valid_numbers:
                             brand_limit = max(valid_numbers)
                     except:
                         pass
+                
+                # Log the detected limit for debugging
+                logger.info(f"Brand pivot table: Detected limit = {brand_limit} from message: {request.message}")
                 
                 pipeline_pivot = [
                     match_stage,
@@ -5669,9 +5677,9 @@ async def insights_chat(
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
                     {"$sort": {"Revenue": -1}},
-                    {"$limit": brand_limit}
+                    {"$limit": brand_limit + 10}  # Get extra to ensure we have enough after filtering
                 ]
-                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(brand_limit)
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(brand_limit + 10)  # Get extra to filter nulls
                 for item in pivot_results:
                     brand_name = str(item.get("_id", ""))
                     if brand_name and brand_name.lower() not in ["unknown", "none", "", "null"]:
@@ -5688,8 +5696,75 @@ async def insights_chat(
                             else:
                                 pivot_row["Margin_%"] = 0.0
                             pivot_table.append(pivot_row)
+                            # Stop when we reach the requested limit
+                            if len(pivot_table) >= brand_limit:
+                                logger.info(f"Brand pivot table: Reached limit of {brand_limit}, stopping")
+                                break
+            
+            # Check for trend questions (must have explicit trend keywords)
+            elif ("trend" in user_msg_lower or "monthly" in user_msg_lower or "yearly" in user_msg_lower or "over time" in user_msg_lower or 
+                  "trend" in chart_title_lower or "monthly" in chart_title_lower or "yearly" in chart_title_lower):
+                logger.info("Detected TREND question - generating time-based pivot table")
+                # User asked about trends - show time-based data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                
+                # Determine if monthly or yearly trend
+                if "month" in user_msg_lower or "monthly" in user_msg_lower:
+                    pipeline_pivot = [
+                        match_stage,
+                        {
+                            "$group": {
+                                "_id": "$Month_Name",
+                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            }
+                        },
+                        {"$sort": {"_id": 1}}
+                    ]
+                    pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(12)
+                    for item in pivot_results:
+                        month_name = str(item.get("_id", ""))
+                        if month_name and month_name.lower() not in ["unknown", "none", "", "null"]:
+                            revenue = safe_float(item.get("Revenue", 0))
+                            if revenue > 0:
+                                pivot_row = {
+                                    "Month_Name": month_name,
+                                    "Revenue": revenue,
+                                    "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                    "Units": safe_float(item.get("Units", 0))
+                                }
+                                pivot_table.append(pivot_row)
+                else:
+                    # Yearly trend
+                    pipeline_pivot = [
+                        match_stage,
+                        {
+                            "$group": {
+                                "_id": "$Year",
+                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            }
+                        },
+                        {"$sort": {"_id": 1}}
+                    ]
+                    pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(10)
+                    for item in pivot_results:
+                        year = int(item.get("_id", 0))
+                        if year > 0:
+                            revenue = safe_float(item.get("Revenue", 0))
+                            if revenue > 0:
+                                pivot_row = {
+                                    "Year": year,
+                                    "Revenue": revenue,
+                                    "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                    "Units": safe_float(item.get("Units", 0))
+                                }
+                                pivot_table.append(pivot_row)
             
             elif "customer" in user_msg_lower or "customer" in chart_title_lower:
+                logger.info("Detected CUSTOMER question - generating customer-level pivot table")
                 # User asked about customers - show customer-level aggregated data
                 match_stage = {"$match": query} if query else {"$match": {}}
                 pipeline_pivot = [
@@ -5724,6 +5799,7 @@ async def insights_chat(
                             pivot_table.append(pivot_row)
             
             elif "category" in user_msg_lower or "category" in chart_title_lower:
+                logger.info("Detected CATEGORY question - generating category-level pivot table")
                 # User asked about categories - show category-level aggregated data
                 match_stage = {"$match": query} if query else {"$match": {}}
                 pipeline_pivot = [
@@ -5757,11 +5833,94 @@ async def insights_chat(
                                 pivot_row["Margin_%"] = 0.0
                             pivot_table.append(pivot_row)
             
+            elif "channel" in user_msg_lower or "sales" in user_msg_lower or "channel" in chart_title_lower:
+                logger.info("Detected CHANNEL question - generating channel-level pivot table")
+                # User asked about channels or sales - show channel-level aggregated data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Channel",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": 15}
+                ]
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(15)
+                for item in pivot_results:
+                    channel_name = str(item.get("_id", ""))
+                    if channel_name and channel_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Channel": channel_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+            
+            elif "business" in user_msg_lower or "compass" in user_msg_lower:
+                # User asked about business - show business-level aggregated data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Business",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": 15}
+                ]
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(15)
+                for item in pivot_results:
+                    business_name = str(item.get("_id", ""))
+                    if business_name and business_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Business": business_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+            
             else:
                 # Default: show brand-level data (most common)
+                # But check if chart_title gives us a hint
+                logger.info(f"Using DEFAULT (brand) pivot table - Message: {request.message}, Chart: {request.chart_title}")
                 match_stage = {"$match": query} if query else {"$match": {}}
                 if 'Brand' not in match_stage["$match"]:
                     match_stage["$match"]["Brand"] = {"$exists": True, "$nin": [None, "", "Unknown", "null", "None"]}
+                
+                # Detect how many brands requested for pivot table
+                import re
+                numbers = re.findall(r'\b(\d+)\b', user_msg_lower + " " + chart_title_lower)
+                pivot_limit = 15  # Default
+                if numbers:
+                    try:
+                        valid_numbers = [int(num) for num in numbers if 1 <= int(num) <= 50]
+                        if valid_numbers:
+                            pivot_limit = max(valid_numbers)
+                    except:
+                        pass
                 
                 pipeline_pivot = [
                     match_stage,
@@ -5775,9 +5934,9 @@ async def insights_chat(
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
                     {"$sort": {"Revenue": -1}},
-                    {"$limit": 15}
+                    {"$limit": pivot_limit + 5}  # Get extra to filter nulls
                 ]
-                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(15)
+                pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(pivot_limit + 5)
                 for item in pivot_results:
                     brand_name = str(item.get("_id", ""))
                     if brand_name and brand_name.lower() not in ["unknown", "none", "", "null"]:
@@ -5794,6 +5953,9 @@ async def insights_chat(
                             else:
                                 pivot_row["Margin_%"] = 0.0
                             pivot_table.append(pivot_row)
+                            # Stop when we reach the requested limit
+                            if len(pivot_table) >= pivot_limit:
+                                break
         except Exception as e:
             logger.error(f"Error building pivot table: {str(e)}")
             import traceback
@@ -5802,8 +5964,122 @@ async def insights_chat(
         # Get total row count
         total_rows = await db.business_data.count_documents(query) if query else await db.business_data.count_documents({})
         
+        # Generate dynamic follow-up questions based on the question asked
+        user_msg_lower = (request.message or "").lower()
+        chart_title_lower = (request.chart_title or "").lower()
+        follow_up_questions = []
+        
+        # Brand-related questions
+        if "brand" in user_msg_lower or "brand" in chart_title_lower:
+            if "top" in user_msg_lower and any(str(i) in user_msg_lower for i in range(1, 21)):
+                # User asked for top N brands
+                follow_up_questions = [
+                    "Show me the profit margins for these brands",
+                    "Which brands have the highest profit margins?",
+                    "Compare revenue vs profit for top brands",
+                    "What are the units sold for each brand?",
+                    "Show me brand performance trends"
+                ]
+            elif "margin" in user_msg_lower or "profit" in user_msg_lower:
+                follow_up_questions = [
+                    "Which brands have the highest revenue?",
+                    "Show me total units sold by brand",
+                    "Compare brand performance across channels",
+                    "What are the top performing brands?",
+                    "Show brand revenue trends"
+                ]
+            else:
+                follow_up_questions = [
+                    "Which brands have the highest profit margins?",
+                    "Show me revenue vs profit comparison",
+                    "What are the units sold for each brand?",
+                    "Compare top brands performance",
+                    "Show brand trends over time"
+                ]
+        
+        # Customer-related questions
+        elif "customer" in user_msg_lower or "customer" in chart_title_lower:
+            follow_up_questions = [
+                "Which customers generate the most revenue?",
+                "Show customer profit margins",
+                "Compare customer performance",
+                "What are the top customers by units?",
+                "Show customer trends"
+            ]
+        
+        # Category-related questions
+        elif "category" in user_msg_lower or "category" in chart_title_lower:
+            follow_up_questions = [
+                "Which categories have the highest revenue?",
+                "Show category profit margins",
+                "Compare category performance",
+                "What are the top categories by units?",
+                "Show category trends"
+            ]
+        
+        # Channel/Sales questions
+        elif "channel" in user_msg_lower or "sales" in user_msg_lower or "channel" in chart_title_lower:
+            follow_up_questions = [
+                "Which channels generate the most revenue?",
+                "Show channel profit margins",
+                "Compare channel performance",
+                "What are the sales trends by channel?",
+                "Show channel distribution"
+            ]
+        
+        # Trend questions
+        elif "trend" in user_msg_lower or "monthly" in user_msg_lower or "yearly" in user_msg_lower:
+            follow_up_questions = [
+                "Show me the top performers",
+                "What are the profit margins?",
+                "Compare this period to previous periods",
+                "Show me the breakdown by category",
+                "What are the key insights?"
+            ]
+        
+        # Business/Compass questions
+        elif "business" in user_msg_lower or "compass" in user_msg_lower:
+            follow_up_questions = [
+                "Show me top brands",
+                "What are the customer insights?",
+                "Show channel performance",
+                "Compare business segments",
+                "What are the key trends?"
+            ]
+        
+        # Default follow-up questions
+        else:
+            follow_up_questions = [
+                "Show me top brands by revenue",
+                "Analyze profit margins",
+                "Show customer performance",
+                "Compare channel performance",
+                "What are the key trends?"
+            ]
+        
         # Format timestamp
         timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
+        
+        # Ensure pivot_table is limited to the exact number requested
+        # This is a safety check - the pivot_table should already be limited, but we'll ensure it here
+        user_msg_lower_final = (request.message or "").lower()
+        chart_title_lower_final = (request.chart_title or "").lower()
+        import re
+        numbers_final = re.findall(r'\b(\d+)\b', user_msg_lower_final + " " + chart_title_lower_final)
+        if numbers_final and pivot_table:
+            try:
+                valid_numbers_final = [int(num) for num in numbers_final if 1 <= int(num) <= 50]
+                if valid_numbers_final:
+                    requested_limit = max(valid_numbers_final)
+                    # Only limit if we're dealing with brand/customer/category data (not trends)
+                    if not ("trend" in user_msg_lower_final or "monthly" in user_msg_lower_final or "yearly" in user_msg_lower_final):
+                        if len(pivot_table) > requested_limit:
+                            logger.info(f"Safety check: Limiting pivot_table from {len(pivot_table)} to {requested_limit} items")
+                            pivot_table = pivot_table[:requested_limit]
+                        else:
+                            logger.info(f"Safety check: Pivot table has {len(pivot_table)} items, requested {requested_limit}")
+            except Exception as e:
+                logger.warning(f"Error in pivot table safety check: {str(e)}")
         
         return InsightsChatResponse(
             response=ai_response,
@@ -5815,7 +6091,8 @@ async def insights_chat(
                 "filters": query,
                 "is_trend_query": "trend" in (request.message or "").lower(),
                 "is_loser_query": any(word in (request.message or "").lower() for word in ["worst", "lowest", "loser", "least"]),
-                "total_rows": total_rows
+                "total_rows": total_rows,
+                "follow_up_questions": follow_up_questions  # Add dynamic follow-up questions
             }
         )
         

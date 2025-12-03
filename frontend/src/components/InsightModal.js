@@ -347,15 +347,15 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                       {idx > 1 && idx === messages.length - 1 && msg.role === 'ai' && (
                         <div className="mt-3 pt-3 border-t border-gray-200">
                           <p className="text-xs text-gray-600 mb-2">
-                            I can help you analyze your business data. Try asking about sales trends, profit margins, customer performance, or brand analysis. What would you like to know?
+                            I can help you analyze your business data. What would you like to know?
                           </p>
                           <div className="grid grid-cols-2 gap-2">
                             {followUpPrompts.map((prompt, pidx) => (
                               <button
                                 key={pidx}
                                 onClick={() => handlePromptClick(prompt)}
-                                className="text-left px-3 py-2 rounded text-xs transition hover:bg-amber-100"
-                                style={{ background: '#fef3c7', color: '#92400e' }}
+                                className="text-left px-3 py-2 rounded text-xs transition hover:bg-amber-200 hover:shadow-sm cursor-pointer"
+                                style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}
                               >
                                 {prompt}
                               </button>
@@ -447,74 +447,143 @@ export default InsightModal;
 
 // Lightweight in-file component to render a table and a simple chart from pivot data
 const AIDataVisuals = ({ pivot }) => {
-  const { labels, datasetLabel, datasetValues } = useMemo(() => {
-    if (!pivot || pivot.length === 0) return { labels: [], datasetLabel: '', datasetValues: [] };
+  const { labels, datasetLabel, datasetValues, chartType, secondaryDataset } = useMemo(() => {
+    if (!pivot || pivot.length === 0) return { labels: [], datasetLabel: '', datasetValues: [], chartType: 'bar', secondaryDataset: null };
     const sample = pivot[0];
-    const labelCandidates = ['Year', 'Month Name', 'Business', 'Brand', 'Category', 'Customer', 'Channel'];
-    const valueCandidates = ['gSales', 'fGP', 'Cases'];
+    
+    // Updated label candidates to match backend data
+    const labelCandidates = ['Year', 'Month_Name', 'Month Name', 'Business', 'Brand', 'Category', 'Customer', 'Channel'];
+    // Updated value candidates to match backend data
+    const valueCandidates = ['Revenue', 'Gross_Profit', 'Units', 'Margin_%', 'gSales', 'fGP', 'Cases'];
     
     // Find all available label candidates
     const availableLabels = labelCandidates.filter((k) => Object.prototype.hasOwnProperty.call(sample, k));
     
-    // If multiple category columns exist (e.g., Business + Channel), combine them
+    // Determine labels based on data structure
     let labels;
-    if (availableLabels.length > 1 && !availableLabels.includes('Year') && !availableLabels.includes('Month Name')) {
-      // Combine category columns to create unique labels (e.g., "Business Channel" or "Brand Category")
+    let chartType = 'bar'; // Default chart type
+    
+    // If we have time-based data (Year or Month), use line chart
+    if (availableLabels.includes('Year') || availableLabels.includes('Month_Name') || availableLabels.includes('Month Name')) {
+      chartType = 'line';
+      const timeKey = availableLabels.find(k => ['Year', 'Month_Name', 'Month Name'].includes(k));
+      labels = pivot.map((r) => String(r[timeKey] || ''));
+    } else if (availableLabels.length > 1) {
+      // Combine category columns for unique labels
       labels = pivot.map((r) => {
-        const combined = availableLabels.slice(0, 2).map(k => String(r[k])).join(' ');
+        const combined = availableLabels.slice(0, 2).map(k => String(r[k] || '')).join(' - ');
         return combined;
       });
     } else {
-      // Use first available label or fallback to first key
-      const labelKey = labelCandidates.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) || Object.keys(sample)[0];
-      labels = pivot.map((r) => String(r[labelKey]));
+      // Use first available label
+      const labelKey = availableLabels[0] || Object.keys(sample).find(k => typeof sample[k] !== 'number');
+      labels = pivot.map((r) => String(r[labelKey] || ''));
     }
     
-    const valueKey = valueCandidates.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) || Object.keys(sample).find(k => typeof sample[k] === 'number');
+    // Determine value column - prioritize Revenue, then Gross_Profit, then Units
+    const valueKey = valueCandidates.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) 
+      || Object.keys(sample).find(k => typeof sample[k] === 'number' && !k.includes('%'));
     const datasetValues = pivot.map((r) => Number(r[valueKey] || 0));
-    return { labels, datasetLabel: valueKey || 'Value', datasetValues };
+    
+    // If we have both Revenue and Gross_Profit, create a comparison chart
+    let secondaryDataset = null;
+    if (sample.hasOwnProperty('Revenue') && sample.hasOwnProperty('Gross_Profit')) {
+      chartType = 'bar'; // Use grouped bar for comparison
+      secondaryDataset = {
+        label: 'Gross Profit',
+        data: pivot.map((r) => Number(r['Gross_Profit'] || 0)),
+        backgroundColor: 'rgba(16, 185, 129, 0.3)',
+        borderColor: 'rgba(16, 185, 129, 1)',
+        borderWidth: 1.5,
+      };
+    } else if (availableLabels.length === 1 && pivot.length <= 10 && valueKey === 'Revenue') {
+      // If we have few items and revenue data, use pie chart for distribution
+      chartType = 'pie';
+    }
+    
+    return { 
+      labels, 
+      datasetLabel: valueKey || 'Value', 
+      datasetValues,
+      chartType,
+      secondaryDataset
+    };
   }, [pivot]);
 
-  const chartData = useMemo(() => ({
-    labels,
-    datasets: [
-      {
-        label: datasetLabel,
-        data: datasetValues,
-        backgroundColor: 'rgba(59, 130, 246, 0.3)',
-        borderColor: 'rgba(59, 130, 246, 1)',
-        borderWidth: 1.5,
-      },
-    ],
-  }), [labels, datasetLabel, datasetValues]);
+  const chartData = useMemo(() => {
+    const baseDataset = {
+      label: datasetLabel,
+      data: datasetValues,
+      backgroundColor: chartType === 'pie' 
+        ? ['rgba(59, 130, 246, 0.6)', 'rgba(16, 185, 129, 0.6)', 'rgba(245, 158, 11, 0.6)', 'rgba(239, 68, 68, 0.6)', 'rgba(139, 92, 246, 0.6)', 'rgba(236, 72, 153, 0.6)', 'rgba(20, 184, 166, 0.6)', 'rgba(249, 115, 22, 0.6)', 'rgba(6, 182, 212, 0.6)', 'rgba(132, 204, 22, 0.6)']
+        : 'rgba(59, 130, 246, 0.3)',
+      borderColor: chartType === 'pie'
+        ? ['rgba(59, 130, 246, 1)', 'rgba(16, 185, 129, 1)', 'rgba(245, 158, 11, 1)', 'rgba(239, 68, 68, 1)', 'rgba(139, 92, 246, 1)', 'rgba(236, 72, 153, 1)', 'rgba(20, 184, 166, 1)', 'rgba(249, 115, 22, 1)', 'rgba(6, 182, 212, 1)', 'rgba(132, 204, 22, 1)']
+        : 'rgba(59, 130, 246, 1)',
+      borderWidth: chartType === 'pie' ? 2 : 1.5,
+    };
+    
+    return {
+      labels,
+      datasets: secondaryDataset ? [baseDataset, secondaryDataset] : [baseDataset],
+    };
+  }, [labels, datasetLabel, datasetValues, chartType, secondaryDataset]);
 
-  const chartOptions = useMemo(() => ({
-    responsive: true,
-    plugins: {
-      legend: { display: true },
-      tooltip: {
-        callbacks: {
-          label: (ctx) => {
-            const v = ctx.parsed.y;
-            if (Math.abs(v) >= 1_000_000) return `€${(v/1_000_000).toFixed(1)}M`;
-            if (Math.abs(v) >= 1_000) return `€${(v/1_000).toFixed(1)}k`;
-            return `€${v.toLocaleString()}`;
+  const chartOptions = useMemo(() => {
+    const baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { 
+          display: true,
+          position: chartType === 'pie' ? 'right' : 'top'
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (chartType === 'pie') {
+                const v = ctx.parsed;
+                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                const percentage = ((v / total) * 100).toFixed(1);
+                if (Math.abs(v) >= 1_000_000) return `${ctx.label}: €${(v/1_000_000).toFixed(1)}M (${percentage}%)`;
+                if (Math.abs(v) >= 1_000) return `${ctx.label}: €${(v/1_000).toFixed(1)}k (${percentage}%)`;
+                return `${ctx.label}: €${v.toLocaleString()} (${percentage}%)`;
+              } else {
+                const v = ctx.parsed.y;
+                if (Math.abs(v) >= 1_000_000) return `${ctx.dataset.label}: €${(v/1_000_000).toFixed(1)}M`;
+                if (Math.abs(v) >= 1_000) return `${ctx.dataset.label}: €${(v/1_000).toFixed(1)}k`;
+                return `${ctx.dataset.label}: €${v.toLocaleString()}`;
+              }
+            },
           },
         },
       },
-    },
-    scales: {
-      y: {
-        ticks: {
-          callback: (v) => {
-            if (Math.abs(v) >= 1_000_000) return `€${(v/1_000_000).toFixed(1)}M`;
-            if (Math.abs(v) >= 1_000) return `€${(v/1_000).toFixed(1)}k`;
-            return `€${v}`;
+    };
+    
+    // Add scales only for bar and line charts (not pie)
+    if (chartType !== 'pie') {
+      baseOptions.scales = {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: (v) => {
+              if (Math.abs(v) >= 1_000_000) return `€${(v/1_000_000).toFixed(1)}M`;
+              if (Math.abs(v) >= 1_000) return `€${(v/1_000).toFixed(1)}k`;
+              return `€${v}`;
+            },
           },
         },
-      },
-    },
-  }), []);
+        x: chartType === 'line' ? {
+          ticks: {
+            maxRotation: 45,
+            minRotation: 45
+          }
+        } : {}
+      };
+    }
+    
+    return baseOptions;
+  }, [chartType]);
 
   return (
     <div className="space-y-4">
@@ -522,29 +591,65 @@ const AIDataVisuals = ({ pivot }) => {
         <table className="min-w-full text-xs">
           <thead className="bg-gray-50 text-gray-700">
             <tr>
-              {Object.keys(pivot[0]).slice(0, 6).map((k) => (
+              {Object.keys(pivot[0]).map((k) => (
                 <th key={k} className="px-3 py-2 text-left font-medium">{k}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {pivot.slice(0, 10).map((row, idx) => (
-              <tr key={idx} className={idx % 2 ? 'bg-white' : 'bg-gray-50'}>
-                {Object.keys(pivot[0]).slice(0, 6).map((k) => (
-                  <td key={k} className="px-3 py-2 whitespace-nowrap text-gray-800">
-                    {typeof row[k] === 'number'
-                      ? Number(row[k]).toLocaleString('en-US')
-                      : String(row[k])}
-                  </td>
-                ))}
-              </tr>
-            ))}
+              {pivot.map((row, idx) => (
+                <tr key={idx} className={idx % 2 ? 'bg-white' : 'bg-gray-50'}>
+                  {Object.keys(pivot[0]).map((k) => (
+                    <td key={k} className="px-3 py-2 whitespace-nowrap text-gray-800">
+                      {typeof row[k] === 'number'
+                        ? (() => {
+                            const num = Number(row[k]);
+                            // Format based on column type
+                            if (k.includes('Revenue') || k.includes('Profit') || k.includes('Gross')) {
+                              // Currency columns
+                              if (Math.abs(num) >= 1_000_000) {
+                                return `€${(num/1_000_000).toFixed(1)}M`;
+                              } else if (Math.abs(num) >= 1_000) {
+                                return `€${(num/1_000).toFixed(1)}k`;
+                              } else {
+                                return `€${num.toLocaleString('en-US')}`;
+                              }
+                            } else if (k.includes('Units')) {
+                              // Units column - no currency symbol
+                              if (Math.abs(num) >= 1_000_000) {
+                                return `${(num/1_000_000).toFixed(1)}M`;
+                              } else if (Math.abs(num) >= 1_000) {
+                                return `${(num/1_000).toFixed(1)}k`;
+                              } else {
+                                return num.toLocaleString('en-US');
+                              }
+                            } else if (k.includes('%') || k.includes('Margin')) {
+                              // Percentage columns
+                              return `${num.toFixed(1)}%`;
+                            } else {
+                              // Other numeric columns
+                              if (Math.abs(num) >= 1_000_000) {
+                                return `${(num/1_000_000).toFixed(1)}M`;
+                              } else if (Math.abs(num) >= 1_000) {
+                                return `${(num/1_000).toFixed(1)}k`;
+                              } else {
+                                return num.toLocaleString('en-US');
+                              }
+                            }
+                          })()
+                        : String(row[k] || '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
           </tbody>
         </table>
       </div>
 
       {labels.length > 0 && datasetValues.length > 0 && (
-        <ChartComponent type="bar" data={chartData} options={chartOptions} />
+        <div className="h-80 w-full">
+          <ChartComponent type={chartType} data={chartData} options={chartOptions} />
+        </div>
       )}
     </div>
   );
