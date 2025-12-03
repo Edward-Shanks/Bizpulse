@@ -576,9 +576,7 @@ async def get_executive_overview(
                 query['Month_Name'] = {'$in': month_list}
         
         if businesses:
-            business_list = [b.strip() for b in businesses.split(',') if b.strip()]
-            if business_list:
-                query['Business'] = {'$in': business_list}
+            query = await apply_business_filter(query, businesses, db)
         
         if channels:
             channel_list = [c.strip() for c in channels.split(',') if c.strip()]
@@ -761,9 +759,8 @@ async def get_customer_analysis(
         if month_list:
             query['Month_Name'] = {'$in': month_list}
 
-        business_list = parse_list(businesses)
-        if business_list:
-            query['Business'] = {'$in': business_list}
+        if businesses:
+            query = await apply_business_filter(query, businesses, db)
 
         channel_list = parse_list(channels)
         if channel_list:
@@ -916,9 +913,8 @@ async def get_brand_analysis(
         if month_list:
             query['Month_Name'] = {'$in': month_list}
 
-        business_list = parse_list(businesses)
-        if business_list:
-            query['Business'] = {'$in': business_list}
+        if businesses:
+            query = await apply_business_filter(query, businesses, db)
 
         channel_list = parse_list(channels)
         if channel_list:
@@ -1089,9 +1085,8 @@ async def get_category_analysis(
         if month_list:
             query['Month_Name'] = {'$in': month_list}
 
-        business_list = parse_list(businesses)
-        if business_list:
-            query['Business'] = {'$in': business_list}
+        if businesses:
+            query = await apply_business_filter(query, businesses, db)
 
         channel_list = parse_list(channels)
         if channel_list:
@@ -5225,6 +5220,142 @@ def parse_list(value: Optional[str], cast=None):
             continue
     return items
 
+async def apply_business_filter(query: Dict[str, Any], businesses: Optional[str], db) -> Dict[str, Any]:
+    """Apply business filter with smart matching (handles spacing, case, encoding issues)"""
+    if not businesses:
+        return query
+    
+    # URL decode and parse business list
+    import urllib.parse
+    businesses_decoded = urllib.parse.unquote(businesses)
+    
+    # Smart parsing: Handle business names that contain commas (e.g., "Brillo, Goddards & KMPL")
+    # Strategy: First try the full string as a single business, then try splitting if needed
+    all_businesses = await db.business_data.distinct('Business')
+    
+    # First, try matching the entire decoded string as a single business name
+    full_string_test = {'Business': businesses_decoded.strip()}
+    full_string_count = await db.business_data.count_documents(full_string_test)
+    
+    if full_string_count > 0:
+        # The full string is a valid business name (comma is part of the name)
+        business_list = [businesses_decoded.strip()]
+        logger.info(f"🔍 Business filter - Full string match: '{businesses_decoded}' is a single business")
+    else:
+        # Try splitting by comma - but validate each part
+        potential_parts = [b.strip() for b in businesses_decoded.split(',') if b.strip()]
+        business_list = []
+        
+        # Check if split parts are valid business names
+        for part in potential_parts:
+            part_test = {'Business': part}
+            part_count = await db.business_data.count_documents(part_test)
+            if part_count > 0:
+                # This part is a valid business name
+                business_list.append(part)
+            else:
+                # Part doesn't match - might be part of a business name with comma
+                # Try combining with previous part if we have one
+                if business_list:
+                    combined = f"{business_list[-1]}, {part}"
+                    combined_test = {'Business': combined}
+                    combined_count = await db.business_data.count_documents(combined_test)
+                    if combined_count > 0:
+                        # Combined name is valid - replace last item
+                        business_list[-1] = combined
+                    else:
+                        # Still not valid - add as-is (will be handled by matching logic)
+                        business_list.append(part)
+                else:
+                    # First part doesn't match - might be part of comma-separated name
+                    # Add it and let matching logic handle it
+                    business_list.append(part)
+        
+        # If splitting didn't produce valid businesses, use full string
+        if not business_list:
+            business_list = [businesses_decoded.strip()]
+    
+    if not business_list:
+        return query
+    
+    # Log for debugging
+    logger.info(f"🔍 Business filter - Raw: '{businesses}', Decoded: '{businesses_decoded}', Parsed: {business_list}")
+    
+    # First try exact match
+    # Create a test query with only Business filter (ignore other filters for testing)
+    test_query = {'Business': {'$in': business_list}}
+    logger.info(f"🔍 Business filter test query (exact): {test_query}")
+    
+    # Test the query to see if we get results (test with only business filter first)
+    test_count = await db.business_data.count_documents(test_query)
+    logger.info(f"🔍 Business filter test count (exact match, business only): {test_count}")
+    
+    # If exact match works, apply to main query
+    if test_count > 0:
+        query['Business'] = {'$in': business_list}
+        logger.info(f"✅ Exact match found, applying to query: {query}")
+    else:
+        # all_businesses already fetched above, reuse it
+        logger.warning(f"⚠️ No results with exact match for '{business_list}'. Checking available businesses...")
+        logger.warning(f"⚠️ Available businesses (first 20): {sorted([str(b) for b in set(all_businesses) if b])[:20]}")
+        
+        # Try to find normalized matches (handle spacing differences)
+        matched_businesses = []
+        for requested_business in business_list:
+            req_normalized = ' '.join(requested_business.lower().split())  # Normalize spacing
+            found_match = False
+            for db_business in all_businesses:
+                if db_business:
+                    db_normalized = ' '.join(str(db_business).lower().split())
+                    if req_normalized == db_normalized:
+                        logger.warning(f"✅ Found normalized match: Requested '{requested_business}' matches DB '{db_business}'")
+                        matched_businesses.append(str(db_business))
+                        found_match = True
+                        break
+            
+            # If still no match, try strict word-based matching (exact word match only)
+            # This prevents incorrect matches like "Brillo, Goddards & KMPL" matching "Brillo & KMPL"
+            # We only match if the word sets are identical (same words, same count)
+            if not found_match:
+                # Normalize and split into words for comparison
+                req_words = set(' '.join(requested_business.lower().split()).replace(',', '').replace('&', 'and').split())
+                req_words = {w for w in req_words if w}  # Remove empty strings
+                
+                for db_business in all_businesses:
+                    if db_business:
+                        db_words = set(' '.join(str(db_business).lower().split()).replace(',', '').replace('&', 'and').split())
+                        db_words = {w for w in db_words if w}  # Remove empty strings
+                        
+                        # Only match if word sets are EXACTLY the same (prevents partial matches)
+                        # This ensures "Brillo, Goddards & KMPL" won't match "Brillo & KMPL"
+                        if req_words == db_words:
+                            logger.warning(f"✅ Found exact word set match: Requested '{requested_business}' matches DB '{db_business}'")
+                            matched_businesses.append(str(db_business))
+                            found_match = True
+                            break
+        
+        if matched_businesses:
+            query['Business'] = {'$in': matched_businesses}
+            logger.info(f"✅ Using matched business names: {matched_businesses}")
+            # Verify the match works
+            verify_count = await db.business_data.count_documents(query)
+            logger.info(f"✅ Verified match count: {verify_count}")
+        else:
+            # Last resort: try case-insensitive regex matching
+            import re
+            case_insensitive_patterns = [re.compile(f'^{re.escape(b)}$', re.IGNORECASE) for b in business_list]
+            case_insensitive_query = {**query, 'Business': {'$in': case_insensitive_patterns}}
+            test_count_ci = await db.business_data.count_documents(case_insensitive_query)
+            logger.info(f"🔍 Business filter test count (case-insensitive): {test_count_ci}")
+            if test_count_ci > 0:
+                query['Business'] = {'$in': case_insensitive_patterns}
+                logger.info(f"✅ Using case-insensitive match for Business filter")
+            else:
+                # Final fallback: use regex with flexible matching (remove special chars)
+                logger.error(f"❌ No match found for business filter '{business_list}'. Available: {sorted([str(b) for b in set(all_businesses) if b])[:10]}")
+    
+    return query
+
 def safe_float(value: Any) -> float:
     """Safely convert value to float"""
     try:
@@ -5282,12 +5413,16 @@ async def build_mongodb_query_from_context(context: Dict[str, Any]) -> Dict[str,
     if months and len(months) > 0:
         query['Month_Name'] = {'$in': months}
     
-    # Businesses
+    # Businesses - use smart matching
     businesses = context.get('selectedBusinesses') or context.get('business') or []
-    if isinstance(businesses, str):
-        businesses = parse_list(businesses)
-    if businesses and len(businesses) > 0:
-        query['Business'] = {'$in': businesses}
+    if businesses:
+        if isinstance(businesses, list):
+            # If it's already a list, join it for the filter function
+            businesses_str = ','.join([str(b) for b in businesses])
+        else:
+            businesses_str = str(businesses)
+        # Apply smart business filter
+        query = await apply_business_filter(query, businesses_str, db)
     
     # Brands
     brands = context.get('selectedBrands') or context.get('brand') or []
