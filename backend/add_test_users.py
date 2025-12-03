@@ -2,6 +2,7 @@
 Script to add test users to the database for testing goal assignment functionality.
 Run this script to populate the database with sample team members across all departments.
 """
+
 import asyncio
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -19,7 +20,7 @@ if _dotenv_path:
     print(f"✅ Loaded .env from: {_dotenv_path}")
 else:
     print("⚠️  No .env file found. Using environment variables or defaults.")
-
+# Hiiii
 # MongoDB connection
 mongo_url = os.getenv('MONGO_URL')
 db_name = os.getenv('DB_NAME')
