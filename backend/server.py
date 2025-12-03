@@ -1226,26 +1226,122 @@ async def get_category_analysis(
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/filters/options")
-async def get_filter_options(email: str = Depends(get_current_user)):
-    """Get all unique filter options"""
-    logger.info("🔍 GET /api/filters/options called")
+async def get_filter_options(
+    years: str = None,
+    months: str = None,
+    businesses: str = None,
+    channels: str = None,
+    brands: str = None,
+    categories: str = None,
+    email: str = Depends(get_current_user)
+):
+    """Get dynamic filter options based on current filter selections (cascading filters)"""
+    logger.info(f"🔍 GET /api/filters/options called with filters: years={years}, months={months}, businesses={businesses}, channels={channels}, brands={brands}, categories={categories}")
     try:
-        logger.info("📊 Fetching unique values from MongoDB...")
+        # Helper function to parse comma-separated lists
+        def parse_list(value: Optional[str], cast=None):
+            if not value:
+                return []
+            items = []
+            for part in value.split(','):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    items.append(cast(part) if cast else part)
+                except Exception:
+                    continue
+            return items
         
-        # Use distinct to get unique values - MUCH FASTER than loading all records
-        years = await db.business_data.distinct('Year')
-        months = await db.business_data.distinct('Month_Name')
-        businesses = await db.business_data.distinct('Business')
-        channels = await db.business_data.distinct('Channel')
-        customers = await db.business_data.distinct('Customer')
-        brands = await db.business_data.distinct('Brand')
-        categories = await db.business_data.distinct('Category')
-        sub_categories = await db.business_data.distinct('Sub_Cat')
+        # Build query based on provided filters
+        query: Dict[str, Any] = {}
         
-        logger.info(f"✅ Fetched unique values")
+        year_list = parse_list(years, int)
+        if year_list:
+            query['Year'] = {'$in': year_list}
         
-        # Filter out None values and convert years to int
-        years = sorted([int(y) for y in years if y is not None])
+        month_list = parse_list(months)
+        if month_list:
+            query['Month_Name'] = {'$in': month_list}
+        
+        if businesses:
+            query = await apply_business_filter(query, businesses, db)
+        
+        channel_list = parse_list(channels)
+        if channel_list:
+            query['Channel'] = {'$in': channel_list}
+        
+        brand_list = parse_list(brands)
+        if brand_list:
+            query['Brand'] = {'$in': brand_list}
+        
+        category_list = parse_list(categories)
+        if category_list:
+            query['Category'] = {'$in': category_list}
+        
+        logger.info(f"📊 Building dynamic filter options with query: {query}")
+        
+        # Use distinct with match query to get filtered unique values
+        # For each field, get distinct values that exist given the current filter constraints
+        match_stage = {"$match": query} if query else {"$match": {}}
+        
+        # Get distinct values for each filter field, respecting the current filter constraints
+        # Years: Get all years that exist given current filters (excluding Year filter itself)
+        years_query = {k: v for k, v in query.items() if k != 'Year'}
+        years_match = {"$match": years_query} if years_query else {"$match": {}}
+        years_pipeline = [years_match, {"$group": {"_id": "$Year"}}]
+        years_results = await db.business_data.aggregate(years_pipeline).to_list(1000)
+        years = sorted([int(item['_id']) for item in years_results if item.get('_id') is not None])
+        
+        # Months: Get all months that exist given current filters (excluding Month_Name filter itself)
+        months_query = {k: v for k, v in query.items() if k != 'Month_Name'}
+        months_match = {"$match": months_query} if months_query else {"$match": {}}
+        months_pipeline = [months_match, {"$group": {"_id": "$Month_Name"}}]
+        months_results = await db.business_data.aggregate(months_pipeline).to_list(1000)
+        months = [item['_id'] for item in months_results if item.get('_id') is not None]
+        
+        # Businesses: Get all businesses that exist given current filters (excluding Business filter itself)
+        businesses_query = {k: v for k, v in query.items() if k != 'Business'}
+        if businesses_query:
+            businesses_match = {"$match": businesses_query}
+            businesses_pipeline = [businesses_match, {"$group": {"_id": "$Business"}}]
+        else:
+            businesses_pipeline = [{"$group": {"_id": "$Business"}}]
+        businesses_results = await db.business_data.aggregate(businesses_pipeline).to_list(1000)
+        businesses = [str(item['_id']) for item in businesses_results if item.get('_id') is not None]
+        
+        # Channels: Get all channels that exist given current filters (excluding Channel filter itself)
+        channels_query = {k: v for k, v in query.items() if k != 'Channel'}
+        channels_match = {"$match": channels_query} if channels_query else {"$match": {}}
+        channels_pipeline = [channels_match, {"$group": {"_id": "$Channel"}}]
+        channels_results = await db.business_data.aggregate(channels_pipeline).to_list(1000)
+        channels = [item['_id'] for item in channels_results if item.get('_id') is not None]
+        
+        # Brands: Get all brands that exist given current filters (excluding Brand filter itself)
+        brands_query = {k: v for k, v in query.items() if k != 'Brand'}
+        brands_match = {"$match": brands_query} if brands_query else {"$match": {}}
+        brands_pipeline = [brands_match, {"$group": {"_id": "$Brand"}}]
+        brands_results = await db.business_data.aggregate(brands_pipeline).to_list(1000)
+        brands = [item['_id'] for item in brands_results if item.get('_id') is not None]
+        
+        # Categories: Get all categories that exist given current filters (excluding Category filter itself)
+        categories_query = {k: v for k, v in query.items() if k != 'Category'}
+        categories_match = {"$match": categories_query} if categories_query else {"$match": {}}
+        categories_pipeline = [categories_match, {"$group": {"_id": "$Category"}}]
+        categories_results = await db.business_data.aggregate(categories_pipeline).to_list(1000)
+        categories = [item['_id'] for item in categories_results if item.get('_id') is not None]
+        
+        # Customers: Get all customers that exist given current filters
+        customers_pipeline = [match_stage, {"$group": {"_id": "$Customer"}}]
+        customers_results = await db.business_data.aggregate(customers_pipeline).to_list(1000)
+        customers = [item['_id'] for item in customers_results if item.get('_id') is not None]
+        
+        # Sub Categories: Get all sub categories that exist given current filters
+        sub_categories_pipeline = [match_stage, {"$group": {"_id": "$Sub_Cat"}}]
+        sub_categories_results = await db.business_data.aggregate(sub_categories_pipeline).to_list(1000)
+        sub_categories = [item['_id'] for item in sub_categories_results if item.get('_id') is not None]
+        
+        # Filter out None values
         months = [m for m in months if m is not None]
         businesses = [b for b in businesses if b is not None]
         channels = [c for c in channels if c is not None]
@@ -1286,10 +1382,10 @@ async def get_filter_options(email: str = Depends(get_current_user)):
             "sub_categories": sub_categories
         }
         
-        logger.info(f"Filter options generated: {[(k, len(v)) for k, v in result.items()]}")
+        logger.info(f"✅ Dynamic filter options generated: {[(k, len(v)) for k, v in result.items()]}")
         return result
     except Exception as e:
-        logger.error(f"Error generating filter options: {str(e)}")
+        logger.error(f"Error generating dynamic filter options: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/filters/options-test")

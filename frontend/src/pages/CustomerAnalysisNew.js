@@ -36,10 +36,59 @@ const CustomerAnalysis = () => {
 
     const loadFilters = async () => {
       try {
-        const res = await axios.get(`${API}/filters/options`, {
+        // Build query params with current filter selections for dynamic filtering
+        const params = new URLSearchParams();
+        if (selectedYears.length) params.set('years', selectedYears.join(','));
+        if (selectedMonths.length) params.set('months', selectedMonths.join(','));
+        if (selectedBusinesses.length) params.set('businesses', selectedBusinesses.join(','));
+        if (selectedChannels.length) params.set('channels', selectedChannels.join(','));
+        if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
+
+        const url = `${API}/filters/options${params.toString() ? `?${params.toString()}` : ''}`;
+        const res = await axios.get(url, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setFilters(res.data);
+        
+        const newFilters = res.data;
+        setFilters(newFilters);
+        
+        // Remove invalid selections
+        if (selectedYears.length > 0) {
+          const validYears = selectedYears.filter(y => newFilters.years.includes(y));
+          if (validYears.length !== selectedYears.length) {
+            setSelectedYears(validYears);
+          }
+        }
+        if (selectedMonths.length > 0) {
+          const validMonths = selectedMonths.filter(m => newFilters.months.includes(m));
+          if (validMonths.length !== selectedMonths.length) {
+            setSelectedMonths(validMonths);
+          }
+        }
+        if (selectedBusinesses.length > 0) {
+          const validBusinesses = selectedBusinesses.filter(b => newFilters.businesses.includes(b));
+          if (validBusinesses.length !== selectedBusinesses.length) {
+            setSelectedBusinesses(validBusinesses);
+          }
+        }
+        if (selectedChannels.length > 0) {
+          const validChannels = selectedChannels.filter(c => newFilters.channels.includes(c));
+          if (validChannels.length !== selectedChannels.length) {
+            setSelectedChannels(validChannels);
+          }
+        }
+        if (selectedBrands.length > 0) {
+          const validBrands = selectedBrands.filter(b => newFilters.brands.includes(b));
+          if (validBrands.length !== selectedBrands.length) {
+            setSelectedBrands(validBrands);
+          }
+        }
+        if (selectedCustomers.length > 0) {
+          const validCustomers = selectedCustomers.filter(c => newFilters.customers.includes(c));
+          if (validCustomers.length !== selectedCustomers.length) {
+            setSelectedCustomers(validCustomers);
+          }
+        }
       } catch (error) {
         console.error('Failed to load filters', error);
         toast.error('Unable to load filter options');
@@ -55,7 +104,15 @@ const CustomerAnalysis = () => {
     };
 
     loadFilters();
-  }, [token]);
+  }, [
+    token,
+    selectedYears,
+    selectedMonths,
+    selectedBusinesses,
+    selectedChannels,
+    selectedBrands,
+    selectedCustomers,
+  ]);
 
   useEffect(() => {
     if (!token) return;

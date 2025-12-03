@@ -51,8 +51,17 @@ const Dashboard = () => {
         return;
       }
       try {
-        if (isDevelopment) console.log('Making API call to load filters...');
-        const res = await axios.get(`${API}/filters/options`, {
+        // Build query params with current filter selections for dynamic filtering
+        const params = new URLSearchParams();
+        if (selectedYears.length) params.set('years', selectedYears.join(','));
+        if (selectedMonths.length) params.set('months', selectedMonths.join(','));
+        if (selectedBusinesses.length) params.set('businesses', selectedBusinesses.join(','));
+        if (selectedChannels.length) params.set('channels', selectedChannels.join(','));
+        if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
+
+        const url = `${API}/filters/options${params.toString() ? `?${params.toString()}` : ''}`;
+        if (isDevelopment) console.log('Making API call to load filters with URL:', url);
+        const res = await axios.get(url, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
@@ -64,7 +73,41 @@ const Dashboard = () => {
           console.log('✅ Sample brands:', res.data.brands?.slice(0, 10) || []);
           console.log('✅ All brands:', res.data.brands || []);
         }
-        setFilters(res.data);
+        
+        const newFilters = res.data;
+        setFilters(newFilters);
+        
+        // Remove invalid selections (selections that no longer exist in the filtered options)
+        if (selectedYears.length > 0) {
+          const validYears = selectedYears.filter(y => newFilters.years.includes(y));
+          if (validYears.length !== selectedYears.length) {
+            setSelectedYears(validYears);
+          }
+        }
+        if (selectedMonths.length > 0) {
+          const validMonths = selectedMonths.filter(m => newFilters.months.includes(m));
+          if (validMonths.length !== selectedMonths.length) {
+            setSelectedMonths(validMonths);
+          }
+        }
+        if (selectedBusinesses.length > 0) {
+          const validBusinesses = selectedBusinesses.filter(b => newFilters.businesses.includes(b));
+          if (validBusinesses.length !== selectedBusinesses.length) {
+            setSelectedBusinesses(validBusinesses);
+          }
+        }
+        if (selectedChannels.length > 0) {
+          const validChannels = selectedChannels.filter(c => newFilters.channels.includes(c));
+          if (validChannels.length !== selectedChannels.length) {
+            setSelectedChannels(validChannels);
+          }
+        }
+        if (selectedBrands.length > 0) {
+          const validBrands = selectedBrands.filter(b => newFilters.brands.includes(b));
+          if (validBrands.length !== selectedBrands.length) {
+            setSelectedBrands(validBrands);
+          }
+        }
       } catch (e) {
         console.error('❌ Failed to load filters:', e.response?.data || e.message);
         if (isDevelopment) {
@@ -77,7 +120,7 @@ const Dashboard = () => {
       }
     };
     loadFilters();
-  }, [token, isDevelopment]);
+  }, [token, isDevelopment, selectedYears, selectedMonths, selectedBusinesses, selectedChannels, selectedBrands]);
 
   useEffect(() => {
     const loadDataSource = async () => {
