@@ -605,7 +605,10 @@ const AIDataVisuals = ({ pivot }) => {
                         ? (() => {
                             const num = Number(row[k]);
                             // Format based on column type
-                            if (k.includes('Revenue') || k.includes('Profit') || k.includes('Gross')) {
+                            if (k === 'Year' || k === 'year') {
+                              // Year column - show as integer, no formatting
+                              return num.toString();
+                            } else if (k.includes('Revenue') || k.includes('Profit') || k.includes('Gross')) {
                               // Currency columns
                               if (Math.abs(num) >= 1_000_000) {
                                 return `€${(num/1_000_000).toFixed(1)}M`;

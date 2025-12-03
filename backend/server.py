@@ -5589,8 +5589,33 @@ async def insights_chat(
     try:
         logger.info(f"📊 View Insights Chat Request - Chart: {request.chart_title}, Message: {request.message[:100]}")
         
+        # Extract year from user message if mentioned (e.g., "2025", "sales trend for 2025")
+        import re
+        user_message = request.message or ""
+        year_pattern = r'\b(20\d{2})\b'  # Match years like 2023, 2024, 2025
+        years_in_message = re.findall(year_pattern, user_message)
+        requested_years = []  # Initialize to avoid scope issues
+        
         # Build MongoDB query from context
         query = await build_mongodb_query_from_context(request.context or {})
+        
+        # If user mentioned a specific year in the question, add it to the query
+        if years_in_message:
+            requested_years = [int(year) for year in years_in_message if 2000 <= int(year) <= 2100]
+            if requested_years:
+                # If query already has Year filter, merge it, otherwise add it
+                if 'Year' in query:
+                    # Merge: if context has years, intersect with requested years
+                    existing_years = query['Year'].get('$in', []) if isinstance(query['Year'], dict) else [query['Year']]
+                    if isinstance(existing_years, list):
+                        # Intersect existing years with requested years
+                        query['Year'] = {'$in': [y for y in existing_years if y in requested_years] or requested_years}
+                    else:
+                        query['Year'] = {'$in': requested_years}
+                else:
+                    query['Year'] = {'$in': requested_years}
+                logger.info(f"📅 Extracted year(s) from question: {requested_years}, Updated query: {query}")
+        
         logger.info(f"🔍 MongoDB Query: {query}")
         
         # Get data context from MongoDB (pass user message to detect requested number)
@@ -5607,6 +5632,12 @@ async def insights_chat(
         
         # Build comprehensive prompt
         chart_context = f"Chart: {request.chart_title}\n" if request.chart_title else ""
+        
+        # Check if user asked for a specific year
+        year_context = ""
+        if years_in_message and requested_years:
+            year_context = f"CRITICAL: The user specifically asked about year(s) {', '.join(map(str, requested_years))}. You MUST focus your analysis ONLY on data from these year(s). Do NOT include data from other years unless explicitly requested. "
+        
         system_context = (
             "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
             "You provide business insights and recommendations to non-technical executives and managers. "
@@ -5614,9 +5645,14 @@ async def insights_chat(
             "Speak ONLY in business language. Focus on business outcomes, strategies, and actionable insights. "
             "When suggesting data analysis, say 'analyze your sales data' or 'review your performance metrics', NOT 'query the database' or 'use MongoDB'. "
             "When suggesting automation, say 'automate your reporting' or 'set up automated alerts', NOT 'deploy MongoDB-powered analytics' or 'use aggregation framework'. "
+            f"{year_context}"
             "IMPORTANT: If the user asks for a specific number (e.g., 'top 15 brands', '15 brands'), you MUST provide exactly that number of items in your response. "
             "CRITICAL: Use the EXACT numbers from the data provided to you. Do NOT round, estimate, or modify the numbers. The data contains precise values - use them exactly as shown. "
-            "List all items from the data provided, maintaining the ranking order. Format numbers exactly as provided (e.g., if data shows €1,600,000.00, use that exact value, not €1.6M or €1.8M). "
+            "Format monetary values in millions (M) or thousands (k) where appropriate, e.g., €59.0M or €1.6k, and units as whole numbers. "
+            "IMPORTANT: If the user asks about a specific brand, category, customer, or entity, and that entity only exists in certain years or has limited data availability, you should: "
+            "(1) Mention this limitation clearly in your response (e.g., 'Cali Cali brand data is only available for 2023 and 2024'), "
+            "(2) Provide analysis based on the available data for those years, and "
+            "(3) If relevant, suggest asking about other time periods or entities. "
             "All monetary values are in Euros (€). Be specific, data-driven, and actionable. "
             "Include trends, growth rates (%), and percentage of total revenue where relevant. "
             "For underperformers, identify the lowest performers with specific numbers. "
@@ -5703,13 +5739,42 @@ async def insights_chat(
             
             # Check for trend questions (must have explicit trend keywords)
             elif ("trend" in user_msg_lower or "monthly" in user_msg_lower or "yearly" in user_msg_lower or "over time" in user_msg_lower or 
-                  "trend" in chart_title_lower or "monthly" in chart_title_lower or "yearly" in chart_title_lower):
+                  "trend" in chart_title_lower or "monthly" in chart_title_lower or "yearly" in chart_title_lower or "ytd" in chart_title_lower):
                 logger.info("Detected TREND question - generating time-based pivot table")
                 # User asked about trends - show time-based data
                 match_stage = {"$match": query} if query else {"$match": {}}
                 
-                # Determine if monthly or yearly trend
-                if "month" in user_msg_lower or "monthly" in user_msg_lower:
+                # If user asked for a specific year, show monthly trend for that year
+                # Otherwise, determine if monthly or yearly trend
+                if "year" in query and "$in" in query.get("Year", {}):
+                    # User specified a year - show monthly data for that year
+                    logger.info(f"User specified year(s) {query['Year']['$in']} - showing monthly trend")
+                    pipeline_pivot = [
+                        match_stage,
+                        {
+                            "$group": {
+                                "_id": "$Month_Name",
+                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            }
+                        },
+                        {"$sort": {"_id": 1}}
+                    ]
+                    pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(12)
+                    for item in pivot_results:
+                        month_name = str(item.get("_id", ""))
+                        if month_name and month_name.lower() not in ["unknown", "none", "", "null"]:
+                            revenue = safe_float(item.get("Revenue", 0))
+                            if revenue > 0:
+                                pivot_row = {
+                                    "Month_Name": month_name,
+                                    "Revenue": revenue,
+                                    "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                    "Units": safe_float(item.get("Units", 0))
+                                }
+                                pivot_table.append(pivot_row)
+                elif "month" in user_msg_lower or "monthly" in user_msg_lower:
                     pipeline_pivot = [
                         match_stage,
                         {
@@ -5736,7 +5801,7 @@ async def insights_chat(
                                 }
                                 pivot_table.append(pivot_row)
                 else:
-                    # Yearly trend
+                    # Yearly trend - show only requested year(s) or all years if none specified
                     pipeline_pivot = [
                         match_stage,
                         {
@@ -5751,12 +5816,18 @@ async def insights_chat(
                     ]
                     pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(10)
                     for item in pivot_results:
-                        year = int(item.get("_id", 0))
-                        if year > 0:
+                        year_value = item.get("_id", 0)
+                        # Handle both int and float year values
+                        if isinstance(year_value, float):
+                            year = int(year_value) if year_value > 0 else 0
+                        else:
+                            year = int(year_value) if year_value else 0
+                        
+                        if year > 2000 and year < 2100:  # Valid year range
                             revenue = safe_float(item.get("Revenue", 0))
                             if revenue > 0:
                                 pivot_row = {
-                                    "Year": year,
+                                    "Year": year,  # Store as integer, not formatted
                                     "Revenue": revenue,
                                     "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
                                     "Units": safe_float(item.get("Units", 0))
