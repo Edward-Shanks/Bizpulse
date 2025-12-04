@@ -177,7 +177,7 @@ const CategoryAnalysis = () => {
                       <th className="text-left py-2 px-3 text-gray-700 font-semibold text-xs">Sub-Category</th>
                       <th className="text-right py-2 px-3 text-gray-700 font-semibold text-xs">Sales</th>
                       <th className="text-right py-2 px-3 text-gray-700 font-semibold text-xs">Gross_Profit</th>
-                      <th className="text-right py-2 px-3 text-gray-700 font-semibold text-xs">Units</th>
+                      <th className="text-right py-2 px-3 text-gray-700 font-semibold text-xs">Cases</th>
                     </tr>
                   </thead>
                   <tbody>

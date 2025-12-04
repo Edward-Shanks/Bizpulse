@@ -12,7 +12,7 @@ export const formatNumber = (value) => {
   return `€${num.toFixed(0)}`;
 };
 
-// Format units (cases, items, etc.) without currency symbol
+// Format cases (previously called units) without currency symbol
 export const formatUnits = (value) => {
   if (!value && value !== 0) return '0';
   

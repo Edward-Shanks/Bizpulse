@@ -360,7 +360,7 @@ const Dashboard = () => {
             bgColor="#dbeafe"
           />
           <KPICard
-            title="Total Units"
+            title="Total Cases"
             value={(data?.total_units || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
             icon={<Package className="w-5 h-5" />}
             color="#f59e0b"

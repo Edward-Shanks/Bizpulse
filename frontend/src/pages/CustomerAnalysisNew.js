@@ -496,7 +496,7 @@ const CustomerAnalysis = () => {
           insights: [
             {
               type: 'positive',
-              text: `${topUnitsChannel?.Channel || 'Leading channel'} leads volume with ${formatUnits(topUnitsChannel?.Units || 0)} units.`,
+              text: `${topUnitsChannel?.Channel || 'Leading channel'} leads volume with ${formatUnits(topUnitsChannel?.Units || 0)} cases.`,
             },
             {
               type: 'attention',
@@ -726,8 +726,8 @@ const CustomerAnalysis = () => {
               <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
                 {formatUnits(totalUnits)}
               </h2>
-              <p className="text-sm text-white opacity-90 mb-3">Total Units</p>
-              <p className="text-xs text-white opacity-75">Units sold</p>
+              <p className="text-sm text-white opacity-90 mb-3">Total Cases</p>
+              <p className="text-xs text-white opacity-75">Cases sold</p>
             </div>
           </div>
         </div>
@@ -869,7 +869,7 @@ const CustomerAnalysis = () => {
           />
 
           <ChartCard 
-            title="Units by Channel" 
+            title="Cases by Channel" 
             chartId="unitsByChannel"
             renderChart={({ channelData: chartChannelData }) => (
               <div className="h-80">
@@ -898,7 +898,7 @@ const CustomerAnalysis = () => {
                             label: (context) => {
                               const label = context.label || '';
                               const value = context.parsed || 0;
-                              return `${label}: ${formatUnits(value)} units`;
+                              return `${label}: ${formatUnits(value)} cases`;
                             },
                           },
                         },

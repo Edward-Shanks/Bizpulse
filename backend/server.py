@@ -2803,7 +2803,7 @@ Business Performance Data Analysis:
 OVERALL METRICS:
 - Total Revenue: €{total_revenue:,.2f}
 - Total Gross Profit: €{total_profit:,.2f}
-- Total Units Sold: {total_units:,.0f}
+- Total Cases Sold: {total_units:,.0f}
 - Profit Margin: {(total_profit/total_revenue*100) if total_revenue > 0 else 0:.2f}%
 
 YEAR-OVER-YEAR PERFORMANCE:
@@ -3983,7 +3983,7 @@ Business Performance Data Analysis for Root Cause Analysis:
 OVERALL METRICS:
 - Total Revenue: €{total_revenue:,.2f}
 - Total Gross Profit: €{total_profit:,.2f}
-- Total Units Sold: {total_units:,.0f}
+- Total Cases Sold: {total_units:,.0f}
 - Profit Margin: {profit_margin:.2f}%
 
 YEAR-OVER-YEAR PERFORMANCE:
@@ -5780,7 +5780,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
         context_parts.append(f"Overall Totals:")
         context_parts.append(f"  Total Revenue: {format_currency(safe_float(totals.get('total_revenue', 0)))}")
         context_parts.append(f"  Total Gross Profit: {format_currency(safe_float(totals.get('total_profit', 0)))}")
-        context_parts.append(f"  Total Units: {format_units(safe_float(totals.get('total_units', 0)))}")
+        context_parts.append(f"  Total Cases: {format_units(safe_float(totals.get('total_units', 0)))}")
         
         # Chart-specific aggregations
         if "business" in chart_lower or "compass" in chart_lower:
@@ -5807,7 +5807,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     profit = safe_float(item.get("Gross_Profit", 0))
                     units = safe_float(item.get("Units", 0))
                     margin = (profit / revenue * 100) if revenue > 0 else 0
-                    context_parts.append(f"  {business_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                    context_parts.append(f"  {business_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
         
         if "brand" in chart_lower:
             # Brand performance - detect how many brands to show
@@ -5876,7 +5876,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     revenue_formatted = format_currency(revenue)
                     profit_formatted = format_currency(profit)
                     units_formatted = format_units(units)
-                    context_parts.append(f"  {idx}. {brand_name}: Revenue {revenue_formatted}, Profit {profit_formatted} ({margin:.1f}% margin), Units {units_formatted}")
+                    context_parts.append(f"  {idx}. {brand_name}: Revenue {revenue_formatted}, Profit {profit_formatted} ({margin:.1f}% margin), Cases {units_formatted}")
         
         if "customer" in chart_lower:
             # Customer performance
@@ -5902,7 +5902,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     profit = safe_float(item.get("Gross_Profit", 0))
                     units = safe_float(item.get("Units", 0))
                     margin = (profit / revenue * 100) if revenue > 0 else 0
-                    context_parts.append(f"  {customer_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                    context_parts.append(f"  {customer_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
         
         if "category" in chart_lower:
             # Category performance
@@ -5928,7 +5928,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     profit = safe_float(item.get("Gross_Profit", 0))
                     units = safe_float(item.get("Units", 0))
                     margin = (profit / revenue * 100) if revenue > 0 else 0
-                    context_parts.append(f"  {category_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                    context_parts.append(f"  {category_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
         
         if "channel" in chart_lower or "sales" in chart_lower:
             # Channel performance
@@ -5954,7 +5954,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     profit = safe_float(item.get("Gross_Profit", 0))
                     units = safe_float(item.get("Units", 0))
                     margin = (profit / revenue * 100) if revenue > 0 else 0
-                    context_parts.append(f"  {channel_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                    context_parts.append(f"  {channel_name}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
         
         # Monthly trend if available
         if "trend" in chart_lower or "monthly" in chart_lower or "ytd" in chart_lower:
@@ -6076,7 +6076,7 @@ async def get_comprehensive_data_context(
                 context_parts.append("\nDetailed Metrics:")
                 context_parts.append(f"  Revenue: {format_currency(safe_float(metrics.get('total_revenue', 0)))}")
                 context_parts.append(f"  Gross Profit: {format_currency(safe_float(metrics.get('total_profit', 0)))}")
-                context_parts.append(f"  Units: {format_units(safe_float(metrics.get('total_units', 0)))}")
+                context_parts.append(f"  Cases: {format_units(safe_float(metrics.get('total_units', 0)))}")
                 if safe_float(metrics.get('total_revenue', 0)) > 0:
                     margin = (safe_float(metrics.get('total_profit', 0)) / safe_float(metrics.get('total_revenue', 0))) * 100
                     context_parts.append(f"  Margin: {margin:.2f}%")
@@ -6129,7 +6129,7 @@ async def get_comprehensive_data_context(
                         context_parts.append(f"  Revenue: {format_currency(revenue)}")
                         context_parts.append(f"  Gross Profit: {format_currency(profit)}")
                         context_parts.append(f"  Margin: {margin:.2f}%")
-                        context_parts.append(f"  Units: {format_units(safe_float(q_data.get('Units', 0)))}")
+                        context_parts.append(f"  Cases: {format_units(safe_float(q_data.get('Units', 0)))}")
         
         # Monthly breakdown
         if is_monthly or "monthly" in user_msg_lower or "by month" in user_msg_lower:
@@ -6185,7 +6185,7 @@ async def get_comprehensive_data_context(
                     profit = safe_float(item.get("Gross_Profit", 0))
                     if revenue > 0:
                         margin = (profit / revenue) * 100
-                        context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(safe_float(item.get('Units', 0)))}")
+                        context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(safe_float(item.get('Units', 0)))}")
         
         # Brand breakdown (if brand mentioned or comparison)
         if "brand" in user_msg_lower or is_comparison:
@@ -6428,7 +6428,7 @@ async def insights_chat(
             f"{monthly_context}"
             "IMPORTANT: If the user asks for a specific number (e.g., 'top 15 brands', '15 brands'), you MUST provide exactly that number of items in your response. "
             "CRITICAL: Use the EXACT numbers from the data provided to you. Do NOT round, estimate, or modify the numbers. The data contains precise values - use them exactly as shown. "
-            "Format monetary values in millions (M) or thousands (k) where appropriate, e.g., €59.0M or €1.6k, and units as whole numbers. "
+            "Format monetary values in millions (M) or thousands (k) where appropriate, e.g., €59.0M or €1.6k, and cases as whole numbers. "
             "IMPORTANT: If the user asks about a specific brand, category, customer, or entity, and that entity only exists in certain years or has limited data availability, you should: "
             "(1) Mention this limitation clearly in your response (e.g., 'Cali Cali brand data is only available for 2023 and 2024'), "
             "(2) Provide analysis based on the available data for those years, and "
@@ -6840,13 +6840,13 @@ async def insights_chat(
                     "Show me the profit margins for these brands",
                     "Which brands have the highest profit margins?",
                     "Compare revenue vs profit for top brands",
-                    "What are the units sold for each brand?",
+                    "What are the cases sold for each brand?",
                     "Show me brand performance trends"
                 ]
             elif "margin" in user_msg_lower or "profit" in user_msg_lower:
                 follow_up_questions = [
                     "Which brands have the highest revenue?",
-                    "Show me total units sold by brand",
+                    "Show me total cases sold by brand",
                     "Compare brand performance across channels",
                     "What are the top performing brands?",
                     "Show brand revenue trends"
@@ -6855,7 +6855,7 @@ async def insights_chat(
                 follow_up_questions = [
                     "Which brands have the highest profit margins?",
                     "Show me revenue vs profit comparison",
-                    "What are the units sold for each brand?",
+                    "What are the cases sold for each brand?",
                     "Compare top brands performance",
                     "Show brand trends over time"
                 ]

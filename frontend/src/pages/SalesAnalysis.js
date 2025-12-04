@@ -629,7 +629,7 @@ const SalesAnalysis = () => {
               <h2 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Space Grotesk', color: '#EDD5B1' }}>
                 {formatUnits(totalUnits)}
               </h2>
-              <p className="text-sm text-white opacity-90 mb-3">Total Units</p>
+              <p className="text-sm text-white opacity-90 mb-3">Total Cases</p>
               <p className="text-xs text-white opacity-75">Track unit growth with filters</p>
             </div>
           </div>

@@ -973,7 +973,7 @@ const Dashboard = () => {
                     data={{
                       labels: chartBusinessData.map(item => item.Business),
                       datasets: [{
-                        label: 'Units',
+                        label: 'Cases',
                         data: chartBusinessData.map(item => item.Units),
                         backgroundColor: colorsWithOpacity,
                         borderRadius: 8
@@ -986,7 +986,7 @@ const Dashboard = () => {
                         legend: { display: false },
                         tooltip: {
                           callbacks: {
-                            label: (context) => `${formatUnits(context.parsed.y)} units`
+                            label: (context) => `${formatUnits(context.parsed.y)} cases`
                           }
                         }
                       },
