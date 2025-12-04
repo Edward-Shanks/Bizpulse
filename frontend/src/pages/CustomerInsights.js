@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import ChartComponent from '@/components/ChartComponent';
 import InsightModal from '@/components/InsightModal';
@@ -25,18 +25,16 @@ const CustomerInsights = () => {
   // Filter states
   const [selectedYears, setSelectedYears] = useState([]);
   const [selectedMonths, setSelectedMonths] = useState([]);
+  
+  // Chart-level filters (individual filters that override global filters)
+  const [chartFilters, setChartFilters] = useState({});
+  
+  // Chart-specific data (for charts with individual filters)
+  const [chartData, setChartData] = useState({});
 
-  useEffect(() => {
+  // Fetch filters only on initial load - they don't need to update when selections change
+  const fetchFilters = useCallback(async () => {
     if (!token) return;
-    fetchFilters();
-  }, [token]);
-
-  useEffect(() => {
-    if (!token || !filters) return;
-    fetchData();
-  }, [token, selectedYears, selectedMonths, filters]);
-
-  const fetchFilters = async () => {
     try {
       // Use customer insights specific filter endpoint that returns only years/months from Shopify data
       const response = await axios.get(`${API}/analytics/customer-insights/filters`, {
@@ -57,9 +55,11 @@ const CustomerInsights = () => {
         months: [],
       });
     }
-  };
+  }, [token]);
 
-  const fetchData = async () => {
+  // Memoize fetchData to prevent unnecessary re-creations
+  const fetchData = useCallback(async () => {
+    if (!token) return;
     try {
       setLoading(true);
       const params = {};
@@ -81,10 +81,6 @@ const CustomerInsights = () => {
         summary: response.data?.summary,
         monthlyTrendLength: response.data?.monthlyTrend?.length,
       });
-      // Debug: Log monthly trend data
-      if (response.data?.monthlyTrend) {
-        console.log('Monthly Trend Data:', response.data.monthlyTrend);
-      }
     } catch (error) {
       console.error('❌ Failed to load customer insights:', error);
       if (error.response) {
@@ -95,7 +91,152 @@ const CustomerInsights = () => {
     } finally {
       setLoading(false);
     }
+  }, [token, selectedYears, selectedMonths]);
+
+  // Load filters only once on mount
+  useEffect(() => {
+    fetchFilters();
+  }, [fetchFilters]);
+
+  // Load data when filters or selections change
+  useEffect(() => {
+    if (!filters) return; // Wait for filters to load first
+    fetchData();
+  }, [fetchData, filters]);
+
+  // Helper function to merge global and individual filters (individual overrides global)
+  const getMergedFilters = (chartName = null) => {
+    const globalFilters = {
+      years: selectedYears,
+      months: selectedMonths,
+    };
+
+    // If no chart name, return global filters only
+    if (!chartName || !chartFilters[chartName]) {
+      return globalFilters;
+    }
+
+    // Merge: individual filters override global filters
+    const individualFilters = chartFilters[chartName];
+    return {
+      years: individualFilters.hasOwnProperty('years')
+        ? individualFilters.years 
+        : globalFilters.years,
+      months: individualFilters.hasOwnProperty('months')
+        ? individualFilters.months 
+        : globalFilters.months,
+    };
   };
+
+  // Reset individual chart filters and chart data when global filters change
+  useEffect(() => {
+    setChartFilters({});
+    setChartData({});
+  }, [selectedYears, selectedMonths]);
+
+  // Fetch data for a specific chart with merged filters
+  const fetchChartData = async (chartName, individualFiltersOverride = null) => {
+    try {
+      let mergedFilters;
+      if (individualFiltersOverride) {
+        mergedFilters = {
+          years: individualFiltersOverride.hasOwnProperty('years')
+            ? individualFiltersOverride.years 
+            : selectedYears,
+          months: individualFiltersOverride.hasOwnProperty('months')
+            ? individualFiltersOverride.months 
+            : selectedMonths,
+        };
+      } else {
+        mergedFilters = getMergedFilters(chartName);
+      }
+      
+      const params = {};
+      if (mergedFilters.years.length > 0) {
+        params.years = mergedFilters.years.join(',');
+      }
+      if (mergedFilters.months.length > 0) {
+        params.months = mergedFilters.months.join(',');
+      }
+      
+      const response = await axios.get(`${API}/analytics/customer-insights`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+      });
+      
+      setChartData(prev => ({
+        ...prev,
+        [chartName]: response.data
+      }));
+    } catch (error) {
+      console.error(`Failed to load data for chart ${chartName}:`, error);
+    }
+  };
+
+  const handleChartFilterChange = async (chartName, filterType, value) => {
+    const filterKeyMap = {
+      'year': 'years',
+      'years': 'years',
+      'month': 'months',
+      'months': 'months',
+    };
+
+    const mappedKey = filterKeyMap[filterType] || filterType;
+    
+    let filterValue = [];
+    if (value === 'all' || value === null || value === undefined) {
+      filterValue = [];
+    } else if (Array.isArray(value)) {
+      filterValue = value;
+    } else {
+      filterValue = [value];
+    }
+
+    const newIndividualFilters = {
+      ...(chartFilters[chartName] || {}),
+      [mappedKey]: filterValue
+    };
+    
+    const newFilters = {
+      ...chartFilters,
+      [chartName]: newIndividualFilters
+    };
+    
+    setChartFilters(newFilters);
+    await fetchChartData(chartName, newIndividualFilters);
+  };
+
+  // Helper function to get data for a specific chart
+  const getChartData = (chartName) => {
+    return chartData[chartName] || data;
+  };
+
+  // Helper function to derive chart-specific data arrays
+  const getChartDataArrays = (chartName) => {
+    const chartDataToUse = getChartData(chartName);
+    return {
+      summary: chartDataToUse?.summary || {},
+      newVsReturning: chartDataToUse?.newVsReturning || [],
+      channelPerf: chartDataToUse?.channelPerformance || [],
+      regionPerf: chartDataToUse?.regionPerformance || [],
+      trafficSource: chartDataToUse?.trafficSource || [],
+      clv: chartDataToUse?.customerLifetimeValue || [],
+      monthlyTrend: chartDataToUse?.monthlyTrend || [],
+      subscriptionStatus: chartDataToUse?.subscriptionStatus || [],
+      topCustomers: chartDataToUse?.topCustomers || [],
+      platformAnalysis: chartDataToUse?.platformAnalysis || [],
+      trafficType: chartDataToUse?.trafficType || [],
+      hourlyPatterns: chartDataToUse?.hourlyPatterns || [],
+      countryDistribution: chartDataToUse?.countryDistribution || [],
+      smsSubscription: chartDataToUse?.smsSubscription || [],
+      mediumAnalysis: chartDataToUse?.mediumAnalysis || [],
+      topProducts: chartDataToUse?.topProducts || [],
+      dayOfWeekAnalysis: chartDataToUse?.dayOfWeekAnalysis || [],
+      returnTrend: chartDataToUse?.returnTrend || [],
+      chartDataToUse,
+    };
+  };
+
 
   const handleViewInsight = (chartTitle, insights, recommendations) => {
     setInsightModal({
@@ -106,32 +247,82 @@ const CustomerInsights = () => {
     });
   };
 
-  const ChartCard = ({ title, children, onViewInsight, icon: Icon }) => (
-    <div 
-      className="rounded-lg shadow-sm p-6"
-      style={{
-        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-        border: '1px solid rgba(0, 0, 0, 0.1)'
-      }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          {Icon && <Icon className="w-5 h-5 text-indigo-600" />}
-          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+  const ChartCard = ({ title, children, onViewInsight, icon: Icon, chartId, renderChart }) => {
+    const mergedFilters = chartId ? getMergedFilters(chartId) : { years: selectedYears, months: selectedMonths };
+    
+    // Get chart-specific data arrays if chartId is provided
+    const chartDataArrays = chartId ? getChartDataArrays(chartId) : null;
+    
+    return (
+      <div 
+        className="rounded-lg shadow-sm p-6"
+        style={{
+          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+          border: '1px solid rgba(0, 0, 0, 0.1)'
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            {Icon && <Icon className="w-5 h-5 text-indigo-600" />}
+            <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          </div>
+          {onViewInsight && (
+            <button
+              onClick={onViewInsight}
+              className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2 whitespace-nowrap"
+            >
+              <Lightbulb className="w-4 h-4" />
+              View Insight
+            </button>
+          )}
         </div>
-        {onViewInsight && (
-          <button
-            onClick={onViewInsight}
-            className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2 whitespace-nowrap"
-          >
-            <Lightbulb className="w-4 h-4" />
-            View Insight
-          </button>
+        
+        {/* Chart Filters - Show merged filter values (individual overrides global) - Only show if chartId is provided */}
+        {chartId && (
+          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+            <select
+              value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
+              onChange={async (e) => {
+                const value = e.target.value;
+                if (value === 'all') {
+                  await handleChartFilterChange(chartId, 'years', []);
+                } else {
+                  await handleChartFilterChange(chartId, 'years', [value]);
+                }
+              }}
+              className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            >
+              <option value="all">All Years</option>
+              {filters?.years?.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+            
+            <select
+              value={mergedFilters.months.length === 1 ? mergedFilters.months[0] : mergedFilters.months.length > 1 ? 'multiple' : 'all'}
+              onChange={async (e) => {
+                const value = e.target.value;
+                if (value === 'all') {
+                  await handleChartFilterChange(chartId, 'months', []);
+                } else {
+                  await handleChartFilterChange(chartId, 'months', [value]);
+                }
+              }}
+              className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            >
+              <option value="all">All Months</option>
+              {filters?.months?.map(month => (
+                <option key={month} value={month}>{month}</option>
+              ))}
+            </select>
+          </div>
         )}
+        
+        {/* Render chart with chart-specific data */}
+        {renderChart && chartDataArrays ? renderChart(chartDataArrays) : children}
       </div>
-      {children}
-    </div>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -413,6 +604,249 @@ const CustomerInsights = () => {
     ],
   };
 
+  // Helper function to build chart data from chart-specific data arrays
+  const buildChartData = (chartName, chartDataArrays) => {
+    const {
+      newVsReturning: chartNewVsReturning,
+      channelPerf: chartChannelPerf,
+      regionPerf: chartRegionPerf,
+      trafficSource: chartTrafficSource,
+      clv: chartClv,
+      monthlyTrend: chartMonthlyTrend,
+      subscriptionStatus: chartSubscriptionStatus,
+      platformAnalysis: chartPlatformAnalysis,
+      trafficType: chartTrafficType,
+      hourlyPatterns: chartHourlyPatterns,
+      countryDistribution: chartCountryDistribution,
+      smsSubscription: chartSmsSubscription,
+      mediumAnalysis: chartMediumAnalysis,
+      topProducts: chartTopProducts,
+      dayOfWeekAnalysis: chartDayOfWeekAnalysis,
+      returnTrend: chartReturnTrend,
+    } = chartDataArrays;
+
+    const chartConfigs = {
+      newVsReturning: {
+        labels: chartNewVsReturning.map((item) => item.type || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartNewVsReturning.map((item) => item.sales || 0),
+            backgroundColor: ['#1e293b', '#EDD5B1'],
+            borderWidth: 2,
+            borderColor: '#fff',
+          },
+        ],
+      },
+      channel: {
+        labels: chartChannelPerf.map((item) => item.channel || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartChannelPerf.map((item) => item.sales || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      region: {
+        labels: chartRegionPerf.map((item) => item.region || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartRegionPerf.map((item) => item.sales || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      trafficSource: {
+        labels: chartTrafficSource.map((item) => item.source || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartTrafficSource.map((item) => item.sales || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      clv: {
+        labels: chartClv.map((item) => `${item.order_bucket} orders`),
+        datasets: [
+          {
+            label: 'Avg Sales per Customer (€)',
+            data: chartClv.map((item) => item.avg_sales_per_customer || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      monthlyTrend: {
+        labels: chartMonthlyTrend.map((item) => item.month_label || item.MonthName || 'Unknown'),
+        datasets: [
+          {
+            type: 'line',
+            label: 'Total Sales (€)',
+            data: chartMonthlyTrend.map((item) => {
+              const value = item.Total_sales || item['Total_sales'] || item['Total sales'] || item.total_sales || 0;
+              return typeof value === 'number' ? value : parseFloat(value) || 0;
+            }),
+            borderColor: '#745E39',
+            backgroundColor: 'rgba(116, 94, 57, 0.1)',
+            fill: true,
+            tension: 0.4,
+            yAxisID: 'y',
+          },
+          {
+            type: 'bar',
+            label: 'New Customers',
+            data: chartMonthlyTrend.map((item) => {
+              const value = item.Orders_first_time || item['Orders_first_time'] || item['Orders (first-time)'] || item.orders_first_time || 0;
+              return typeof value === 'number' ? value : parseFloat(value) || 0;
+            }),
+            backgroundColor: '#EDD5B1',
+            borderRadius: 4,
+            yAxisID: 'y1',
+          },
+          {
+            type: 'bar',
+            label: 'Returning Customers',
+            data: chartMonthlyTrend.map((item) => {
+              const value = item.Orders_returning || item['Orders_returning'] || item['Orders (returning)'] || item.orders_returning || 0;
+              return typeof value === 'number' ? value : parseFloat(value) || 0;
+            }),
+            backgroundColor: '#1e293b',
+            borderRadius: 4,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      subscription: {
+        labels: chartSubscriptionStatus.map((item) => item.status || 'Unknown'),
+        datasets: [
+          {
+            label: 'Customers',
+            data: chartSubscriptionStatus.map((item) => item.unique_customers || 0),
+            backgroundColor: colorsWithOpacity.slice(0, 3),
+            borderWidth: 2,
+            borderColor: '#fff',
+          },
+        ],
+      },
+      platform: {
+        labels: chartPlatformAnalysis.map((item) => item.platform || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartPlatformAnalysis.map((item) => item.sales || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      trafficType: {
+        labels: chartTrafficType.map((item) => item.type || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartTrafficType.map((item) => item.sales || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      hourlyPatterns: {
+        labels: chartHourlyPatterns.length > 0 ? chartHourlyPatterns.map((item) => `${item.hour}:00`) : ['No Data'],
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartHourlyPatterns.length > 0 ? chartHourlyPatterns.map((item) => item.sales || 0) : [0],
+            borderColor: '#1e293b',
+            backgroundColor: 'rgba(30, 41, 59, 0.1)',
+            fill: true,
+            tension: 0.4,
+          },
+          {
+            label: 'Orders',
+            data: chartHourlyPatterns.length > 0 ? chartHourlyPatterns.map((item) => item.orders || 0) : [0],
+            borderColor: '#745E39',
+            backgroundColor: 'rgba(116, 94, 57, 0.1)',
+            fill: true,
+            tension: 0.4,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      countryDistribution: {
+        labels: chartCountryDistribution.length > 0 ? chartCountryDistribution.map((item) => item.country || 'Unknown') : ['No Data'],
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartCountryDistribution.length > 0 ? chartCountryDistribution.map((item) => item.sales || 0) : [0],
+            backgroundColor: colorsWithOpacity,
+            borderWidth: 2,
+            borderColor: '#fff',
+          },
+        ],
+      },
+      smsSubscription: {
+        labels: chartSmsSubscription.length > 0 ? chartSmsSubscription.map((item) => item.status || 'Unknown') : ['No Data'],
+        datasets: [
+          {
+            label: 'Customers',
+            data: chartSmsSubscription.length > 0 ? chartSmsSubscription.map((item) => item.unique_customers || 0) : [0],
+            backgroundColor: colorsWithOpacity.slice(0, 3),
+            borderWidth: 2,
+            borderColor: '#fff',
+          },
+        ],
+      },
+      mediumAnalysis: {
+        labels: chartMediumAnalysis.map((item) => item.medium || 'Unknown'),
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartMediumAnalysis.map((item) => item.sales || 0),
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      topProducts: {
+        labels: chartTopProducts.length > 0 ? chartTopProducts.map((item) => item.product_name || `SKU ${item.sku}` || 'Unknown') : ['No Data'],
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartTopProducts.length > 0 ? chartTopProducts.map((item) => item.sales || 0) : [0],
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      dayOfWeek: {
+        labels: chartDayOfWeekAnalysis.length > 0 ? chartDayOfWeekAnalysis.map((item) => item.day || item.day_of_week || 'Unknown') : ['No Data'],
+        datasets: [
+          {
+            label: 'Sales (€)',
+            data: chartDayOfWeekAnalysis.length > 0 ? chartDayOfWeekAnalysis.map((item) => item.sales || 0) : [0],
+            backgroundColor: '#1e293b',
+          },
+        ],
+      },
+      returnTrend: {
+        labels: chartReturnTrend.length > 0 ? chartReturnTrend.map((item) => item.month_label || item.MonthName || 'Unknown') : ['No Data'],
+        datasets: [
+          {
+            label: 'Return Rate (%)',
+            data: chartReturnTrend.length > 0 ? chartReturnTrend.map((item) => {
+              const value = item.return_rate || item['return_rate'] || item['Return Rate'] || 0;
+              return typeof value === 'number' ? value : parseFloat(value) || 0;
+            }) : [0],
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            fill: true,
+            tension: 0.4,
+          },
+        ],
+      },
+    };
+
+    return chartConfigs[chartName] || null;
+  };
+
   const mediumAnalysisChart = {
     labels: mediumAnalysis.length > 0 ? mediumAnalysis.map((item) => item.medium || 'Unknown') : ['No Data'],
     datasets: [
@@ -669,25 +1103,34 @@ const CustomerInsights = () => {
           <ChartCard
             title="New vs Returning Customers"
             icon={Users}
-            onViewInsight={() =>
+            chartId="newVsReturning"
+            onViewInsight={() => {
+              const chartDataArrays = getChartDataArrays('newVsReturning');
+              const chartSummary = chartDataArrays.summary;
+              const chartNewVsReturning = chartDataArrays.newVsReturning;
               handleViewInsight(
                 'New vs Returning Customers',
                 [
-                  { type: 'positive', text: `Returning customers generate ${((newVsReturning.find((x) => x.type === 'Returning')?.sales || 0) / (summary.totalSales || 1)) * 100}% of total sales` },
+                  { type: 'positive', text: `Returning customers generate ${((chartNewVsReturning.find((x) => x.type === 'Returning')?.sales || 0) / (chartSummary.totalSales || 1)) * 100}% of total sales` },
                 ],
                 ['Focus on retention programs', 'Improve new customer onboarding', 'Create loyalty incentives']
-              )
-            }
-          >
-            <div className="h-64">
-              <ChartComponent type="doughnut" data={newVsReturningChart} options={donutChartOptions} />
-            </div>
-          </ChartCard>
+              );
+            }}
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('newVsReturning', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="doughnut" data={chartData} options={donutChartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Sales Channel Performance */}
           <ChartCard
             title="Sales Channel Performance"
             icon={ShoppingCart}
+            chartId="channelPerformance"
             onViewInsight={() =>
               handleViewInsight(
                 'Sales Channel Performance',
@@ -695,16 +1138,21 @@ const CustomerInsights = () => {
                 ['Optimize online store experience', 'Expand high-performing channels']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={channelChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('channel', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Geographic Distribution */}
           <ChartCard
             title="Top Regions by Sales"
             icon={MapPin}
+            chartId="regionPerformance"
             onViewInsight={() =>
               handleViewInsight(
                 'Geographic Distribution',
@@ -712,16 +1160,21 @@ const CustomerInsights = () => {
                 ['Expand marketing in high-performing regions', 'Investigate low-performing areas']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={regionChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('region', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Traffic Source Analysis */}
           <ChartCard
             title="Traffic Source Analysis"
             icon={Globe}
+            chartId="trafficSource"
             onViewInsight={() =>
               handleViewInsight(
                 'Traffic Source Analysis',
@@ -729,16 +1182,21 @@ const CustomerInsights = () => {
                 ['Increase Google Ads budget', 'Optimize SEO strategy', 'Diversify traffic sources']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={trafficSourceChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('trafficSource', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Customer Lifetime Value */}
           <ChartCard
             title="Customer Lifetime Value"
             icon={TrendingUp}
+            chartId="customerLifetimeValue"
             onViewInsight={() =>
               handleViewInsight(
                 'Customer Lifetime Value',
@@ -746,33 +1204,46 @@ const CustomerInsights = () => {
                 ['Create VIP programs for high-value customers', 'Focus on repeat purchase incentives']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={clvChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('clv', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Email Subscription Status */}
           <ChartCard
             title="Email Subscription Status"
             icon={Mail}
-            onViewInsight={() =>
+            chartId="subscriptionStatus"
+            onViewInsight={() => {
+              const chartDataArrays = getChartDataArrays('subscriptionStatus');
+              const chartSummary = chartDataArrays.summary;
+              const chartSubscriptionStatus = chartDataArrays.subscriptionStatus;
               handleViewInsight(
                 'Email Subscription Status',
-                [{ type: 'attention', text: `${((subscriptionStatus.find((x) => x.status === 'SUBSCRIBED')?.unique_customers || 0) / (summary.totalCustomers || 1)) * 100}% of customers are subscribed` }],
+                [{ type: 'attention', text: `${((chartSubscriptionStatus.find((x) => x.status === 'SUBSCRIBED')?.unique_customers || 0) / (chartSummary.totalCustomers || 1)) * 100}% of customers are subscribed` }],
                 ['Improve email marketing campaigns', 'Re-engage unsubscribed customers']
-              )
-            }
-          >
-            <div className="h-64">
-              <ChartComponent type="doughnut" data={subscriptionChart} options={donutChartOptions} />
-            </div>
-          </ChartCard>
+              );
+            }}
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('subscription', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="doughnut" data={chartData} options={donutChartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Top Products by Sales */}
           <ChartCard
             title="Top 15 Products by Sales"
             icon={Package}
+            chartId="topProducts"
             onViewInsight={() =>
               handleViewInsight(
                 'Top Products',
@@ -780,16 +1251,21 @@ const CustomerInsights = () => {
                 ['Promote best-selling products', 'Analyze product performance']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={topProductsChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('topProducts', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Day of Week Analysis */}
           <ChartCard
             title="Day of Week Sales Performance"
             icon={Calendar}
+            chartId="dayOfWeekAnalysis"
             onViewInsight={() =>
               handleViewInsight(
                 'Day of Week Patterns',
@@ -797,29 +1273,41 @@ const CustomerInsights = () => {
                 ['Optimize campaigns for best performing days', 'Plan promotions strategically']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={dayOfWeekChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('dayOfWeek', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
         </div>
 
           {/* Monthly/Daily Trend - Full Width */}
         <ChartCard
-          title={monthlyTrend.length <= 31 ? "Daily Sales & Customer Trends" : "Monthly Sales & Customer Trends"}
+          title="Monthly Sales & Customer Trends"
           icon={TrendingUp}
-          onViewInsight={() =>
+          chartId="monthlyTrend"
+          onViewInsight={() => {
+            const chartDataArrays = getChartDataArrays('monthlyTrend');
+            const chartMonthlyTrend = chartDataArrays.monthlyTrend;
             handleViewInsight(
-              monthlyTrend.length <= 31 ? 'Daily Trends' : 'Monthly Trends',
+              chartMonthlyTrend.length <= 31 ? 'Daily Trends' : 'Monthly Trends',
               [{ type: 'positive', text: 'Steady growth in sales and customer acquisition' }],
               ['Maintain current growth trajectory', 'Identify seasonal patterns', 'Monitor daily performance']
-            )
-          }
-        >
-          <div className="h-80">
-            <ChartComponent type="bar" data={monthlyTrendChart} options={lineChartOptions} />
-          </div>
-        </ChartCard>
+            );
+          }}
+          renderChart={(chartDataArrays) => {
+            const chartData = buildChartData('monthlyTrend', chartDataArrays);
+            const chartMonthlyTrend = chartDataArrays.monthlyTrend;
+            return (
+              <div className="h-80">
+                {chartData && <ChartComponent type="bar" data={chartData} options={lineChartOptions} />}
+              </div>
+            );
+          }}
+        />
 
         {/* Charts Grid - Continued */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -827,6 +1315,7 @@ const CustomerInsights = () => {
           <ChartCard
             title="Referring Platform Analysis"
             icon={Globe}
+            chartId="platformAnalysis"
             onViewInsight={() =>
               handleViewInsight(
                 'Platform Analysis',
@@ -834,16 +1323,21 @@ const CustomerInsights = () => {
                 ['Leverage high-performing platforms', 'Optimize platform-specific campaigns']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={platformChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('platform', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Traffic Type */}
           <ChartCard
             title="Traffic Type Performance"
             icon={TrendingUp}
+            chartId="trafficType"
             onViewInsight={() =>
               handleViewInsight(
                 'Traffic Type Performance',
@@ -851,16 +1345,21 @@ const CustomerInsights = () => {
                 ['Optimize paid campaigns', 'Improve organic reach']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={trafficTypeChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('trafficType', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Hour of Day Shopping Patterns */}
           <ChartCard
             title="Hour of Day Shopping Patterns"
             icon={Clock}
+            chartId="hourlyPatterns"
             onViewInsight={() =>
               handleViewInsight(
                 'Hourly Shopping Patterns',
@@ -868,16 +1367,21 @@ const CustomerInsights = () => {
                 ['Optimize marketing campaigns for peak hours', 'Schedule promotions during high-traffic times']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="line" data={hourlyPatternsChart} options={lineChartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('hourlyPatterns', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="line" data={chartData} options={lineChartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Country Distribution */}
           <ChartCard
             title="Country Distribution"
             icon={Globe}
+            chartId="countryDistribution"
             onViewInsight={() =>
               handleViewInsight(
                 'Country Distribution',
@@ -885,16 +1389,21 @@ const CustomerInsights = () => {
                 ['Expand marketing in primary countries', 'Explore opportunities in other regions']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="doughnut" data={countryDistributionChart} options={donutChartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('countryDistribution', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="doughnut" data={chartData} options={donutChartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* SMS Subscription Status */}
           <ChartCard
             title="SMS Subscription Status"
             icon={MessageSquare}
+            chartId="smsSubscription"
             onViewInsight={() =>
               handleViewInsight(
                 'SMS Subscription',
@@ -902,16 +1411,21 @@ const CustomerInsights = () => {
                 ['Improve SMS opt-in campaigns', 'Leverage SMS for customer engagement']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="doughnut" data={smsSubscriptionChart} options={donutChartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('smsSubscription', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="doughnut" data={chartData} options={donutChartOptions} />}
+                </div>
+              );
+            }}
+          />
 
           {/* Referring Medium Analysis */}
           <ChartCard
             title="Referring Medium Analysis"
             icon={Globe}
+            chartId="mediumAnalysis"
             onViewInsight={() =>
               handleViewInsight(
                 'Medium Analysis',
@@ -919,11 +1433,15 @@ const CustomerInsights = () => {
                 ['Optimize SEO strategy', 'Invest in high-performing mediums']
               )
             }
-          >
-            <div className="h-64">
-              <ChartComponent type="bar" data={mediumAnalysisChart} options={chartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('mediumAnalysis', chartDataArrays);
+              return (
+                <div className="h-64">
+                  {chartData && <ChartComponent type="bar" data={chartData} options={chartOptions} />}
+                </div>
+              );
+            }}
+          />
         </div>
 
         {/* Return Rate Trend - Full Width */}
@@ -931,6 +1449,7 @@ const CustomerInsights = () => {
           <ChartCard
             title="Return Rate Trend Over Time"
             icon={AlertTriangle}
+            chartId="returnTrend"
             onViewInsight={() =>
               handleViewInsight(
                 'Return Rate Trend',
@@ -938,11 +1457,15 @@ const CustomerInsights = () => {
                 ['Identify return patterns', 'Improve product quality', 'Optimize return policies']
               )
             }
-          >
-            <div className="h-80">
-              <ChartComponent type="line" data={returnTrendChart} options={lineChartOptions} />
-            </div>
-          </ChartCard>
+            renderChart={(chartDataArrays) => {
+              const chartData = buildChartData('returnTrend', chartDataArrays);
+              return (
+                <div className="h-80">
+                  {chartData && <ChartComponent type="line" data={chartData} options={lineChartOptions} />}
+                </div>
+              );
+            }}
+          />
         )}
 
         {/* Top Customers Table */}
