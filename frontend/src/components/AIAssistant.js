@@ -11,7 +11,6 @@ import remarkGfm from 'remark-gfm';
 
 const AIAssistant = () => {
   const { token } = useAuth();
-  const INSIGHTS_API = process.env.REACT_APP_INSIGHTS_URL || 'http://localhost:8005';
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -69,7 +68,9 @@ const AIAssistant = () => {
         conversation_history: conversationHistory
       };
 
-      const response = await axios.post(`${INSIGHTS_API}/insights/chat`, payload);
+      const response = await axios.post(`${API}/insights/chat`, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
       const fullResponse = response.data?.response || 'No response';
       const aiMessage = { role: 'ai', content: fullResponse };
@@ -90,10 +91,10 @@ const AIAssistant = () => {
   };
 
   const suggestedQuestions = [
-    'Which brand grew the most YoY?',
-    'What is the total sales for 2023?',
-    'Show me top performing channels',
-    'Which category has the highest Gross Profit?'
+    'Show me metrics for business Food, channel Convenience, customer BWG, brand Bensons and category Curry',
+    'Compare Q1 gross sales for business Food in 2023 and 2024',
+    'Show me top 10 brands by Revenue in 2025',
+    'Compare brand Bonne Maman with other brands'
   ];
 
   return (
@@ -127,7 +128,7 @@ const AIAssistant = () => {
       {/* Chat Window */}
       {isOpen && (
         <div
-          className="fixed bottom-8 right-8 w-96 h-[600px] rounded-2xl shadow-2xl flex flex-col z-50 bg-white border border-gray-200"
+          className="fixed bottom-8 right-8 w-[700px] max-w-[90vw] h-[85vh] max-h-[900px] rounded-2xl shadow-2xl flex flex-col z-50 bg-white border border-gray-200"
           data-testid="ai-chat-window"
         >
           {/* Header */}
@@ -157,17 +158,17 @@ const AIAssistant = () => {
           </div>
 
           {/* Messages */}
-          <ScrollArea className="flex-1 p-4 bg-gray-50" ref={scrollRef}>
+          <ScrollArea className="flex-1 p-4 bg-gray-50 overflow-y-auto" ref={scrollRef} style={{ maxHeight: 'calc(85vh - 180px)' }}>
             {messages.length === 0 && (
               <div className="text-center py-8">
                 <Sparkles className="w-12 h-12 text-blue-600 mx-auto mb-4" />
                 <p className="text-gray-700 mb-4">Hi! I'm VectorDeep AI. Ask me anything about your business data.</p>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
                   {suggestedQuestions.map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => handleSendMessage(q)}
-                      className="w-full text-left px-4 py-2 rounded-lg text-sm text-gray-700 bg-white hover:bg-blue-50 transition border border-gray-200"
+                      className="w-full text-left px-4 py-2 rounded-lg text-sm text-gray-700 bg-white hover:bg-blue-50 transition border border-gray-200 break-words"
                     >
                       {q}
                     </button>
@@ -182,16 +183,16 @@ const AIAssistant = () => {
                 className={`mb-4 flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] px-4 py-3 rounded-2xl ${
+                  className={`max-w-[85%] px-4 py-3 rounded-2xl ${
                     msg.role === 'user'
                       ? 'bg-blue-600 text-white'
                       : 'bg-white text-gray-800 border border-gray-200'
                   }`}
                 >
                   {msg.role === 'user' ? (
-                    <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                    <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                   ) : (
-                    <div className="prose prose-sm max-w-none">
+                    <div className="prose prose-sm max-w-none break-words">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {msg.content}
                       </ReactMarkdown>
@@ -212,7 +213,7 @@ const AIAssistant = () => {
             
             {streamingMessage && (
               <div className="flex justify-start mb-4">
-                <div className="max-w-[80%] px-4 py-3 rounded-2xl bg-white text-gray-800 border border-gray-200">
+                <div className="max-w-[85%] px-4 py-3 rounded-2xl bg-white text-gray-800 border border-gray-200 break-words">
                   <div className="prose prose-sm max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {streamingMessage}

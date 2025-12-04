@@ -22,6 +22,12 @@ const CustomerAnalysis = () => {
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [selectedCustomers, setSelectedCustomers] = useState([]);
   const [selectedBrands, setSelectedBrands] = useState([]);
+  
+  // Chart-level filters (individual filters that override global filters)
+  const [chartFilters, setChartFilters] = useState({});
+  
+  // Chart-specific data (for charts with individual filters)
+  const [chartData, setChartData] = useState({});
 
   const [insightModal, setInsightModal] = useState({
     isOpen: false,
@@ -153,6 +159,161 @@ const CustomerAnalysis = () => {
     selectedBrands,
   ]);
 
+  // Helper function to merge global and individual filters (individual overrides global)
+  const getMergedFilters = (chartName = null) => {
+    const globalFilters = {
+      years: selectedYears,
+      months: selectedMonths,
+      businesses: selectedBusinesses,
+      channels: selectedChannels,
+      customers: selectedCustomers,
+      brands: selectedBrands,
+    };
+
+    // If no chart name, return global filters only
+    if (!chartName || !chartFilters[chartName]) {
+      return globalFilters;
+    }
+
+    // Merge: individual filters override global filters
+    const individualFilters = chartFilters[chartName];
+    return {
+      years: individualFilters.hasOwnProperty('years')
+        ? individualFilters.years 
+        : globalFilters.years,
+      months: individualFilters.hasOwnProperty('months')
+        ? individualFilters.months 
+        : globalFilters.months,
+      businesses: individualFilters.hasOwnProperty('businesses')
+        ? individualFilters.businesses 
+        : globalFilters.businesses,
+      channels: individualFilters.hasOwnProperty('channels')
+        ? individualFilters.channels 
+        : globalFilters.channels,
+      customers: individualFilters.hasOwnProperty('customers')
+        ? individualFilters.customers 
+        : globalFilters.customers,
+      brands: individualFilters.hasOwnProperty('brands')
+        ? individualFilters.brands 
+        : globalFilters.brands,
+    };
+  };
+
+  // Reset individual chart filters and chart data when global filters change
+  useEffect(() => {
+    setChartFilters({});
+    setChartData({});
+  }, [selectedYears, selectedMonths, selectedBusinesses, selectedChannels, selectedCustomers, selectedBrands]);
+
+  // Fetch data for a specific chart with merged filters
+  const fetchChartData = async (chartName, individualFiltersOverride = null) => {
+    try {
+      let mergedFilters;
+      if (individualFiltersOverride) {
+        mergedFilters = {
+          years: individualFiltersOverride.hasOwnProperty('years')
+            ? individualFiltersOverride.years 
+            : selectedYears,
+          months: individualFiltersOverride.hasOwnProperty('months')
+            ? individualFiltersOverride.months 
+            : selectedMonths,
+          businesses: individualFiltersOverride.hasOwnProperty('businesses')
+            ? individualFiltersOverride.businesses 
+            : selectedBusinesses,
+          channels: individualFiltersOverride.hasOwnProperty('channels')
+            ? individualFiltersOverride.channels 
+            : selectedChannels,
+          customers: individualFiltersOverride.hasOwnProperty('customers')
+            ? individualFiltersOverride.customers 
+            : selectedCustomers,
+          brands: individualFiltersOverride.hasOwnProperty('brands')
+            ? individualFiltersOverride.brands 
+            : selectedBrands,
+        };
+      } else {
+        mergedFilters = getMergedFilters(chartName);
+      }
+      
+      const params = new URLSearchParams();
+      if (mergedFilters.years.length) params.set('years', mergedFilters.years.join(','));
+      if (mergedFilters.months.length) params.set('months', mergedFilters.months.join(','));
+      if (mergedFilters.businesses.length) params.set('businesses', mergedFilters.businesses.join(','));
+      if (mergedFilters.channels.length) params.set('channels', mergedFilters.channels.join(','));
+      if (mergedFilters.customers.length) params.set('customers', mergedFilters.customers.join(','));
+      if (mergedFilters.brands.length) params.set('brands', mergedFilters.brands.join(','));
+
+      const url = `${API}/analytics/customer-analysis${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setChartData(prev => ({
+        ...prev,
+        [chartName]: res.data
+      }));
+    } catch (error) {
+      console.error(`Failed to load data for chart ${chartName}:`, error);
+    }
+  };
+
+  const handleChartFilterChange = async (chartName, filterType, value) => {
+    const filterKeyMap = {
+      'year': 'years',
+      'years': 'years',
+      'month': 'months',
+      'months': 'months',
+      'business': 'businesses',
+      'businesses': 'businesses',
+      'channel': 'channels',
+      'channels': 'channels',
+      'customer': 'customers',
+      'customers': 'customers',
+      'brand': 'brands',
+      'brands': 'brands',
+    };
+
+    const mappedKey = filterKeyMap[filterType] || filterType;
+    
+    let filterValue = [];
+    if (value === 'all' || value === null || value === undefined) {
+      filterValue = [];
+    } else if (Array.isArray(value)) {
+      filterValue = value;
+    } else {
+      filterValue = [value];
+    }
+
+    const newIndividualFilters = {
+      ...(chartFilters[chartName] || {}),
+      [mappedKey]: filterValue
+    };
+    
+    const newFilters = {
+      ...chartFilters,
+      [chartName]: newIndividualFilters
+    };
+    
+    setChartFilters(newFilters);
+    await fetchChartData(chartName, newIndividualFilters);
+  };
+
+  // Helper function to get data for a specific chart
+  const getChartData = (chartName) => {
+    return chartData[chartName] || data;
+  };
+
+  // Helper function to derive chart-specific data arrays
+  const getChartDataArrays = (chartName) => {
+    const chartDataToUse = getChartData(chartName);
+    const customerData = (chartDataToUse?.customer_performance || []).filter(item => item && item.Customer);
+    const channelData = (chartDataToUse?.channel_performance || []).filter(item => item && item.Channel);
+    // Ensure topCustomers is always an array
+    const topCustomersData = chartDataToUse?.top_customers || customerData || [];
+    const topCustomers = Array.isArray(topCustomersData) ? topCustomersData.slice(0, 10) : [];
+    
+    return { customerData, channelData, topCustomers, chartDataToUse };
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -206,6 +367,7 @@ const CustomerAnalysis = () => {
     );
   }
 
+  // Global data arrays (for cards and charts without individual filters)
   const channelData = (data?.channel_performance || []).filter(item => item && item.Channel);
   const customerData = (data?.customer_performance || []).filter(item => item && item.Customer);
   const topCustomers = (data?.top_customers || []).slice(0, 10);
@@ -370,27 +532,93 @@ const CustomerAnalysis = () => {
 
   const closeInsightModal = () => setInsightModal(prev => ({ ...prev, isOpen: false }));
 
-  const ChartCard = ({ title, chartId, children }) => (
-    <div 
-      className="rounded-lg p-6"
-      style={{
-        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-        border: '1px solid rgba(0, 0, 0, 0.1)'
-      }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        <button
-          onClick={() => handleViewInsight(title, chartId)}
-          className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2"
-        >
-          <Lightbulb className="w-4 h-4" />
-          View Insight
-        </button>
+  const ChartCard = ({ title, chartId, children, renderChart }) => {
+    const mergedFilters = getMergedFilters(chartId);
+    
+    // Get chart-specific data arrays
+    const { customerData: chartCustomerData, channelData: chartChannelData, topCustomers: chartTopCustomers } = getChartDataArrays(chartId);
+    
+    return (
+      <div 
+        className="rounded-lg p-6"
+        style={{
+          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+          border: '1px solid rgba(0, 0, 0, 0.1)'
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={() => handleViewInsight(title, chartId)}
+            className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2"
+          >
+            <Lightbulb className="w-4 h-4" />
+            View Insight
+          </button>
+        </div>
+        
+        {/* Chart Filters - Show merged filter values (individual overrides global) */}
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+          <select
+            value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'years', []);
+              } else {
+                await handleChartFilterChange(chartId, 'years', [Number(value)]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Years</option>
+            {filters?.years?.map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+          
+          <select
+            value={mergedFilters.months.length === 1 ? mergedFilters.months[0] : mergedFilters.months.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'months', []);
+              } else {
+                await handleChartFilterChange(chartId, 'months', [value]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Months</option>
+            {filters?.months?.map(month => (
+              <option key={month} value={month}>{month}</option>
+            ))}
+          </select>
+          
+          <select
+            value={mergedFilters.businesses.length === 1 ? mergedFilters.businesses[0] : mergedFilters.businesses.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'businesses', []);
+              } else {
+                await handleChartFilterChange(chartId, 'businesses', [value]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Businesses</option>
+            {filters?.businesses?.map(business => (
+              <option key={business} value={business}>{business}</option>
+            ))}
+          </select>
+        </div>
+        
+        {/* Render chart with chart-specific data */}
+        {renderChart ? renderChart({ customerData: chartCustomerData || [], channelData: chartChannelData || [], topCustomers: chartTopCustomers || [] }) : children}
       </div>
-      {children}
-    </div>
-  );
+    );
+  };
 
   return (
     <Layout>
@@ -505,168 +733,184 @@ const CustomerAnalysis = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ChartCard title="Revenue by Channel" chartId="revenueByChannel">
-            <div className="h-80">
-              {channelData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: channelData.map(item => item.Channel || 'Unknown'),
-                    datasets: [{
-                      label: 'Revenue',
-                      data: channelData.map(item => item.Revenue || 0),
-                      backgroundColor: colorsWithOpacity,
-                      borderRadius: 8,
-                      borderWidth: 0,
-                    }],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `Revenue: ${formatNumber(context.parsed.y)}`,
-                        },
-                      },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: { callback: (value) => formatNumber(value) },
-                        grid: { color: '#f3f4f6' },
-                      },
-                      x: { grid: { display: false } },
-                    },
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
-
-          <ChartCard title="Top 10 Customers" chartId="topCustomers">
-            <div className="h-80">
-              {topCustomers.length > 0 ? (
-                <ChartComponent
-                  type="pie"
-                  data={{
-                    labels: topCustomers.map(item => item.Customer || 'Unknown'),
-                    datasets: [{
-                      data: topCustomers.map(item => item.Revenue || 0),
-                      backgroundColor: colorsWithOpacity,
-                      borderWidth: 2,
-                      borderColor: '#fff',
-                    }],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        position: 'right',
-                        labels: { boxWidth: 12, padding: 10, font: { size: 11 } },
-                      },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed || 0;
-                            return `${label}: ${formatNumber(value)}`;
+          <ChartCard 
+            title="Revenue by Channel" 
+            chartId="revenueByChannel"
+            renderChart={({ channelData: chartChannelData }) => (
+              <div className="h-80">
+                {chartChannelData.length > 0 ? (
+                  <ChartComponent
+                    type="bar"
+                    data={{
+                      labels: chartChannelData.map(item => item.Channel || 'Unknown'),
+                      datasets: [{
+                        label: 'Revenue',
+                        data: chartChannelData.map(item => item.Revenue || 0),
+                        backgroundColor: colorsWithOpacity,
+                        borderRadius: 8,
+                        borderWidth: 0,
+                      }],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            label: (context) => `Revenue: ${formatNumber(context.parsed.y)}`,
                           },
                         },
                       },
-                    },
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
-
-          <ChartCard title="Profit by Channel" chartId="profitByChannel">
-            <div className="h-80">
-              {channelData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: channelData.map(item => item.Channel || 'Unknown'),
-                    datasets: [{
-                      label: 'Profit',
-                      data: channelData.map(item => item.Gross_Profit || 0),
-                      backgroundColor: '#1e293b',
-                      borderRadius: 8,
-                    }],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `Profit: ${formatNumber(context.parsed.y)}`,
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          ticks: { callback: (value) => formatNumber(value) },
+                          grid: { color: '#f3f4f6' },
                         },
+                        x: { grid: { display: false } },
                       },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: { callback: (value) => formatNumber(value) },
-                        grid: { color: '#f3f4f6' },
-                      },
-                      x: { grid: { display: false } },
-                    },
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
+                    }}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
 
-          <ChartCard title="Units by Channel" chartId="unitsByChannel">
-            <div className="h-80">
-              {channelData.length > 0 ? (
-                <ChartComponent
-                  type="doughnut"
-                  data={{
-                    labels: channelData.map(item => item.Channel || 'Unknown'),
-                    datasets: [{
-                      data: channelData.map(item => item.Units || 0),
-                      backgroundColor: colorsWithOpacity,
-                      borderWidth: 2,
-                      borderColor: '#fff',
-                    }],
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        position: 'right',
-                        labels: { boxWidth: 12, padding: 10, font: { size: 11 } },
-                      },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed || 0;
-                            return `${label}: ${formatUnits(value)} units`;
+          <ChartCard 
+            title="Top 10 Customers" 
+            chartId="topCustomers"
+            renderChart={({ topCustomers: chartTopCustomers = [] }) => (
+              <div className="h-80">
+                {chartTopCustomers && chartTopCustomers.length > 0 ? (
+                  <ChartComponent
+                    type="pie"
+                    data={{
+                      labels: chartTopCustomers.map(item => item.Customer || 'Unknown'),
+                      datasets: [{
+                        data: chartTopCustomers.map(item => item.Revenue || 0),
+                        backgroundColor: colorsWithOpacity,
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                      }],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          position: 'right',
+                          labels: { boxWidth: 12, padding: 10, font: { size: 11 } },
+                        },
+                        tooltip: {
+                          callbacks: {
+                            label: (context) => {
+                              const label = context.label || '';
+                              const value = context.parsed || 0;
+                              return `${label}: ${formatNumber(value)}`;
+                            },
                           },
                         },
                       },
-                    },
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
+                    }}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
+
+          <ChartCard 
+            title="Profit by Channel" 
+            chartId="profitByChannel"
+            renderChart={({ channelData: chartChannelData }) => (
+              <div className="h-80">
+                {chartChannelData.length > 0 ? (
+                  <ChartComponent
+                    type="bar"
+                    data={{
+                      labels: chartChannelData.map(item => item.Channel || 'Unknown'),
+                      datasets: [{
+                        label: 'Profit',
+                        data: chartChannelData.map(item => item.Gross_Profit || 0),
+                        backgroundColor: '#1e293b',
+                        borderRadius: 8,
+                      }],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            label: (context) => `Profit: ${formatNumber(context.parsed.y)}`,
+                          },
+                        },
+                      },
+                      scales: {
+                        y: {
+                          beginAtZero: true,
+                          ticks: { callback: (value) => formatNumber(value) },
+                          grid: { color: '#f3f4f6' },
+                        },
+                        x: { grid: { display: false } },
+                      },
+                    }}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
+
+          <ChartCard 
+            title="Units by Channel" 
+            chartId="unitsByChannel"
+            renderChart={({ channelData: chartChannelData }) => (
+              <div className="h-80">
+                {chartChannelData.length > 0 ? (
+                  <ChartComponent
+                    type="doughnut"
+                    data={{
+                      labels: chartChannelData.map(item => item.Channel || 'Unknown'),
+                      datasets: [{
+                        data: chartChannelData.map(item => item.Units || 0),
+                        backgroundColor: colorsWithOpacity,
+                        borderWidth: 2,
+                        borderColor: '#fff',
+                      }],
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          position: 'right',
+                          labels: { boxWidth: 12, padding: 10, font: { size: 11 } },
+                        },
+                        tooltip: {
+                          callbacks: {
+                            label: (context) => {
+                              const label = context.label || '';
+                              const value = context.parsed || 0;
+                              return `${label}: ${formatUnits(value)} units`;
+                            },
+                          },
+                        },
+                      },
+                    }}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
         </div>
       </div>
 

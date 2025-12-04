@@ -21,6 +21,12 @@ const SalesAnalysis = () => {
   const [selectedMonths, setSelectedMonths] = useState([]);
   const [selectedBusinesses, setSelectedBusinesses] = useState([]);
   const [selectedChannels, setSelectedChannels] = useState([]);
+  
+  // Chart-level filters (individual filters that override global filters)
+  const [chartFilters, setChartFilters] = useState({});
+  
+  // Chart-specific data (for charts with individual filters)
+  const [chartData, setChartData] = useState({});
 
   const [insightModal, setInsightModal] = useState({
     isOpen: false,
@@ -103,6 +109,138 @@ const SalesAnalysis = () => {
     loadData();
   }, [token, selectedYears, selectedMonths, selectedBusinesses, selectedChannels]);
 
+  // Helper function to merge global and individual filters (individual overrides global)
+  const getMergedFilters = (chartName = null) => {
+    const globalFilters = {
+      years: selectedYears,
+      months: selectedMonths,
+      businesses: selectedBusinesses,
+      channels: selectedChannels,
+    };
+
+    // If no chart name, return global filters only
+    if (!chartName || !chartFilters[chartName]) {
+      return globalFilters;
+    }
+
+    // Merge: individual filters override global filters
+    const individualFilters = chartFilters[chartName];
+    return {
+      years: individualFilters.hasOwnProperty('years')
+        ? individualFilters.years 
+        : globalFilters.years,
+      months: individualFilters.hasOwnProperty('months')
+        ? individualFilters.months 
+        : globalFilters.months,
+      businesses: individualFilters.hasOwnProperty('businesses')
+        ? individualFilters.businesses 
+        : globalFilters.businesses,
+      channels: individualFilters.hasOwnProperty('channels')
+        ? individualFilters.channels 
+        : globalFilters.channels,
+    };
+  };
+
+  // Reset individual chart filters and chart data when global filters change
+  useEffect(() => {
+    setChartFilters({});
+    setChartData({});
+  }, [selectedYears, selectedMonths, selectedBusinesses, selectedChannels]);
+
+  // Fetch data for a specific chart with merged filters
+  const fetchChartData = async (chartName, individualFiltersOverride = null) => {
+    try {
+      let mergedFilters;
+      if (individualFiltersOverride) {
+        mergedFilters = {
+          years: individualFiltersOverride.hasOwnProperty('years')
+            ? individualFiltersOverride.years 
+            : selectedYears,
+          months: individualFiltersOverride.hasOwnProperty('months')
+            ? individualFiltersOverride.months 
+            : selectedMonths,
+          businesses: individualFiltersOverride.hasOwnProperty('businesses')
+            ? individualFiltersOverride.businesses 
+            : selectedBusinesses,
+          channels: individualFiltersOverride.hasOwnProperty('channels')
+            ? individualFiltersOverride.channels 
+            : selectedChannels,
+        };
+      } else {
+        mergedFilters = getMergedFilters(chartName);
+      }
+      
+      const params = new URLSearchParams();
+      if (mergedFilters.years.length) params.set('years', mergedFilters.years.join(','));
+      if (mergedFilters.months.length) params.set('months', mergedFilters.months.join(','));
+      if (mergedFilters.businesses.length) params.set('businesses', mergedFilters.businesses.join(','));
+      if (mergedFilters.channels.length) params.set('channels', mergedFilters.channels.join(','));
+
+      const url = `${API}/analytics/executive-overview${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setChartData(prev => ({
+        ...prev,
+        [chartName]: res.data
+      }));
+    } catch (error) {
+      console.error(`Failed to load data for chart ${chartName}:`, error);
+    }
+  };
+
+  const handleChartFilterChange = async (chartName, filterType, value) => {
+    const filterKeyMap = {
+      'year': 'years',
+      'years': 'years',
+      'month': 'months',
+      'months': 'months',
+      'business': 'businesses',
+      'businesses': 'businesses',
+      'channel': 'channels',
+      'channels': 'channels',
+    };
+
+    const mappedKey = filterKeyMap[filterType] || filterType;
+    
+    let filterValue = [];
+    if (value === 'all' || value === null || value === undefined) {
+      filterValue = [];
+    } else if (Array.isArray(value)) {
+      filterValue = value;
+    } else {
+      filterValue = [value];
+    }
+
+    const newIndividualFilters = {
+      ...(chartFilters[chartName] || {}),
+      [mappedKey]: filterValue
+    };
+    
+    const newFilters = {
+      ...chartFilters,
+      [chartName]: newIndividualFilters
+    };
+    
+    setChartFilters(newFilters);
+    await fetchChartData(chartName, newIndividualFilters);
+  };
+
+  // Helper function to get data for a specific chart
+  const getChartData = (chartName) => {
+    return chartData[chartName] || data;
+  };
+
+  // Helper function to derive chart-specific data arrays
+  const getChartDataArrays = (chartName) => {
+    const chartDataToUse = getChartData(chartName);
+    const yearlyData = (chartDataToUse?.yearly_performance || []).filter(item => item && item.Year);
+    const businessData = (chartDataToUse?.business_performance || []).filter(item => item && item.Business && item.Revenue > 0);
+    
+    return { yearlyData, businessData, chartDataToUse };
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -156,6 +294,7 @@ const SalesAnalysis = () => {
     );
   }
 
+  // Global data arrays (for cards and charts without individual filters)
   const yearlyData = (data?.yearly_performance || []).filter(item => item && item.Year);
   const businessData = (data?.business_performance || []).filter(
     item => item && item.Business && item.Revenue > 0
@@ -298,27 +437,93 @@ const SalesAnalysis = () => {
     setInsightModal((prev) => ({ ...prev, isOpen: false }));
   };
 
-  const ChartCard = ({ title, chartId, children }) => (
-    <div 
-      className="rounded-lg p-5"
-      style={{
-        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-        border: '1px solid rgba(0, 0, 0, 0.1)'
-      }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        <button
-          onClick={() => handleViewInsight(title, chartId)}
-          className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2"
-        >
-          <Lightbulb className="w-4 h-4" />
-          View Insight
-        </button>
+  const ChartCard = ({ title, chartId, children, renderChart }) => {
+    const mergedFilters = getMergedFilters(chartId);
+    
+    // Get chart-specific data arrays
+    const { yearlyData: chartYearlyData, businessData: chartBusinessData } = getChartDataArrays(chartId);
+    
+    return (
+      <div 
+        className="rounded-lg p-5"
+        style={{
+          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+          border: '1px solid rgba(0, 0, 0, 0.1)'
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={() => handleViewInsight(title, chartId)}
+            className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2"
+          >
+            <Lightbulb className="w-4 h-4" />
+            View Insight
+          </button>
+        </div>
+        
+        {/* Chart Filters - Show merged filter values (individual overrides global) */}
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+          <select
+            value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'years', []);
+              } else {
+                await handleChartFilterChange(chartId, 'years', [Number(value)]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Years</option>
+            {filters?.years?.map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+          
+          <select
+            value={mergedFilters.months.length === 1 ? mergedFilters.months[0] : mergedFilters.months.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'months', []);
+              } else {
+                await handleChartFilterChange(chartId, 'months', [value]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Months</option>
+            {filters?.months?.map(month => (
+              <option key={month} value={month}>{month}</option>
+            ))}
+          </select>
+          
+          <select
+            value={mergedFilters.businesses.length === 1 ? mergedFilters.businesses[0] : mergedFilters.businesses.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'businesses', []);
+              } else {
+                await handleChartFilterChange(chartId, 'businesses', [value]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Businesses</option>
+            {filters?.businesses?.map(business => (
+              <option key={business} value={business}>{business}</option>
+            ))}
+          </select>
+        </div>
+        
+        {/* Render chart with chart-specific data */}
+        {renderChart ? renderChart({ yearlyData: chartYearlyData, businessData: chartBusinessData }) : children}
       </div>
-      {children}
-    </div>
-  );
+    );
+  };
 
   const chartOptions = {
     responsive: true,
@@ -448,65 +653,73 @@ const SalesAnalysis = () => {
 
         {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ChartCard title="Sales by Year" chartId="salesByYear">
-            <div className="h-80">
-              {yearlyData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: yearlyData.map(item => item.Year),
-                    datasets: [
-                      {
-                        label: 'Revenue',
-                        data: yearlyData.map(item => item.Revenue),
-                        backgroundColor: '#1e293b',
-                        borderRadius: 6,
-                      },
-                      {
-                        label: 'Gross Profit',
-                        data: yearlyData.map(item => item.Gross_Profit),
-                        backgroundColor: '#EDD5B1',
-                        borderRadius: 6,
-                      },
-                    ],
-                  }}
-                  options={chartOptions}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
+          <ChartCard 
+            title="Sales by Year" 
+            chartId="salesByYear"
+            renderChart={({ yearlyData: chartYearlyData }) => (
+              <div className="h-80">
+                {chartYearlyData.length > 0 ? (
+                  <ChartComponent
+                    type="bar"
+                    data={{
+                      labels: chartYearlyData.map(item => item.Year),
+                      datasets: [
+                        {
+                          label: 'Revenue',
+                          data: chartYearlyData.map(item => item.Revenue),
+                          backgroundColor: '#1e293b',
+                          borderRadius: 6,
+                        },
+                        {
+                          label: 'Gross Profit',
+                          data: chartYearlyData.map(item => item.Gross_Profit),
+                          backgroundColor: '#EDD5B1',
+                          borderRadius: 6,
+                        },
+                      ],
+                    }}
+                    options={chartOptions}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
 
-          <ChartCard title="Sales by Business" chartId="salesByBusiness">
-            <div className="h-80">
-              {businessData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: businessData.map(item => item.Business),
-                    datasets: [
-                      {
-                        label: 'Revenue',
-                        data: businessData.map(item => item.Revenue),
-                        backgroundColor: '#1e293b',
-                        borderRadius: 6,
-                      },
-                      {
-                        label: 'Gross Profit',
-                        data: businessData.map(item => item.Gross_Profit),
-                        backgroundColor: '#EDD5B1',
-                        borderRadius: 6,
-                      },
-                    ],
-                  }}
-                  options={chartOptions}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
+          <ChartCard 
+            title="Sales by Business" 
+            chartId="salesByBusiness"
+            renderChart={({ businessData: chartBusinessData }) => (
+              <div className="h-80">
+                {chartBusinessData.length > 0 ? (
+                  <ChartComponent
+                    type="bar"
+                    data={{
+                      labels: chartBusinessData.map(item => item.Business),
+                      datasets: [
+                        {
+                          label: 'Revenue',
+                          data: chartBusinessData.map(item => item.Revenue),
+                          backgroundColor: '#1e293b',
+                          borderRadius: 6,
+                        },
+                        {
+                          label: 'Gross Profit',
+                          data: chartBusinessData.map(item => item.Gross_Profit),
+                          backgroundColor: '#EDD5B1',
+                          borderRadius: 6,
+                        },
+                      ],
+                    }}
+                    options={chartOptions}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
         </div>
       </div>
 

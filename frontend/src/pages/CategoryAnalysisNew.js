@@ -22,6 +22,12 @@ const CategoryAnalysis = () => {
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [selectedSubCategories, setSelectedSubCategories] = useState([]);
+  
+  // Chart-level filters (individual filters that override global filters)
+  const [chartFilters, setChartFilters] = useState({});
+  
+  // Chart-specific data (for charts with individual filters)
+  const [chartData, setChartData] = useState({});
 
   const [insightModal, setInsightModal] = useState({
     isOpen: false,
@@ -153,6 +159,158 @@ const CategoryAnalysis = () => {
     selectedSubCategories,
   ]);
 
+  // Helper function to merge global and individual filters (individual overrides global)
+  const getMergedFilters = (chartName = null) => {
+    const globalFilters = {
+      years: selectedYears,
+      months: selectedMonths,
+      businesses: selectedBusinesses,
+      channels: selectedChannels,
+      categories: selectedCategories,
+      sub_categories: selectedSubCategories,
+    };
+
+    // If no chart name, return global filters only
+    if (!chartName || !chartFilters[chartName]) {
+      return globalFilters;
+    }
+
+    // Merge: individual filters override global filters
+    const individualFilters = chartFilters[chartName];
+    return {
+      years: individualFilters.hasOwnProperty('years')
+        ? individualFilters.years 
+        : globalFilters.years,
+      months: individualFilters.hasOwnProperty('months')
+        ? individualFilters.months 
+        : globalFilters.months,
+      businesses: individualFilters.hasOwnProperty('businesses')
+        ? individualFilters.businesses 
+        : globalFilters.businesses,
+      channels: individualFilters.hasOwnProperty('channels')
+        ? individualFilters.channels 
+        : globalFilters.channels,
+      categories: individualFilters.hasOwnProperty('categories')
+        ? individualFilters.categories 
+        : globalFilters.categories,
+      sub_categories: individualFilters.hasOwnProperty('sub_categories')
+        ? individualFilters.sub_categories 
+        : globalFilters.sub_categories,
+    };
+  };
+
+  // Reset individual chart filters and chart data when global filters change
+  useEffect(() => {
+    setChartFilters({});
+    setChartData({});
+  }, [selectedYears, selectedMonths, selectedBusinesses, selectedChannels, selectedCategories, selectedSubCategories]);
+
+  // Fetch data for a specific chart with merged filters
+  const fetchChartData = async (chartName, individualFiltersOverride = null) => {
+    try {
+      let mergedFilters;
+      if (individualFiltersOverride) {
+        mergedFilters = {
+          years: individualFiltersOverride.hasOwnProperty('years')
+            ? individualFiltersOverride.years 
+            : selectedYears,
+          months: individualFiltersOverride.hasOwnProperty('months')
+            ? individualFiltersOverride.months 
+            : selectedMonths,
+          businesses: individualFiltersOverride.hasOwnProperty('businesses')
+            ? individualFiltersOverride.businesses 
+            : selectedBusinesses,
+          channels: individualFiltersOverride.hasOwnProperty('channels')
+            ? individualFiltersOverride.channels 
+            : selectedChannels,
+          categories: individualFiltersOverride.hasOwnProperty('categories')
+            ? individualFiltersOverride.categories 
+            : selectedCategories,
+          sub_categories: individualFiltersOverride.hasOwnProperty('sub_categories')
+            ? individualFiltersOverride.sub_categories 
+            : selectedSubCategories,
+        };
+      } else {
+        mergedFilters = getMergedFilters(chartName);
+      }
+      
+      const params = new URLSearchParams();
+      if (mergedFilters.years.length) params.set('years', mergedFilters.years.join(','));
+      if (mergedFilters.months.length) params.set('months', mergedFilters.months.join(','));
+      if (mergedFilters.businesses.length) params.set('businesses', mergedFilters.businesses.join(','));
+      if (mergedFilters.channels.length) params.set('channels', mergedFilters.channels.join(','));
+      if (mergedFilters.categories.length) params.set('categories', mergedFilters.categories.join(','));
+      if (mergedFilters.sub_categories.length) params.set('sub_categories', mergedFilters.sub_categories.join(','));
+
+      const url = `${API}/analytics/category-analysis${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setChartData(prev => ({
+        ...prev,
+        [chartName]: res.data
+      }));
+    } catch (error) {
+      console.error(`Failed to load data for chart ${chartName}:`, error);
+    }
+  };
+
+  const handleChartFilterChange = async (chartName, filterType, value) => {
+    const filterKeyMap = {
+      'year': 'years',
+      'years': 'years',
+      'month': 'months',
+      'months': 'months',
+      'business': 'businesses',
+      'businesses': 'businesses',
+      'channel': 'channels',
+      'channels': 'channels',
+      'category': 'categories',
+      'categories': 'categories',
+      'sub_category': 'sub_categories',
+      'sub_categories': 'sub_categories',
+    };
+
+    const mappedKey = filterKeyMap[filterType] || filterType;
+    
+    let filterValue = [];
+    if (value === 'all' || value === null || value === undefined) {
+      filterValue = [];
+    } else if (Array.isArray(value)) {
+      filterValue = value;
+    } else {
+      filterValue = [value];
+    }
+
+    const newIndividualFilters = {
+      ...(chartFilters[chartName] || {}),
+      [mappedKey]: filterValue
+    };
+    
+    const newFilters = {
+      ...chartFilters,
+      [chartName]: newIndividualFilters
+    };
+    
+    setChartFilters(newFilters);
+    await fetchChartData(chartName, newIndividualFilters);
+  };
+
+  // Helper function to get data for a specific chart
+  const getChartData = (chartName) => {
+    return chartData[chartName] || data;
+  };
+
+  // Helper function to derive chart-specific data arrays
+  const getChartDataArrays = (chartName) => {
+    const chartDataToUse = getChartData(chartName);
+    const categoryData = (chartDataToUse?.category_performance || []).slice(0, 15);
+    const subCategoryData = (chartDataToUse?.subcategory_performance || []).slice(0, 20);
+    
+    return { categoryData, subCategoryData, chartDataToUse };
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -206,6 +364,7 @@ const CategoryAnalysis = () => {
     );
   }
 
+  // Global data arrays (for cards and charts without individual filters)
   const categoryData = (data?.category_performance || []).slice(0, 15);
   const subcategoryData = (data?.subcategory_performance || []).slice(0, 20);
   const totalRevenue = data?.total_revenue ?? categoryData.reduce((sum, item) => sum + (item.Revenue || 0), 0);
@@ -373,27 +532,93 @@ const CategoryAnalysis = () => {
     setInsightModal((prev) => ({ ...prev, isOpen: false }));
   };
 
-  const ChartCard = ({ title, chartId, children }) => (
-    <div 
-      className="rounded-lg p-6"
-      style={{
-        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-        border: '1px solid rgba(0, 0, 0, 0.1)'
-      }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-        <button
-          onClick={() => handleViewInsight(title, chartId)}
-          className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2"
-        >
-          <Lightbulb className="w-4 h-4" />
-          View Insight
-        </button>
+  const ChartCard = ({ title, chartId, children, renderChart }) => {
+    const mergedFilters = getMergedFilters(chartId);
+    
+    // Get chart-specific data arrays
+    const { categoryData: chartCategoryData, subCategoryData: chartSubCategoryData } = getChartDataArrays(chartId);
+    
+    return (
+      <div 
+        className="rounded-lg p-6"
+        style={{
+          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+          border: '1px solid rgba(0, 0, 0, 0.1)'
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
+          <button
+            onClick={() => handleViewInsight(title, chartId)}
+            className="px-4 py-1.5 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg text-sm font-medium transition flex items-center gap-2"
+          >
+            <Lightbulb className="w-4 h-4" />
+            View Insight
+          </button>
+        </div>
+        
+        {/* Chart Filters - Show merged filter values (individual overrides global) */}
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+          <select
+            value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'years', []);
+              } else {
+                await handleChartFilterChange(chartId, 'years', [Number(value)]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Years</option>
+            {filters?.years?.map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+          
+          <select
+            value={mergedFilters.months.length === 1 ? mergedFilters.months[0] : mergedFilters.months.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'months', []);
+              } else {
+                await handleChartFilterChange(chartId, 'months', [value]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Months</option>
+            {filters?.months?.map(month => (
+              <option key={month} value={month}>{month}</option>
+            ))}
+          </select>
+          
+          <select
+            value={mergedFilters.businesses.length === 1 ? mergedFilters.businesses[0] : mergedFilters.businesses.length > 1 ? 'multiple' : 'all'}
+            onChange={async (e) => {
+              const value = e.target.value;
+              if (value === 'all') {
+                await handleChartFilterChange(chartId, 'businesses', []);
+              } else {
+                await handleChartFilterChange(chartId, 'businesses', [value]);
+              }
+            }}
+            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+          >
+            <option value="all">All Businesses</option>
+            {filters?.businesses?.map(business => (
+              <option key={business} value={business}>{business}</option>
+            ))}
+          </select>
+        </div>
+        
+        {/* Render chart with chart-specific data */}
+        {renderChart ? renderChart({ categoryData: chartCategoryData, subCategoryData: chartSubCategoryData }) : children}
       </div>
-      {children}
-    </div>
-  );
+    );
+  };
 
   return (
     <Layout>
@@ -508,175 +733,200 @@ const CategoryAnalysis = () => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ChartCard title="Revenue by Category" chartId="categoryRevenue">
-            <div className="h-96">
-              {categoryData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: categoryData.map(item => item.Category || 'Unknown'),
-                    datasets: [{
-                      label: 'Revenue',
-                      data: categoryData.map(item => item.Revenue || 0),
-                      backgroundColor: colorsWithOpacity,
-                      borderRadius: 6
-                    }]
-                  }}
-                  options={{
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `${formatNumber(context.parsed.x)}`
-                        }
-                      }
-                    },
-                    scales: {
-                      x: {
-                        beginAtZero: true,
-                        ticks: { callback: (value) => formatNumber(value) },
-                        grid: { color: '#f3f4f6' }
-                      },
-                      y: { grid: { display: false } }
-                    }
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
-
-          <ChartCard title="Category Distribution" chartId="categoryDistribution">
-            <div className="h-96">
-              {categoryData.length > 0 ? (
-                <ChartComponent
-                  type="doughnut"
-                  data={{
-                    labels: categoryData.slice(0, 10).map(item => item.Category || 'Unknown'),
-                    datasets: [{
-                      data: categoryData.slice(0, 10).map(item => item.Revenue || 0),
-                      backgroundColor: colorsWithOpacity,
-                      borderWidth: 2,
-                      borderColor: '#fff'
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { 
-                        position: 'right',
-                        labels: { boxWidth: 12, padding: 8, font: { size: 10 } }
-                      },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed || 0;
-                            return `${label}: ${formatNumber(value)}`;
+          <ChartCard 
+            title="Revenue by Category" 
+            chartId="categoryRevenue"
+            renderChart={({ categoryData: chartCategoryData }) => (
+              <div className="h-96">
+                {chartCategoryData.length > 0 ? (
+                  <ChartComponent
+                    type="bar"
+                    data={{
+                      labels: chartCategoryData.map(item => item.Category || 'Unknown'),
+                      datasets: [{
+                        label: 'Revenue',
+                        data: chartCategoryData.map(item => item.Revenue || 0),
+                        backgroundColor: colorsWithOpacity,
+                        borderRadius: 6
+                      }]
+                    }}
+                    options={{
+                      indexAxis: 'y',
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                          callbacks: {
+                            label: (context) => `${formatNumber(context.parsed.x)}`
                           }
                         }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
-
-          <ChartCard title="Profit by Category (Top 10)" chartId="categoryProfit">
-            <div className="h-80">
-              {categoryData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: categoryData.slice(0, 10).map(item => item.Category || 'Unknown'),
-                    datasets: [{
-                      label: 'Profit',
-                      data: categoryData.slice(0, 10).map(item => item.Gross_Profit || 0),
-                      backgroundColor: '#1e293b',
-                      borderRadius: 8
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `Profit: ${formatNumber(context.parsed.y)}`
-                        }
-                      }
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: { callback: (value) => formatNumber(value) },
-                        grid: { color: '#f3f4f6' }
                       },
-                      x: { 
-                        grid: { display: false },
-                        ticks: { maxRotation: 45, minRotation: 45 }
+                      scales: {
+                        x: {
+                          beginAtZero: true,
+                          ticks: { callback: (value) => formatNumber(value) },
+                          grid: { color: '#f3f4f6' }
+                        },
+                        y: { grid: { display: false } }
                       }
-                    }
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
+                    }}
+                  />
+                ) : (
+                  <p className="text-center text-gray-500 py-8">No data available</p>
+                )}
+              </div>
+            )}
+          />
 
-          <ChartCard title="Top Sub-Categories by Revenue" chartId="subcategoryRevenue">
-            <div className="h-80">
-              {subcategoryData.length > 0 ? (
-                <ChartComponent
-                  type="bar"
-                  data={{
-                    labels: subcategoryData.slice(0, 10).map(item => item.Sub_Category || 'Unknown'),
-                    datasets: [{
-                      label: 'Revenue',
-                      data: subcategoryData.slice(0, 10).map(item => item.Revenue || 0),
-                      backgroundColor: '#1e293b',
-                      borderRadius: 8
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: { display: false },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => `Revenue: ${formatNumber(context.parsed.y)}`
+          <ChartCard 
+            title="Category Distribution" 
+            chartId="categoryDistribution"
+            renderChart={({ categoryData: chartCategoryData }) => {
+              const topCategories = chartCategoryData.slice(0, 10);
+              return (
+                <div className="h-96">
+                  {topCategories.length > 0 ? (
+                    <ChartComponent
+                      type="doughnut"
+                      data={{
+                        labels: topCategories.map(item => item.Category || 'Unknown'),
+                        datasets: [{
+                          data: topCategories.map(item => item.Revenue || 0),
+                          backgroundColor: colorsWithOpacity,
+                          borderWidth: 2,
+                          borderColor: '#fff'
+                        }]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { 
+                            position: 'right',
+                            labels: { boxWidth: 12, padding: 8, font: { size: 10 } }
+                          },
+                          tooltip: {
+                            callbacks: {
+                              label: (context) => {
+                                const label = context.label || '';
+                                const value = context.parsed || 0;
+                                return `${label}: ${formatNumber(value)}`;
+                              }
+                            }
+                          }
                         }
-                      }
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: { callback: (value) => formatNumber(value) },
-                        grid: { color: '#f3f4f6' }
-                      },
-                      x: { 
-                        grid: { display: false },
-                        ticks: { maxRotation: 45, minRotation: 45 }
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <p className="text-center text-gray-500 py-8">No data available</p>
-              )}
-            </div>
-          </ChartCard>
+                      }}
+                    />
+                  ) : (
+                    <p className="text-center text-gray-500 py-8">No data available</p>
+                  )}
+                </div>
+              );
+            }}
+          />
+
+          <ChartCard 
+            title="Profit by Category (Top 10)" 
+            chartId="categoryProfit"
+            renderChart={({ categoryData: chartCategoryData }) => {
+              const topCategories = chartCategoryData.slice(0, 10);
+              return (
+                <div className="h-80">
+                  {topCategories.length > 0 ? (
+                    <ChartComponent
+                      type="bar"
+                      data={{
+                        labels: topCategories.map(item => item.Category || 'Unknown'),
+                        datasets: [{
+                          label: 'Profit',
+                          data: topCategories.map(item => item.Gross_Profit || 0),
+                          backgroundColor: '#1e293b',
+                          borderRadius: 8
+                        }]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: {
+                            callbacks: {
+                              label: (context) => `Profit: ${formatNumber(context.parsed.y)}`
+                            }
+                          }
+                        },
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                            ticks: { callback: (value) => formatNumber(value) },
+                            grid: { color: '#f3f4f6' }
+                          },
+                          x: { 
+                            grid: { display: false },
+                            ticks: { maxRotation: 45, minRotation: 45 }
+                          }
+                        }
+                      }}
+                    />
+                  ) : (
+                    <p className="text-center text-gray-500 py-8">No data available</p>
+                  )}
+                </div>
+              );
+            }}
+          />
+
+          <ChartCard 
+            title="Top Sub-Categories by Revenue" 
+            chartId="subcategoryRevenue"
+            renderChart={({ subCategoryData: chartSubCategoryData }) => {
+              const topSubCategories = chartSubCategoryData.slice(0, 10);
+              return (
+                <div className="h-80">
+                  {topSubCategories.length > 0 ? (
+                    <ChartComponent
+                      type="bar"
+                      data={{
+                        labels: topSubCategories.map(item => item.Sub_Category || 'Unknown'),
+                        datasets: [{
+                          label: 'Revenue',
+                          data: topSubCategories.map(item => item.Revenue || 0),
+                          backgroundColor: '#1e293b',
+                          borderRadius: 8
+                        }]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: {
+                            callbacks: {
+                              label: (context) => `Revenue: ${formatNumber(context.parsed.y)}`
+                            }
+                          }
+                        },
+                        scales: {
+                          y: {
+                            beginAtZero: true,
+                            ticks: { callback: (value) => formatNumber(value) },
+                            grid: { color: '#f3f4f6' }
+                          },
+                          x: { 
+                            grid: { display: false },
+                            ticks: { maxRotation: 45, minRotation: 45 }
+                          }
+                        }
+                      }}
+                    />
+                  ) : (
+                    <p className="text-center text-gray-500 py-8">No data available</p>
+                  )}
+                </div>
+              );
+            }}
+          />
         </div>
       </div>
 

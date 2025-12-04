@@ -57,12 +57,21 @@ const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange,
         </span>
         <div className="flex items-center gap-1">
           {selectedValues.length > 0 && (
-            <button
+            <div
               onClick={handleClear}
-              className="p-0.5 hover:bg-gray-200 rounded transition"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleClear(e);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              className="p-0.5 hover:bg-gray-200 rounded transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-gray-400"
+              aria-label="Clear selection"
             >
               <X className="w-4 h-4 text-gray-500" />
-            </button>
+            </div>
           )}
           <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
         </div>

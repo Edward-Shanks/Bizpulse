@@ -5491,6 +5491,207 @@ def format_units(value: float) -> str:
     except Exception:
         return f"{value:,.0f}"
 
+async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
+    """
+    Parse natural language query to extract filters and build MongoDB query
+    Handles: business, channel, customer, brand, category, year, month, quarter
+    """
+    import re
+    query = {}
+    message_lower = message.lower()
+    
+    # Get all available values from database for matching
+    all_businesses = await db.business_data.distinct('Business')
+    all_channels = await db.business_data.distinct('Channel')
+    all_customers = await db.business_data.distinct('Customer')
+    all_brands = await db.business_data.distinct('Brand')
+    all_categories = await db.business_data.distinct('Category')
+    
+    # Extract years (e.g., "2023", "2023 and 2024", "2023, 2024, 2025")
+    year_pattern = r'\b(20\d{2})\b'
+    years = re.findall(year_pattern, message)
+    if years:
+        query['Year'] = {'$in': [int(y) for y in years if 2000 <= int(y) <= 2100]}
+    
+    # Extract months (e.g., "January", "jan", "Q1", "quarter 1")
+    month_names = ['january', 'february', 'march', 'april', 'may', 'june',
+                   'july', 'august', 'september', 'october', 'november', 'december']
+    month_abbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    found_months = []
+    for i, month in enumerate(month_names):
+        if month in message_lower:
+            found_months.append(month_names[i].capitalize())
+    for i, abbr in enumerate(month_abbr):
+        if f' {abbr} ' in message_lower or message_lower.startswith(abbr) or message_lower.endswith(abbr):
+            found_months.append(month_names[i].capitalize())
+    if found_months:
+        query['Month_Name'] = {'$in': found_months}
+    
+    # Extract quarters (Q1, Q2, Q3, Q4)
+    quarter_pattern = r'\bq([1-4])\b'
+    quarters = re.findall(quarter_pattern, message_lower)
+    if quarters:
+        quarter_months = {
+            '1': ['January', 'February', 'March'],
+            '2': ['April', 'May', 'June'],
+            '3': ['July', 'August', 'September'],
+            '4': ['October', 'November', 'December']
+        }
+        q_months = []
+        for q in quarters:
+            q_months.extend(quarter_months.get(q, []))
+        if q_months:
+            if 'Month_Name' in query:
+                # Intersect with existing months
+                existing_months = query['Month_Name'].get('$in', [])
+                query['Month_Name'] = {'$in': [m for m in existing_months if m in q_months] or q_months}
+            else:
+                query['Month_Name'] = {'$in': q_months}
+    
+    # Extract business (e.g., "business food", "for business food", "business: food")
+    # More flexible patterns to catch various formats
+    business_patterns = [
+        r'business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
+        r'for\s+business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
+        r'business:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
+        r'business\s+([a-zA-Z\s,&]+?)(?:\s+channel|\s+customer|\s+brand|\s+category|$)',
+    ]
+    for pattern in business_patterns:
+        matches = re.findall(pattern, message_lower, re.IGNORECASE)
+        if matches:
+            business_name = matches[0].strip()
+            # Remove trailing words that might be part of next filter
+            business_name = re.sub(r'\s+(channel|customer|brand|category).*$', '', business_name, flags=re.IGNORECASE).strip()
+            # Try to match with database businesses
+            matched = False
+            for db_business in all_businesses:
+                if db_business:
+                    db_business_lower = str(db_business).lower()
+                    business_name_lower = business_name.lower()
+                    # Check if business name matches (exact or contains)
+                    if business_name_lower == db_business_lower or business_name_lower in db_business_lower or db_business_lower in business_name_lower:
+                        query = await apply_business_filter(query, str(db_business), db)
+                        matched = True
+                        logger.info(f"✅ Matched business: '{business_name}' -> '{db_business}'")
+                        break
+            if matched:
+                break
+    
+    # Extract channel (e.g., "channel Convenience", "channel: Convenience")
+    channel_patterns = [
+        r'channel\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|customer|brand|category)',
+        r'channel:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|customer|brand|category)',
+    ]
+    for pattern in channel_patterns:
+        matches = re.findall(pattern, message_lower, re.IGNORECASE)
+        if matches:
+            channel_name = matches[0].strip()
+            # Remove trailing words that might be part of next filter
+            channel_name = re.sub(r'\s+(customer|brand|category).*$', '', channel_name, flags=re.IGNORECASE).strip()
+            for db_channel in all_channels:
+                if db_channel:
+                    db_channel_lower = str(db_channel).lower()
+                    channel_name_lower = channel_name.lower()
+                    if channel_name_lower == db_channel_lower or channel_name_lower in db_channel_lower or db_channel_lower in channel_name_lower:
+                        if 'Channel' in query:
+                            if isinstance(query['Channel'], dict) and '$in' in query['Channel']:
+                                if str(db_channel) not in query['Channel']['$in']:
+                                    query['Channel']['$in'].append(str(db_channel))
+                            else:
+                                query['Channel'] = {'$in': [str(db_channel)]}
+                        else:
+                            query['Channel'] = {'$in': [str(db_channel)]}
+                        logger.info(f"✅ Matched channel: '{channel_name}' -> '{db_channel}'")
+                        break
+            break
+    
+    # Extract customer (e.g., "customer bwg", "customer: bwg")
+    customer_patterns = [
+        r'customer\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|brand|category)',
+        r'customer:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|brand|category)',
+    ]
+    for pattern in customer_patterns:
+        matches = re.findall(pattern, message_lower, re.IGNORECASE)
+        if matches:
+            customer_name = matches[0].strip()
+            # Remove trailing words that might be part of next filter
+            customer_name = re.sub(r'\s+(brand|category).*$', '', customer_name, flags=re.IGNORECASE).strip()
+            for db_customer in all_customers:
+                if db_customer:
+                    db_customer_lower = str(db_customer).lower()
+                    customer_name_lower = customer_name.lower()
+                    if customer_name_lower == db_customer_lower or customer_name_lower in db_customer_lower or db_customer_lower in customer_name_lower:
+                        if 'Customer' in query:
+                            if isinstance(query['Customer'], dict) and '$in' in query['Customer']:
+                                if str(db_customer) not in query['Customer']['$in']:
+                                    query['Customer']['$in'].append(str(db_customer))
+                            else:
+                                query['Customer'] = {'$in': [str(db_customer)]}
+                        else:
+                            query['Customer'] = {'$in': [str(db_customer)]}
+                        logger.info(f"✅ Matched customer: '{customer_name}' -> '{db_customer}'")
+                        break
+            break
+    
+    # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman")
+    brand_patterns = [
+        r'brands?\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|and|category)',
+        r'brands?:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|and|category)',
+    ]
+    for pattern in brand_patterns:
+        matches = re.findall(pattern, message_lower, re.IGNORECASE)
+        if matches:
+            brand_name = matches[0].strip()
+            # Remove trailing words that might be part of next filter
+            brand_name = re.sub(r'\s+(and|category).*$', '', brand_name, flags=re.IGNORECASE).strip()
+            for db_brand in all_brands:
+                if db_brand:
+                    db_brand_lower = str(db_brand).lower()
+                    brand_name_lower = brand_name.lower()
+                    if brand_name_lower == db_brand_lower or brand_name_lower in db_brand_lower or db_brand_lower in brand_name_lower:
+                        if 'Brand' in query:
+                            if isinstance(query['Brand'], dict) and '$in' in query['Brand']:
+                                if str(db_brand) not in query['Brand']['$in']:
+                                    query['Brand']['$in'].append(str(db_brand))
+                            else:
+                                query['Brand'] = {'$in': [str(db_brand)]}
+                        else:
+                            query['Brand'] = {'$in': [str(db_brand)]}
+                        logger.info(f"✅ Matched brand: '{brand_name}' -> '{db_brand}'")
+                        break
+            break
+    
+    # Extract category (e.g., "category curry", "category: curry")
+    category_patterns = [
+        r'category\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|and|on|for|basis)',
+        r'category:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|and|on|for|basis)',
+    ]
+    for pattern in category_patterns:
+        matches = re.findall(pattern, message_lower, re.IGNORECASE)
+        if matches:
+            category_name = matches[0].strip()
+            # Remove trailing words that might be part of next filter
+            category_name = re.sub(r'\s+(and|on|for|basis).*$', '', category_name, flags=re.IGNORECASE).strip()
+            for db_category in all_categories:
+                if db_category:
+                    db_category_lower = str(db_category).lower()
+                    category_name_lower = category_name.lower()
+                    if category_name_lower == db_category_lower or category_name_lower in db_category_lower or db_category_lower in category_name_lower:
+                        if 'Category' in query:
+                            if isinstance(query['Category'], dict) and '$in' in query['Category']:
+                                if str(db_category) not in query['Category']['$in']:
+                                    query['Category']['$in'].append(str(db_category))
+                            else:
+                                query['Category'] = {'$in': [str(db_category)]}
+                        else:
+                            query['Category'] = {'$in': [str(db_category)]}
+                        logger.info(f"✅ Matched category: '{category_name}' -> '{db_category}'")
+                        break
+            break
+    
+    logger.info(f"🔍 Parsed query from natural language: {query}")
+    return query
+
 async def build_mongodb_query_from_context(context: Dict[str, Any]) -> Dict[str, Any]:
     """Build MongoDB query from frontend context filters"""
     query = {}
@@ -5808,6 +6009,295 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
     
     return "\n".join(context_parts)
 
+async def get_comprehensive_data_context(
+    query: Dict[str, Any],
+    user_message: str,
+    is_comparison: bool = False,
+    is_quarterly: bool = False,
+    is_monthly: bool = False,
+    is_yearly: bool = False,
+    is_metrics: bool = False
+) -> str:
+    """Get comprehensive data context for complex queries"""
+    context_parts = []
+    user_msg_lower = user_message.lower()
+    
+    try:
+        match_stage = {"$match": query} if query else {"$match": {}}
+        
+        # Get overall totals
+        pipeline_totals = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": None,
+                    "total_revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "total_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "total_units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                }
+            }
+        ]
+        totals_result = await db.business_data.aggregate(pipeline_totals).to_list(1)
+        totals = totals_result[0] if totals_result else {}
+        
+        total_revenue = safe_float(totals.get('total_revenue', 0))
+        total_profit = safe_float(totals.get('total_profit', 0))
+        total_units = safe_float(totals.get('total_units', 0))
+        
+        context_parts.append("Overall Totals:")
+        context_parts.append(f"  Total Revenue: {format_currency(total_revenue)}")
+        context_parts.append(f"  Total Gross Profit: {format_currency(total_profit)}")
+        context_parts.append(f"  Total Units: {format_units(total_units)}")
+        if total_revenue > 0:
+            margin = (total_profit / total_revenue) * 100
+            context_parts.append(f"  Profit Margin: {margin:.2f}%")
+        
+        # If no data found, add a note
+        if total_revenue == 0 and total_profit == 0 and total_units == 0:
+            context_parts.append("\n⚠️ Note: No data found matching the specified filters. Please check your filter criteria.")
+        
+        # If metrics requested, get all available metrics
+        if is_metrics or "all metrics" in user_msg_lower or "cases" in user_msg_lower or "gsales" in user_msg_lower:
+            # Get additional metrics if available in the data
+            pipeline_metrics = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": None,
+                        "total_revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "total_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "total_units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                }
+            ]
+            metrics_result = await db.business_data.aggregate(pipeline_metrics).to_list(1)
+            if metrics_result:
+                metrics = metrics_result[0]
+                context_parts.append("\nDetailed Metrics:")
+                context_parts.append(f"  Revenue: {format_currency(safe_float(metrics.get('total_revenue', 0)))}")
+                context_parts.append(f"  Gross Profit: {format_currency(safe_float(metrics.get('total_profit', 0)))}")
+                context_parts.append(f"  Units: {format_units(safe_float(metrics.get('total_units', 0)))}")
+                if safe_float(metrics.get('total_revenue', 0)) > 0:
+                    margin = (safe_float(metrics.get('total_profit', 0)) / safe_float(metrics.get('total_revenue', 0))) * 100
+                    context_parts.append(f"  Margin: {margin:.2f}%")
+        
+        # Quarterly breakdown
+        if is_quarterly or "quarter" in user_msg_lower or "q1" in user_msg_lower or "q2" in user_msg_lower:
+            quarter_months = {
+                'Q1': ['January', 'February', 'March'],
+                'Q2': ['April', 'May', 'June'],
+                'Q3': ['July', 'August', 'September'],
+                'Q4': ['October', 'November', 'December']
+            }
+            
+            for quarter, months in quarter_months.items():
+                # Merge quarter months with existing month filter if present
+                quarter_query = query.copy()
+                if 'Month_Name' in query:
+                    # Intersect existing months with quarter months
+                    existing_months = query['Month_Name'].get('$in', [])
+                    if isinstance(existing_months, list):
+                        quarter_months_list = [m for m in existing_months if m in months]
+                        if quarter_months_list:
+                            quarter_query['Month_Name'] = {'$in': quarter_months_list}
+                        else:
+                            continue  # Skip this quarter if no overlap
+                    else:
+                        quarter_query['Month_Name'] = {'$in': months}
+                else:
+                    quarter_query['Month_Name'] = {'$in': months}
+                quarter_match = {"$match": quarter_query}
+                pipeline_quarter = [
+                    quarter_match,
+                    {
+                        "$group": {
+                            "_id": None,
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    }
+                ]
+                quarter_result = await db.business_data.aggregate(pipeline_quarter).to_list(1)
+                if quarter_result and quarter_result[0]:
+                    q_data = quarter_result[0]
+                    revenue = safe_float(q_data.get('Revenue', 0))
+                    profit = safe_float(q_data.get('Gross_Profit', 0))
+                    if revenue > 0:
+                        margin = (profit / revenue) * 100
+                        context_parts.append(f"\n{quarter} Performance:")
+                        context_parts.append(f"  Revenue: {format_currency(revenue)}")
+                        context_parts.append(f"  Gross Profit: {format_currency(profit)}")
+                        context_parts.append(f"  Margin: {margin:.2f}%")
+                        context_parts.append(f"  Units: {format_units(safe_float(q_data.get('Units', 0)))}")
+        
+        # Monthly breakdown
+        if is_monthly or "monthly" in user_msg_lower or "by month" in user_msg_lower:
+            pipeline_monthly = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Month_Name",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            monthly_results = await db.business_data.aggregate(pipeline_monthly).to_list(12)
+            if monthly_results:
+                context_parts.append("\nMonthly Breakdown:")
+                month_order = ['January', 'February', 'March', 'April', 'May', 'June',
+                              'July', 'August', 'September', 'October', 'November', 'December']
+                # Sort by month order
+                sorted_months = sorted(monthly_results, key=lambda x: (
+                    month_order.index(str(x['_id'])) if str(x['_id']) in month_order else 999
+                ))
+                for item in sorted_months:
+                    month = str(item.get("_id", ""))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    if revenue > 0:
+                        margin = (profit / revenue) * 100
+                        context_parts.append(f"  {month}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+        
+        # Yearly breakdown (for comparisons)
+        if is_yearly or is_comparison or "year" in user_msg_lower:
+            pipeline_yearly = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Year",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"_id": 1}}
+            ]
+            yearly_results = await db.business_data.aggregate(pipeline_yearly).to_list(10)
+            if yearly_results:
+                context_parts.append("\nYearly Performance:")
+                for item in yearly_results:
+                    year = int(item.get("_id", 0))
+                    revenue = safe_float(item.get("Revenue", 0))
+                    profit = safe_float(item.get("Gross_Profit", 0))
+                    if revenue > 0:
+                        margin = (profit / revenue) * 100
+                        context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(safe_float(item.get('Units', 0)))}")
+        
+        # Brand breakdown (if brand mentioned or comparison)
+        if "brand" in user_msg_lower or is_comparison:
+            pipeline_brand = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Brand",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}},
+                {"$limit": 20}
+            ]
+            brand_results = await db.business_data.aggregate(pipeline_brand).to_list(20)
+            if brand_results:
+                context_parts.append("\nBrand Performance:")
+                for item in brand_results:
+                    brand = str(item.get("_id", ""))
+                    if brand and brand.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        profit = safe_float(item.get("Gross_Profit", 0))
+                        if revenue > 0:
+                            margin = (profit / revenue) * 100
+                            context_parts.append(f"  {brand}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+        
+        # Business breakdown (if business mentioned or comparison)
+        if "business" in user_msg_lower or is_comparison:
+            pipeline_business = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Business",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}}
+            ]
+            business_results = await db.business_data.aggregate(pipeline_business).to_list(20)
+            if business_results:
+                context_parts.append("\nBusiness Performance:")
+                for item in business_results:
+                    business = str(item.get("_id", ""))
+                    if business and business.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        profit = safe_float(item.get("Gross_Profit", 0))
+                        if revenue > 0:
+                            margin = (profit / revenue) * 100
+                            context_parts.append(f"  {business}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+        
+        # Channel breakdown
+        if "channel" in user_msg_lower:
+            pipeline_channel = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Channel",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}}
+            ]
+            channel_results = await db.business_data.aggregate(pipeline_channel).to_list(20)
+            if channel_results:
+                context_parts.append("\nChannel Performance:")
+                for item in channel_results:
+                    channel = str(item.get("_id", ""))
+                    if channel and channel.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        profit = safe_float(item.get("Gross_Profit", 0))
+                        if revenue > 0:
+                            margin = (profit / revenue) * 100
+                            context_parts.append(f"  {channel}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+        
+        # Category breakdown
+        if "category" in user_msg_lower:
+            pipeline_category = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Category",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    }
+                },
+                {"$sort": {"Revenue": -1}}
+            ]
+            category_results = await db.business_data.aggregate(pipeline_category).to_list(20)
+            if category_results:
+                context_parts.append("\nCategory Performance:")
+                for item in category_results:
+                    category = str(item.get("_id", ""))
+                    if category and category.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        profit = safe_float(item.get("Gross_Profit", 0))
+                        if revenue > 0:
+                            margin = (profit / revenue) * 100
+                            context_parts.append(f"  {category}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+        
+    except Exception as e:
+        logger.error(f"Error building comprehensive data context: {str(e)}")
+        context_parts.append(f"\nError retrieving data: {str(e)}")
+    
+    return "\n".join(context_parts)
+
 @api_router.post("/insights/chat", response_model=InsightsChatResponse)
 async def insights_chat(
     request: InsightsChatRequest,
@@ -5828,29 +6318,67 @@ async def insights_chat(
         requested_years = []  # Initialize to avoid scope issues
         
         # Build MongoDB query from context
-        query = await build_mongodb_query_from_context(request.context or {})
+        context_query = await build_mongodb_query_from_context(request.context or {})
         
-        # If user mentioned a specific year in the question, add it to the query
-        if years_in_message:
-            requested_years = [int(year) for year in years_in_message if 2000 <= int(year) <= 2100]
-            if requested_years:
-                # If query already has Year filter, merge it, otherwise add it
-                if 'Year' in query:
-                    # Merge: if context has years, intersect with requested years
-                    existing_years = query['Year'].get('$in', []) if isinstance(query['Year'], dict) else [query['Year']]
-                    if isinstance(existing_years, list):
-                        # Intersect existing years with requested years
-                        query['Year'] = {'$in': [y for y in existing_years if y in requested_years] or requested_years}
-                    else:
-                        query['Year'] = {'$in': requested_years}
+        # Parse query from natural language message
+        parsed_query = await parse_query_from_natural_language(user_message, db)
+        
+        # Merge context query with parsed query (parsed query takes precedence for filters it specifies)
+        query = context_query.copy()
+        for key, value in parsed_query.items():
+            if key in query:
+                # Merge filters (intersect for $in queries)
+                if isinstance(query[key], dict) and '$in' in query[key] and isinstance(value, dict) and '$in' in value:
+                    existing_values = query[key]['$in']
+                    new_values = value['$in']
+                    # Intersect the lists
+                    merged_values = [v for v in existing_values if v in new_values] or new_values
+                    query[key] = {'$in': merged_values}
                 else:
-                    query['Year'] = {'$in': requested_years}
-                logger.info(f"📅 Extracted year(s) from question: {requested_years}, Updated query: {query}")
+                    query[key] = value
+            else:
+                query[key] = value
         
-        logger.info(f"🔍 MongoDB Query: {query}")
+        logger.info(f"🔍 Final MongoDB Query (merged): {query}")
         
-        # Get data context from MongoDB (pass user message to detect requested number)
-        data_context = await get_data_context_for_chart(request.chart_title or "", query, request.message)
+        # Log query details for debugging
+        if query:
+            logger.info(f"📊 Query filters: {list(query.keys())}")
+            for key, value in query.items():
+                if isinstance(value, dict) and '$in' in value:
+                    logger.info(f"  {key}: {len(value['$in'])} values - {value['$in'][:5]}...")
+                else:
+                    logger.info(f"  {key}: {value}")
+        
+        # Get comprehensive data context based on the query
+        # Check what type of analysis is requested
+        user_msg_lower = user_message.lower()
+        
+        # Determine analysis type
+        is_comparison = any(word in user_msg_lower for word in ['compare', 'comparison', 'vs', 'versus', 'against'])
+        is_quarterly = any(word in user_msg_lower for word in ['quarterly', 'q1', 'q2', 'q3', 'q4', 'quarter'])
+        is_monthly = any(word in user_msg_lower for word in ['monthly', 'month', 'by month'])
+        is_yearly = any(word in user_msg_lower for word in ['yearly', 'year', 'yoy', 'year over year'])
+        is_metrics = any(word in user_msg_lower for word in ['metrics', 'details', 'show me', 'tell me'])
+        
+        # Get comprehensive data context
+        try:
+            data_context = await get_comprehensive_data_context(
+                query, 
+                user_message,
+                is_comparison=is_comparison,
+                is_quarterly=is_quarterly,
+                is_monthly=is_monthly,
+                is_yearly=is_yearly,
+                is_metrics=is_metrics
+            )
+            logger.info(f"📈 Data context length: {len(data_context)} characters")
+            logger.info(f"📈 Data context preview: {data_context[:500]}...")
+        except Exception as e:
+            logger.error(f"❌ Error getting data context: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            data_context = f"Error retrieving data: {str(e)}"
         
         # Build conversation history for Perplexity
         conversation_history = []
@@ -5869,6 +6397,23 @@ async def insights_chat(
         if years_in_message and requested_years:
             year_context = f"CRITICAL: The user specifically asked about year(s) {', '.join(map(str, requested_years))}. You MUST focus your analysis ONLY on data from these year(s). Do NOT include data from other years unless explicitly requested. "
         
+        # Enhanced system context for comprehensive queries
+        email_context = ""
+        if "email" in user_msg_lower or "write" in user_msg_lower and "email" in user_msg_lower:
+            email_context = "CRITICAL: The user is asking for an email. Format your response as a professional business email with: (1) Clear subject line, (2) Professional greeting, (3) Executive summary of key findings, (4) Detailed insights with specific numbers, (5) Actionable recommendations, (6) Professional closing. Keep it concise (around 250 words if specified). "
+        
+        comparison_context = ""
+        if is_comparison:
+            comparison_context = "CRITICAL: The user is asking for a comparison. Provide side-by-side analysis with specific numbers, highlight differences, calculate growth rates or changes, and explain what the comparison reveals. "
+        
+        quarterly_context = ""
+        if is_quarterly:
+            quarterly_context = "CRITICAL: The user is asking for quarterly data. Break down performance by Q1, Q2, Q3, Q4. Highlight seasonal patterns, quarter-over-quarter changes, and identify which quarters performed best/worst. "
+        
+        monthly_context = ""
+        if is_monthly:
+            monthly_context = "CRITICAL: The user is asking for monthly data. Provide month-by-month breakdown, identify peaks and dips, discuss seasonality patterns, and explain what drove monthly variations. "
+        
         system_context = (
             "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
             "You provide business insights and recommendations to non-technical executives and managers. "
@@ -5877,6 +6422,10 @@ async def insights_chat(
             "When suggesting data analysis, say 'analyze your sales data' or 'review your performance metrics', NOT 'query the database' or 'use MongoDB'. "
             "When suggesting automation, say 'automate your reporting' or 'set up automated alerts', NOT 'deploy MongoDB-powered analytics' or 'use aggregation framework'. "
             f"{year_context}"
+            f"{email_context}"
+            f"{comparison_context}"
+            f"{quarterly_context}"
+            f"{monthly_context}"
             "IMPORTANT: If the user asks for a specific number (e.g., 'top 15 brands', '15 brands'), you MUST provide exactly that number of items in your response. "
             "CRITICAL: Use the EXACT numbers from the data provided to you. Do NOT round, estimate, or modify the numbers. The data contains precise values - use them exactly as shown. "
             "Format monetary values in millions (M) or thousands (k) where appropriate, e.g., €59.0M or €1.6k, and units as whole numbers. "
@@ -5887,6 +6436,8 @@ async def insights_chat(
             "All monetary values are in Euros (€). Be specific, data-driven, and actionable. "
             "Include trends, growth rates (%), and percentage of total revenue where relevant. "
             "For underperformers, identify the lowest performers with specific numbers. "
+            "When comparing years, quarters, or periods, calculate and highlight the percentage change or growth rate. "
+            "When analyzing trends, identify patterns, seasonality, peaks, dips, and explain potential drivers. "
             "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
             "Use conversation history for context in follow-ups. "
             "Keep it engaging and provide comprehensive analysis in plain business language that any executive can understand."
@@ -5895,8 +6446,18 @@ async def insights_chat(
         # Build user prompt with data context
         user_prompt = f"{chart_context}\n\nBusiness Data:\n{data_context}\n\nUser Question: {request.message}"
         
+        logger.info(f"🤖 Sending to AI - Prompt length: {len(user_prompt)} characters")
+        logger.info(f"🤖 System context length: {len(system_context)} characters")
+        
         # Query Perplexity API with custom system message to ensure non-technical language
-        ai_response = await query_perplexity(user_prompt, conversation_history, custom_system_message=system_context)
+        try:
+            ai_response = await query_perplexity(user_prompt, conversation_history, custom_system_message=system_context)
+            logger.info(f"✅ AI Response received - Length: {len(ai_response)} characters")
+        except Exception as e:
+            logger.error(f"❌ Error querying Perplexity: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            ai_response = f"I apologize, but I encountered an error while processing your request. Please try rephrasing your question or contact support if the issue persists. Error: {str(e)}"
         
         # Get pivot table data for visualization - make it relevant to the question
         pivot_table = []
