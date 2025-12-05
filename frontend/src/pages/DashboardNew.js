@@ -437,14 +437,55 @@ const Dashboard = () => {
   const totalUnits = data?.total_units || 0;
   const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
   
-  // Mock growth percentages (in real app, calculate from historical data)
-  const revenueGrowth = 8.2;
-  const profitGrowth = 5.1;
-  const unitsGrowth = -2.3;
-  const yoyGrowth = 15.2;
-  const customerAcquisition = 245;
-  const marketShare = 28.5;
-  const operationalEfficiency = 92;
+  // Calculate YoY Growth from yearly performance data
+  let yoyGrowth = 0;
+  if (yearlyData && yearlyData.length >= 2) {
+    // Sort by year descending
+    const sortedYears = [...yearlyData].sort((a, b) => b.Year - a.Year);
+    const latestYear = sortedYears[0];
+    const previousYear = sortedYears[1];
+    
+    if (previousYear && previousYear.Revenue > 0) {
+      yoyGrowth = ((latestYear.Revenue - previousYear.Revenue) / previousYear.Revenue) * 100;
+    }
+  }
+  
+  // Calculate period growth (revenue, profit, units) from monthly data
+  let revenueGrowth = 0;
+  let profitGrowth = 0;
+  let unitsGrowth = 0;
+  
+  if (monthlyData && monthlyData.length >= 2) {
+    const currentPeriod = monthlyData[monthlyData.length - 1];
+    const previousPeriod = monthlyData[monthlyData.length - 2];
+    
+    if (previousPeriod && previousPeriod.Revenue > 0) {
+      revenueGrowth = ((currentPeriod.Revenue - previousPeriod.Revenue) / previousPeriod.Revenue) * 100;
+    }
+    if (previousPeriod && previousPeriod.Gross_Profit > 0) {
+      profitGrowth = ((currentPeriod.Gross_Profit - previousPeriod.Gross_Profit) / previousPeriod.Gross_Profit) * 100;
+    }
+    if (previousPeriod && previousPeriod.Units > 0) {
+      unitsGrowth = ((currentPeriod.Units - previousPeriod.Units) / previousPeriod.Units) * 100;
+    }
+  }
+  
+  // Calculate Market Share (relative share within business data)
+  let marketShare = 0;
+  if (businessData && businessData.length > 0) {
+    const totalMarketRevenue = businessData.reduce((sum, b) => sum + (b.Revenue || 0), 0);
+    if (totalMarketRevenue > 0) {
+      marketShare = (totalRevenue / totalMarketRevenue) * 100;
+    }
+  }
+  
+  // Calculate Efficiency (using profit margin as operational efficiency metric)
+  // Alternative: Could be calculated as (Actual Profit / Target Profit) * 100 if targets are available
+  const operationalEfficiency = avgMargin; // Using margin as efficiency proxy
+  
+  // New Customers - Not available in business_data, would need customer data
+  // For now, showing 0 or could fetch from customer analysis endpoint
+  const customerAcquisition = 0; // TODO: Fetch from customer data if available
 
   const colors = [
     '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
@@ -709,8 +750,8 @@ const Dashboard = () => {
           )}
         </div>
 
-        {/* Key Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        {/* Key Metrics - Showing 4 cards (YoY Growth, New Customers, Market Share, Efficiency are commented out) */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
           <div 
             className="rounded-lg p-4"
             style={{
@@ -722,10 +763,10 @@ const Dashboard = () => {
               <Euro className="w-4 h-4 text-blue-600" />
               <span className="text-xs text-gray-600">Total Sales</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{formatNumber(totalRevenue)}</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatNumber(totalRevenue)}</p>
             <p className={`text-xs flex items-center gap-1 ${revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {revenueGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {Math.abs(revenueGrowth)}%
+              {Math.abs(revenueGrowth).toFixed(1)}%
             </p>
           </div>
 
@@ -740,10 +781,10 @@ const Dashboard = () => {
               <TrendingUp className="w-4 h-4 text-green-600" />
               <span className="text-xs text-gray-600">Gross Profit</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{formatNumber(totalProfit)}</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatNumber(totalProfit)}</p>
             <p className={`text-xs flex items-center gap-1 ${profitGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {profitGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {Math.abs(profitGrowth)}%
+              {Math.abs(profitGrowth).toFixed(1)}%
             </p>
           </div>
 
@@ -758,10 +799,10 @@ const Dashboard = () => {
               <Package className="w-4 h-4 text-purple-600" />
               <span className="text-xs text-gray-600">Cases Sold</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{formatUnits(totalUnits)}</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{formatUnits(totalUnits)}</p>
             <p className={`text-xs flex items-center gap-1 ${unitsGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {unitsGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {Math.abs(unitsGrowth)}%
+              {Math.abs(unitsGrowth).toFixed(1)}%
             </p>
           </div>
 
@@ -776,11 +817,12 @@ const Dashboard = () => {
               <Activity className="w-4 h-4 text-orange-600" />
               <span className="text-xs text-gray-600">Avg. Margin</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{avgMargin.toFixed(1)}%</p>
+            <p className="text-xl font-bold text-gray-900 truncate">{avgMargin.toFixed(1)}%</p>
             <p className="text-xs text-gray-500">Current</p>
           </div>
 
-          <div 
+          {/* YoY Growth Card - Commented out per user request */}
+          {/* <div 
             className="rounded-lg p-4"
             style={{
               background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -791,14 +833,15 @@ const Dashboard = () => {
               <TrendingUp className="w-4 h-4 text-blue-600" />
               <span className="text-xs text-gray-600">YoY Growth</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{yoyGrowth}%</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />
-              Strong
+            <p className="text-xl font-bold text-gray-900 truncate">{yoyGrowth.toFixed(1)}%</p>
+            <p className={`text-xs flex items-center gap-1 ${yoyGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {yoyGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {yoyGrowth >= 10 ? 'Strong' : yoyGrowth >= 5 ? 'Moderate' : yoyGrowth >= 0 ? 'Positive' : 'Declining'}
             </p>
-          </div>
+          </div> */}
 
-          <div 
+          {/* New Customers Card - Commented out per user request */}
+          {/* <div 
             className="rounded-lg p-4"
             style={{
               background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -807,16 +850,21 @@ const Dashboard = () => {
           >
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-4 h-4 text-green-600" />
-              <span className="text-xs text-gray-600">New Customers</span>
+              <span className="text-xs text-gray-600 whitespace-nowrap">New Customers</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{customerAcquisition}</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />
-              8.5%
-            </p>
-          </div>
+            <p className="text-xl font-bold text-gray-900 truncate">{customerAcquisition > 0 ? customerAcquisition.toLocaleString() : 'N/A'}</p>
+            {customerAcquisition > 0 ? (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                8.5%
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">Not available</p>
+            )}
+          </div> */}
 
-          <div 
+          {/* Market Share Card - Commented out per user request */}
+          {/* <div 
             className="rounded-lg p-4"
             style={{
               background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -827,14 +875,19 @@ const Dashboard = () => {
               <Target className="w-4 h-4 text-indigo-600" />
               <span className="text-xs text-gray-600">Market Share</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{marketShare}%</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />
-              3.2%
-            </p>
-          </div>
+            <p className="text-xl font-bold text-gray-900 truncate">{marketShare.toFixed(1)}%</p>
+            {marketShare > 0 ? (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                {marketShare > 25.3 ? '+' : ''}{((marketShare - 25.3) / 25.3 * 100).toFixed(1)}%
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">From data</p>
+            )}
+          </div> */}
 
-          <div 
+          {/* Efficiency Card - Commented out per user request */}
+          {/* <div 
             className="rounded-lg p-4"
             style={{
               background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -845,12 +898,16 @@ const Dashboard = () => {
               <Activity className="w-4 h-4 text-emerald-600" />
               <span className="text-xs text-gray-600">Efficiency</span>
             </div>
-            <p className="text-xl font-bold text-gray-900">{operationalEfficiency}%</p>
-            <p className="text-xs text-green-600 flex items-center gap-1">
-              <TrendingUp className="w-3 h-3" />
-              3.0%
-            </p>
-          </div>
+            <p className="text-xl font-bold text-gray-900 truncate">{operationalEfficiency.toFixed(1)}%</p>
+            {operationalEfficiency > 0 ? (
+              <p className="text-xs text-green-600 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                {operationalEfficiency > 89 ? '+' : ''}{(operationalEfficiency - 89).toFixed(1)}%
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">Current</p>
+            )}
+          </div> */}
         </div>
 
         {/* Charts Grid */}
