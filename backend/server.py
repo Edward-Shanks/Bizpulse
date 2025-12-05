@@ -23,6 +23,7 @@ import jwt
 import requests
 import json
 import asyncio
+import re
 
 ROOT_DIR = Path(__file__).parent
 
@@ -1133,14 +1134,27 @@ async def get_category_analysis(
             {"$sort": {"Revenue": -1}},
         ]
         category_results = await db.business_data.aggregate(pipeline_category).to_list(200)
-        category_performance = []
+        # Normalize and merge categories with same name (different case)
+        category_performance_dict = {}
         for item in category_results:
-            category_performance.append({
-                "Category": str(item.get("_id")) if item.get("_id") else "Unknown",
-                "Revenue": safe_float(item.get("Revenue")),
-                "Gross_Profit": safe_float(item.get("Gross_Profit")),
-                "Units": safe_float(item.get("Units")),
-            })
+            category_name = str(item.get("_id")) if item.get("_id") else "Unknown"
+            normalized_name = normalize_category_name(category_name)
+            
+            if normalized_name in category_performance_dict:
+                # Merge data for duplicate categories (different case)
+                category_performance_dict[normalized_name]["Revenue"] += safe_float(item.get("Revenue"))
+                category_performance_dict[normalized_name]["Gross_Profit"] += safe_float(item.get("Gross_Profit"))
+                category_performance_dict[normalized_name]["Units"] += safe_float(item.get("Units"))
+            else:
+                category_performance_dict[normalized_name] = {
+                    "Category": normalized_name,
+                    "Revenue": safe_float(item.get("Revenue")),
+                    "Gross_Profit": safe_float(item.get("Gross_Profit")),
+                    "Units": safe_float(item.get("Units")),
+                }
+        category_performance = list(category_performance_dict.values())
+        # Sort by revenue descending
+        category_performance.sort(key=lambda x: x["Revenue"], reverse=True)
 
         # Sub-category performance aggregation (use Sub_Cat when available)
         pipeline_subcategory = [
@@ -1207,10 +1221,20 @@ async def get_category_analysis(
         totals_result = await db.business_data.aggregate(pipeline_totals).to_list(1)
         totals = totals_result[0] if totals_result else {}
 
-        active_categories = sum(
-            1 for item in category_performance
-            if item["Category"] != "Unknown" and item["Revenue"] > 0
-        )
+        # Count categories the same way the filter does - get distinct categories with same filters
+        # This ensures the count matches what's shown in the filter dropdown
+        categories_count_query = {k: v for k, v in query.items() if k != 'Category'}
+        categories_count_match = {"$match": categories_count_query} if categories_count_query else {"$match": {}}
+        categories_count_pipeline = [categories_count_match, {"$group": {"_id": "$Category"}}]
+        categories_count_results = await db.business_data.aggregate(categories_count_pipeline).to_list(1000)
+        # Normalize and deduplicate (same logic as filter endpoint)
+        categories_count_raw = [item['_id'] for item in categories_count_results if item.get('_id') is not None]
+        categories_count_normalized = set()
+        for cat in categories_count_raw:
+            normalized = normalize_category_name(str(cat))
+            if normalized != "Unknown":
+                categories_count_normalized.add(normalized)
+        active_categories = len(categories_count_normalized)
 
         return {
             "category_performance": category_performance,
@@ -1274,10 +1298,16 @@ async def get_filter_options(
         brand_list = parse_list(brands)
         if brand_list:
             query['Brand'] = {'$in': brand_list}
-        
+
         category_list = parse_list(categories)
         if category_list:
-            query['Category'] = {'$in': category_list}
+            # Normalize category names for query matching (case-insensitive)
+            normalized_categories = [normalize_category_name(cat) for cat in category_list]
+            # Use case-insensitive regex matching to catch variations
+            category_regex_list = []
+            for cat in normalized_categories:
+                category_regex_list.append({'$regex': f'^{re.escape(cat)}$', '$options': 'i'})
+            query['Category'] = {'$in': category_regex_list}
         
         logger.info(f"📊 Building dynamic filter options with query: {query}")
         
@@ -1329,7 +1359,14 @@ async def get_filter_options(
         categories_match = {"$match": categories_query} if categories_query else {"$match": {}}
         categories_pipeline = [categories_match, {"$group": {"_id": "$Category"}}]
         categories_results = await db.business_data.aggregate(categories_pipeline).to_list(1000)
-        categories = [item['_id'] for item in categories_results if item.get('_id') is not None]
+        # Normalize category names to title case and deduplicate
+        categories_raw = [item['_id'] for item in categories_results if item.get('_id') is not None]
+        categories_normalized = {}
+        for cat in categories_raw:
+            normalized = normalize_category_name(str(cat))
+            if normalized not in categories_normalized:
+                categories_normalized[normalized] = cat
+        categories = list(categories_normalized.keys())
         
         # Customers: Get all customers that exist given current filters
         customers_pipeline = [match_stage, {"$group": {"_id": "$Customer"}}]
@@ -5315,6 +5352,13 @@ def parse_list(value: Optional[str], cast=None):
         except Exception:
             continue
     return items
+
+def normalize_category_name(category: str) -> str:
+    """Normalize category name to title case (e.g., 'Compost sacks' -> 'Compost Sacks')"""
+    if not category or category == "Unknown":
+        return category or "Unknown"
+    # Convert to title case (capitalizes first letter of each word)
+    return category.title()
 
 async def apply_business_filter(query: Dict[str, Any], businesses: Optional[str], db) -> Dict[str, Any]:
     """Apply business filter with smart matching (handles spacing, case, encoding issues)"""
