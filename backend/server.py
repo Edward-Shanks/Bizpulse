@@ -24,6 +24,7 @@ import requests
 import json
 import asyncio
 import re
+import time
 
 ROOT_DIR = Path(__file__).parent
 
@@ -51,6 +52,13 @@ if not mongo_url or not db_name:
     )
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
+
+# Cache for customer insights CSV data to improve performance
+_customer_insights_cache = {
+    'data': None,
+    'timestamp': 0,
+    'file_mtime': 0
+}
 
 # Azure Blob Storage setup
 AZURE_CONNECTION_STRING = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
@@ -4251,16 +4259,30 @@ async def get_customer_insights(
     - And more...
     """
     try:
-        # Load Shopify_customer_df_new2.csv
+        # Load Shopify_customer_df_new2.csv with caching
         csv_path = ROOT_DIR / 'Shopify_customer_df_new2.csv'
         if not csv_path.exists():
             raise HTTPException(status_code=404, detail="Shopify_customer_df_new2.csv file not found")
         
-        df = pd.read_csv(csv_path)
-        if df.empty:
-            raise HTTPException(status_code=500, detail="Customer Shopify data is empty")
+        # Check if file has been modified
+        file_mtime = csv_path.stat().st_mtime
         
-        logger.info(f"📊 CSV loaded: {len(df)} total rows")
+        # Use cache if available and file hasn't changed
+        if (_customer_insights_cache['data'] is not None and 
+            _customer_insights_cache['file_mtime'] == file_mtime):
+            logger.info(f"📊 Using cached CSV data: {len(_customer_insights_cache['data'])} rows")
+            df = _customer_insights_cache['data'].copy()
+        else:
+            logger.info(f"📊 Loading CSV from disk: {csv_path}")
+            df = pd.read_csv(csv_path)
+            if df.empty:
+                raise HTTPException(status_code=500, detail="Customer Shopify data is empty")
+            
+            # Cache the loaded data
+            _customer_insights_cache['data'] = df.copy()
+            _customer_insights_cache['file_mtime'] = file_mtime
+            _customer_insights_cache['timestamp'] = time.time()
+            logger.info(f"📊 CSV loaded and cached: {len(df)} total rows")
         
         # Ensure numeric columns FIRST - before any filtering or date parsing
         numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 'Orders (first-time)', 
@@ -4282,22 +4304,28 @@ async def get_customer_insights(
         
         # Convert date columns - Use Month_Column as PRIMARY source, Day as fallback
         # This ensures all rows are included even if Day parsing fails
+        # OPTIMIZED: Use vectorized operations instead of row-by-row loop
         if 'Month_Column' in df.columns:
             # Parse Month_Column first (format: "2025-11" or "2025-01") - this is the most reliable source
+            # Vectorized parsing for better performance
             month_col = df['Month_Column'].astype(str)
-            for idx in df.index:
-                month_val = month_col.loc[idx]
-                if pd.notna(month_val) and month_val != 'nan' and '-' in str(month_val):
+            valid_mask = month_col.notna() & (month_col != 'nan') & month_col.str.contains('-', na=False)
+            
+            if valid_mask.any():
+                # Split year-month using vectorized operations
+                split_parts = month_col[valid_mask].str.split('-', expand=True)
+                if len(split_parts.columns) >= 2:
                     try:
-                        year_month = str(month_val).split('-')
-                        if len(year_month) >= 2:
-                            year_val = int(year_month[0])
-                            month_num = int(year_month[1])
-                            df.loc[idx, 'Year'] = year_val
-                            df.loc[idx, 'Month'] = month_num
-                            df.loc[idx, 'MonthName'] = pd.to_datetime(f"{year_val}-{month_num}-01").strftime('%B')
-                    except (ValueError, IndexError):
-                        pass
+                        df.loc[valid_mask, 'Year'] = pd.to_numeric(split_parts[0], errors='coerce')
+                        df.loc[valid_mask, 'Month'] = pd.to_numeric(split_parts[1], errors='coerce')
+                        # Create MonthName using vectorized datetime operations
+                        valid_dates = df.loc[valid_mask, ['Year', 'Month']].dropna()
+                        if not valid_dates.empty:
+                            date_series = pd.to_datetime(valid_dates.assign(Day=1), errors='coerce')
+                            df.loc[valid_dates.index, 'MonthName'] = date_series.dt.strftime('%B')
+                    except Exception as e:
+                        logger.warning(f"Error in vectorized date parsing: {str(e)}")
+            
             logger.info(f"✅ Month_Column parsed: Valid Year/Month: {(df['Year'].notna() & df['Month'].notna()).sum()}/{len(df)}")
         
         # Now parse Day column as fallback for any rows still missing Year/Month
