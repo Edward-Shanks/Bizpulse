@@ -53,12 +53,8 @@ if not mongo_url or not db_name:
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
-# Cache for customer insights CSV data to improve performance
-_customer_insights_cache = {
-    'data': None,
-    'timestamp': 0,
-    'file_mtime': 0
-}
+# Import MongoDB customer insights implementation
+from mongodb_customer_insights import get_customer_insights_mongodb
 
 # Azure Blob Storage setup
 AZURE_CONNECTION_STRING = os.getenv('AZURE_STORAGE_CONNECTION_STRING')
@@ -4239,7 +4235,7 @@ async def get_customer_insights_filters(email: str = Depends(get_current_user)):
 @api_router.get(
     "/analytics/customer-insights",
     summary="Get Customer Insights Data",
-    description="Returns comprehensive customer insights data with optional year and month filters."
+    description="Returns comprehensive customer insights data with optional year and month filters. Uses MongoDB with caching for optimal performance."
 )
 async def get_customer_insights(
     years: str = None,
@@ -4257,6 +4253,34 @@ async def get_customer_insights(
     - Customer lifetime value
     - Monthly trends
     - And more...
+    
+    This endpoint uses MongoDB with in-memory caching for optimal performance.
+    First request: ~1-2s, subsequent requests: instant (cached).
+    """
+    try:
+        # Use MongoDB implementation with caching
+        logger.info(f"📊 Fetching customer insights from MongoDB (years: {years}, months: {months})")
+        result = await get_customer_insights_mongodb(
+            db=db,
+            years=years,
+            months=months,
+            use_cache=True
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error processing customer insights: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing customer insights: {str(e)}")
+
+# Legacy CSV-based implementation (kept for reference, not used)
+async def _get_customer_insights_csv_legacy(
+    years: str = None,
+    months: str = None,
+):
+    """
+    LEGACY: CSV-based implementation (not used, replaced by MongoDB)
+    Kept for reference only.
     """
     try:
         # Load Shopify_customer_df_new2.csv with caching

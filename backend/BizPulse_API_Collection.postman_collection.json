@@ -1,0 +1,954 @@
+{
+	"info": {
+		"_postman_id": "bizpulse-api-collection",
+		"name": "BizPulse API Collection",
+		"description": "Complete API collection for BizPulse backend - All endpoints with authentication and examples",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{auth_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000/api",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    pm.collectionVariables.set('auth_token', response.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@thrivebrands.ai\",\n    \"password\": \"Thrive@123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login"]
+						},
+						"description": "Login endpoint - Returns JWT token. Token is automatically saved to collection variable."
+					},
+					"response": []
+				},
+				{
+					"name": "Signup",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"user@example.com\",\n    \"password\": \"password123\",\n    \"name\": \"John Doe\",\n    \"department\": \"sales\",\n    \"role\": \"Manager\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/signup",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "signup"]
+						},
+						"description": "Create new user (Development only - requires authentication)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Users",
+			"item": [
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/users",
+							"host": ["{{base_url}}"],
+							"path": ["users"]
+						},
+						"description": "Get all active users/team members"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Users by Department",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/users/by-department/:department",
+							"host": ["{{base_url}}"],
+							"path": ["users", "by-department", ":department"],
+							"variable": [
+								{
+									"key": "department",
+									"value": "sales"
+								}
+							]
+						},
+						"description": "Get users filtered by department (sales, operations, finance, hr, marketing, technology)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Current User",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/users/me",
+							"host": ["{{base_url}}"],
+							"path": ["users", "me"]
+						},
+						"description": "Get current logged-in user information"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Data Management",
+			"item": [
+				{
+					"name": "Sync Data from Azure",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/data/sync",
+							"host": ["{{base_url}}"],
+							"path": ["data", "sync"]
+						},
+						"description": "Sync data from Azure Blob Storage to MongoDB"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Data Source",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/data/source",
+							"host": ["{{base_url}}"],
+							"path": ["data", "source"]
+						},
+						"description": "Get information about data source"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Analytics",
+			"item": [
+				{
+					"name": "Executive Overview (Dashboard)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/executive-overview?years=2024&months=January,February",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "executive-overview"],
+							"query": [
+								{
+									"key": "years",
+									"value": "2024",
+									"description": "Comma-separated years (e.g., '2023,2024')"
+								},
+								{
+									"key": "months",
+									"value": "January,February",
+									"description": "Comma-separated months (e.g., 'January,February')"
+								},
+								{
+									"key": "businesses",
+									"value": "",
+									"description": "Comma-separated business names",
+									"disabled": true
+								},
+								{
+									"key": "brands",
+									"value": "",
+									"description": "Comma-separated brand names",
+									"disabled": true
+								},
+								{
+									"key": "channels",
+									"value": "",
+									"description": "Comma-separated channel names",
+									"disabled": true
+								},
+								{
+									"key": "categories",
+									"value": "",
+									"description": "Comma-separated category names",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get executive overview/dashboard data with filters"
+					},
+					"response": []
+				},
+				{
+					"name": "Customer Analysis",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-analysis?years=2024&months=January",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-analysis"],
+							"query": [
+								{
+									"key": "years",
+									"value": "2024"
+								},
+								{
+									"key": "months",
+									"value": "January"
+								},
+								{
+									"key": "businesses",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "brands",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "channels",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get customer analysis data"
+					},
+					"response": []
+				},
+				{
+					"name": "Brand Analysis",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/brand-analysis?years=2024",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "brand-analysis"],
+							"query": [
+								{
+									"key": "years",
+									"value": "2024"
+								},
+								{
+									"key": "months",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "businesses",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "channels",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "categories",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get brand analysis data"
+					},
+					"response": []
+				},
+				{
+					"name": "Category Analysis",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/category-analysis?years=2024",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "category-analysis"],
+							"query": [
+								{
+									"key": "years",
+									"value": "2024"
+								},
+								{
+									"key": "months",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "businesses",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "channels",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "categories",
+									"value": "",
+									"disabled": true
+								},
+								{
+									"key": "sub_categories",
+									"value": "",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get category analysis data"
+					},
+					"response": []
+				},
+				{
+					"name": "Strategic Recommendations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/strategic-recommendations",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "strategic-recommendations"]
+						},
+						"description": "Get AI-generated strategic recommendations"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Filters",
+			"item": [
+				{
+					"name": "Get Filter Options",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/filters/options?years=2024&months=January&businesses=Brillo",
+							"host": ["{{base_url}}"],
+							"path": ["filters", "options"],
+							"query": [
+								{
+									"key": "years",
+									"value": "2024",
+									"description": "Filter available options by years",
+									"disabled": true
+								},
+								{
+									"key": "months",
+									"value": "January",
+									"description": "Filter available options by months",
+									"disabled": true
+								},
+								{
+									"key": "businesses",
+									"value": "Brillo",
+									"description": "Filter available options by businesses",
+									"disabled": true
+								},
+								{
+									"key": "brands",
+									"value": "",
+									"description": "Filter available options by brands",
+									"disabled": true
+								},
+								{
+									"key": "channels",
+									"value": "",
+									"description": "Filter available options by channels",
+									"disabled": true
+								},
+								{
+									"key": "categories",
+									"value": "",
+									"description": "Filter available options by categories",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get available filter options (dynamic/cascading filters)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Filter Options (Test)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/filters/options-test",
+							"host": ["{{base_url}}"],
+							"path": ["filters", "options-test"]
+						},
+						"description": "Test endpoint for filter options"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "AI Chat",
+			"item": [
+				{
+					"name": "AI Chat (Business Insights)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"What is the total revenue for 2024?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/ai/chat",
+							"host": ["{{base_url}}"],
+							"path": ["ai", "chat"]
+						},
+						"description": "AI Chat Assistant for business insights (VectorDeep AI)"
+					},
+					"response": []
+				},
+				{
+					"name": "Customer Insights Chat",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"What is the total sales?\",\n    \"chart_title\": \"Sales Channel Performance\",\n    \"context\": {\n        \"selectedYears\": [2025],\n        \"selectedMonths\": [\"January\"]\n    },\n    \"session_id\": \"session_123\",\n    \"conversation_history\": []\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-insights/chat",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-insights", "chat"]
+						},
+						"description": "AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data"
+					},
+					"response": []
+				},
+				{
+					"name": "Customer Insights Chat (Test Simple)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"test\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-insights/chat/test-simple",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-insights", "chat", "test-simple"]
+						},
+						"description": "Simple test endpoint for customer insights chat"
+					},
+					"response": []
+				},
+				{
+					"name": "Customer Insights Chat (Test)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-insights/chat/test",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-insights", "chat", "test"]
+						},
+						"description": "Test endpoint for customer insights chat"
+					},
+					"response": []
+				},
+				{
+					"name": "Customer Insights Chat (Health Check)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-insights/chat/health",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-insights", "chat", "health"]
+						},
+						"description": "Health check endpoint for customer insights chat"
+					},
+					"response": []
+				},
+				{
+					"name": "Insights Chat (View Insights)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Explain this chart\",\n    \"chart_title\": \"Sales Channel Performance\",\n    \"context\": {\n        \"selectedYears\": [2025],\n        \"selectedMonths\": [\"January\"]\n    },\n    \"session_id\": \"session_123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/insights/chat",
+							"host": ["{{base_url}}"],
+							"path": ["insights", "chat"]
+						},
+						"description": "AI Chat for View Insights modal - Enhanced endpoint with advanced data processing"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Customer Deep Intelligence",
+			"item": [
+				{
+					"name": "Get Customer Insights",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-insights?years=2025&months=January",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-insights"],
+							"query": [
+								{
+									"key": "years",
+									"value": "2025",
+									"description": "Comma-separated years"
+								},
+								{
+									"key": "months",
+									"value": "January",
+									"description": "Comma-separated months",
+									"disabled": true
+								},
+								{
+									"key": "channels",
+									"value": "",
+									"description": "Comma-separated channels",
+									"disabled": true
+								}
+							]
+						},
+						"description": "Get customer insights data for Customer Deep Intelligence screen"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer Insights Filters",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/analytics/customer-insights/filters",
+							"host": ["{{base_url}}"],
+							"path": ["analytics", "customer-insights", "filters"]
+						},
+						"description": "Get available filter options for Customer Deep Intelligence"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Kanban & Goals",
+			"item": [
+				{
+					"name": "Get Annual Goal",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/kanban/annual-goal",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "annual-goal"]
+						},
+						"description": "Get annual goal information"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Recommendations",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/kanban/recommendations",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "recommendations"]
+						},
+						"description": "Get strategic recommendations from kanban"
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Goals",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"department\": \"sales\",\n    \"count\": 5\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/kanban/generate-goals",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "generate-goals"]
+						},
+						"description": "Generate goals for a department"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Goal",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Increase Q1 Sales\",\n    \"description\": \"Increase sales by 20% in Q1\",\n    \"department\": \"sales\",\n    \"targetValue\": 1000000,\n    \"currentValue\": 800000,\n    \"deadline\": \"2024-03-31\",\n    \"status\": \"in-progress\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/kanban/goals",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "goals"]
+						},
+						"description": "Create a new goal"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Goal by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/goals/:goalId",
+							"host": ["{{base_url}}"],
+							"path": ["goals", ":goalId"],
+							"variable": [
+								{
+									"key": "goalId",
+									"value": "goal-id-here"
+								}
+							]
+						},
+						"description": "Get a specific goal by ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Goal",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Updated Goal Title\",\n    \"description\": \"Updated description\",\n    \"targetValue\": 1200000,\n    \"currentValue\": 900000,\n    \"deadline\": \"2024-03-31\",\n    \"status\": \"in-progress\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/goals/:goalId",
+							"host": ["{{base_url}}"],
+							"path": ["goals", ":goalId"],
+							"variable": [
+								{
+									"key": "goalId",
+									"value": "goal-id-here"
+								}
+							]
+						},
+						"description": "Update an existing goal"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Goals by Department",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/goals/by-department/:department",
+							"host": ["{{base_url}}"],
+							"path": ["goals", "by-department", ":department"],
+							"variable": [
+								{
+									"key": "department",
+									"value": "sales"
+								}
+							]
+						},
+						"description": "Get all goals for a specific department"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Campaign Goals",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/kanban/campaigns/:campaignId/goals",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "campaigns", ":campaignId", "goals"],
+							"variable": [
+								{
+									"key": "campaignId",
+									"value": "campaign-id-here"
+								}
+							]
+						},
+						"description": "Get goals for a specific campaign"
+					},
+					"response": []
+				},
+				{
+					"name": "Accept Campaign",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"campaignId\": \"campaign-id-here\",\n    \"fromCollection\": \"recommended\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/kanban/accept",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "accept"]
+						},
+						"description": "Move a campaign from recommended to live"
+					},
+					"response": []
+				},
+				{
+					"name": "Archive Campaign",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"campaignId\": \"campaign-id-here\",\n    \"fromCollection\": \"live\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/kanban/archive",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "archive"]
+						},
+						"description": "Move a campaign to archived/past"
+					},
+					"response": []
+				},
+				{
+					"name": "Move Campaign to Live",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"campaignId\": \"campaign-id-here\",\n    \"fromCollection\": \"recommended\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/kanban/move-to-live",
+							"host": ["{{base_url}}"],
+							"path": ["kanban", "move-to-live"]
+						},
+						"description": "Move a campaign to live status"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Cockpit",
+			"item": [
+				{
+					"name": "Get Action Items",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/cockpit/action-items",
+							"host": ["{{base_url}}"],
+							"path": ["cockpit", "action-items"]
+						},
+						"description": "Get action items for cockpit screen"
+					},
+					"response": []
+				},
+				{
+					"name": "Seed Action Items",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/cockpit/action-items/seed",
+							"host": ["{{base_url}}"],
+							"path": ["cockpit", "action-items", "seed"]
+						},
+						"description": "Seed action items (development only)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Root Cause Analysis",
+			"item": [
+				{
+					"name": "Get Root Cause Issues",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/root-cause-analysis/issues",
+							"host": ["{{base_url}}"],
+							"path": ["root-cause-analysis", "issues"]
+						},
+						"description": "Get root cause analysis issues"
+					},
+					"response": []
+				},
+				{
+					"name": "Generate Root Cause Issues",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"issue\": \"Sales decline in Q4\",\n    \"context\": \"Revenue dropped 15% compared to Q3\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/root-cause-analysis/generate",
+							"host": ["{{base_url}}"],
+							"path": ["root-cause-analysis", "generate"]
+						},
+						"description": "Generate root cause analysis for an issue"
+					},
+					"response": []
+				},
+				{
+					"name": "Test Root Cause Analysis",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/root-cause-analysis/test",
+							"host": ["{{base_url}}"],
+							"path": ["root-cause-analysis", "test"]
+						},
+						"description": "Test endpoint for root cause analysis"
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
+
