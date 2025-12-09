@@ -1,4 +1,7 @@
-import pandas as pd
+"""
+MongoDB-based Customer Insights Chatbot with LLM-powered query understanding
+Uses LLM to understand questions, generate MongoDB queries, and analyze results
+"""
 import requests
 import json
 import logging
@@ -7,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 import re
+from motor.motor_asyncio import AsyncIOMotorDatabase
+import pandas as pd
 import numpy as np
 
 # Setup logging
@@ -17,23 +22,6 @@ logger = logging.getLogger(__name__)
 PPLX_API_KEY1 = os.getenv("PPLX_API_KEY1")
 if not PPLX_API_KEY1:
     logger.warning("PPLX_API_KEY1 not found in environment. Some features may not work.")
-
-# Path to Shopify CSV file - try multiple possible file names
-ROOT_DIR = Path(__file__).resolve().parent
-SHOPIFY_CSV_PATH = None
-# Try different possible file names
-for filename in ['Shopify_customer_df_new2.csv', 'shopify_data.csv', 'Shopify_customer_df_new.csv', 'customer_shopify.csv']:
-    potential_path = ROOT_DIR / filename
-    if potential_path.exists():
-        SHOPIFY_CSV_PATH = potential_path
-        break
-
-if SHOPIFY_CSV_PATH is None:
-    # Default to shopify_data.csv
-    SHOPIFY_CSV_PATH = ROOT_DIR / 'shopify_data.csv'
-
-# Global variable to store loaded data
-df_global = None
 
 def convert_to_native_types(obj):
     """Recursively convert numpy/pandas types to native Python types for JSON serialization"""
@@ -49,7 +37,6 @@ def convert_to_native_types(obj):
     elif isinstance(obj, pd.Series):
         return [convert_to_native_types(item) for item in obj.tolist()]
     elif isinstance(obj, pd.DataFrame):
-        # Convert DataFrame to records and then convert each record
         records = obj.to_dict('records')
         return [convert_to_native_types(record) for record in records]
     elif isinstance(obj, dict):
@@ -58,70 +45,13 @@ def convert_to_native_types(obj):
         return [convert_to_native_types(item) for item in obj]
     elif pd.isna(obj) or obj is None:
         return None
-    elif hasattr(obj, 'item'):  # numpy scalar with item() method
+    elif hasattr(obj, 'item'):
         return obj.item()
     else:
-        # For other types, try to convert to string if it's not a basic type
         if isinstance(obj, (str, int, float, bool)):
             return obj
         else:
             return str(obj)
-
-def load_shopify_data():
-    """Load Shopify data with caching"""
-    global df_global
-    if df_global is not None:
-        return df_global
-    
-    try:
-        logger.info(f"Loading Shopify data from {SHOPIFY_CSV_PATH}")
-        df = pd.read_csv(SHOPIFY_CSV_PATH)
-        
-        if df.empty:
-            raise ValueError("Shopify dataset is empty")
-        
-        # Normalize column names
-        df.columns = df.columns.str.strip()
-        
-        # Convert date column - matching app.py logic exactly
-        if 'Day' in df.columns:
-            df['Day'] = pd.to_datetime(df['Day'], errors='coerce')
-            # Extract date components exactly like app.py
-            df['Date'] = df['Day'].dt.date
-            df['Month'] = df['Day'].dt.month_name()  # Full month name (e.g., "January")
-            df['Month_Num'] = df['Day'].dt.month  # Month number (1-12)
-            df['Year'] = df['Day'].dt.year
-            df['YearMonth'] = df['Day'].dt.to_period('M')
-            df['DayOfWeek'] = df['Day'].dt.day_name()
-            df['Week'] = df['Day'].dt.isocalendar().week
-            # Keep MonthName for backward compatibility
-            df['MonthName'] = df['Month']
-        
-        # Ensure numeric columns
-        numeric_cols = ['Net sales', 'Gross sales', 'Total sales', 'Orders', 
-                       'Orders (first-time)', 'Orders (returning)', 
-                       'Quantity ordered', 'Quantity returned', 'Customers',
-                       'New customers', 'Returning customers', 'Net returns',
-                       'Total returns', 'Hour of day']
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        
-        # Calculate additional metrics
-        if 'Total sales' in df.columns and 'Orders' in df.columns:
-            df['Avg_Order_Value'] = df['Total sales'] / df['Orders'].replace(0, 1)
-            df['Avg_Order_Value'] = df['Avg_Order_Value'].fillna(0)
-        
-        if 'Orders' in df.columns and 'Customers' in df.columns:
-            df['Conversion_Rate'] = df['Orders'] / df['Customers'].replace(0, 1)
-            df['Conversion_Rate'] = df['Conversion_Rate'].fillna(0)
-        
-        df_global = df
-        logger.info(f"Shopify data loaded successfully: {len(df_global)} rows")
-        return df_global
-    except Exception as e:
-        logger.error(f"Error loading Shopify data: {e}")
-        raise
 
 def query_perplexity(prompt, conversation_history=None):
     """Query Perplexity API"""
@@ -164,42 +94,366 @@ def query_perplexity(prompt, conversation_history=None):
         logger.error(f"Perplexity API error: {e}")
         return f"Error querying AI: {str(e)}"
 
-def generate_recommendations_and_followups(query, ai_response, filtered_df, context_data):
+async def llm_understand_question_and_generate_queries(
+    question: str,
+    chart_title: Optional[str] = None,
+    context: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """
+    Use LLM to understand the question and determine what MongoDB queries to run.
+    Returns a structured query plan with filters and aggregation requirements.
+    """
+    # Build context about available data fields
+    available_fields = """
+    Available fields in shopify_data collection:
+    - Year (number): e.g., 2023, 2024, 2025
+    - Month (number): 1-12
+    - MonthName (string): "January", "February", etc.
+    - Total sales (number): Sales amount in Euros
+    - Orders (number): Number of orders
+    - Customer email (string): Customer identifier
+    - New or returning customer (string): "New" or "Returning"
+    - Referring channel (string): Traffic source channel
+    - Shipping country (string): Customer country
+    - Day (date): Order date
+    - Hour of day (number): 0-23
+    """
+    
+    # Build prompt for LLM to understand the question
+    prompt = f"""You are a MongoDB query planner for a Shopify customer analytics system.
+
+User Question: "{question}"
+Chart Context: {chart_title if chart_title else "General customer insights"}
+Available Filters: {json.dumps(context or {})}
+
+{available_fields}
+
+Analyze the user's question and determine:
+1. What filters should be applied (Year, Month, Customer Type, Channel, Country, etc.)
+2. What aggregations are needed (group by, sum, count, etc.)
+3. What breakdowns are requested (by month, by channel, by customer type, etc.)
+4. What metrics to calculate (total sales, average order value, customer count, etc.)
+
+Return a JSON object with this structure:
+{{
+    "filters": {{
+        "Year": [2023, 2024] or null,
+        "Month": [1, 2, 3] or null,
+        "MonthName": ["January", "February"] or null,
+        "New or returning customer": "New" or "Returning" or null,
+        "Referring channel": "Direct" or null,
+        "Shipping country": "United Kingdom" or null
+    }},
+    "group_by": ["Year", "Month"] or ["New or returning customer"] or null,
+    "metrics": ["Total sales", "Orders", "Customers"],
+    "breakdowns": ["monthly", "by_channel", "by_customer_type", "by_country"],
+    "analysis_type": "summary" or "trend" or "comparison" or "breakdown",
+    "needs_customer_breakdown": true or false,
+    "needs_channel_breakdown": true or false,
+    "needs_geographic_breakdown": true or false,
+    "needs_monthly_breakdown": true or false
+}}
+
+Important:
+- If question mentions "new vs returning" or "new and returning", set needs_customer_breakdown: true and DON'T filter by customer type
+- If question asks about trends over time, set needs_monthly_breakdown: true
+- If question asks to compare, set analysis_type: "comparison"
+- Only include filters that are explicitly mentioned or can be inferred from context
+- Return ONLY valid JSON, no additional text"""
+
+    try:
+        response = query_perplexity(prompt, None)
+        # Extract JSON from response (might have markdown code blocks)
+        json_match = re.search(r'\{.*\}', response, re.DOTALL)
+        if json_match:
+            query_plan = json.loads(json_match.group())
+        else:
+            # Fallback: try to parse entire response as JSON
+            query_plan = json.loads(response)
+        
+        logger.info(f"📋 LLM Query Plan: {json.dumps(query_plan, indent=2)}")
+        return query_plan
+    except Exception as e:
+        logger.error(f"Error parsing LLM query plan: {e}")
+        logger.error(f"LLM Response: {response[:500] if 'response' in locals() else 'No response'}")
+        # Return default query plan
+        return {
+            "filters": {},
+            "group_by": None,
+            "metrics": ["Total sales", "Orders", "Customers"],
+            "breakdowns": [],
+            "analysis_type": "summary",
+            "needs_customer_breakdown": "customer" in question.lower() or "new vs returning" in question.lower(),
+            "needs_channel_breakdown": "channel" in question.lower(),
+            "needs_geographic_breakdown": "country" in question.lower() or "region" in question.lower(),
+            "needs_monthly_breakdown": "month" in question.lower() or "trend" in question.lower()
+        }
+
+async def execute_mongodb_queries(
+    db: AsyncIOMotorDatabase,
+    query_plan: Dict[str, Any],
+    preset_filters: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Execute MongoDB queries based on the LLM-generated query plan.
+    Returns comprehensive data for analysis.
+    """
+    results = {
+        "summary": {},
+        "customer_breakdown": [],
+        "channel_breakdown": [],
+        "geographic_breakdown": [],
+        "monthly_breakdown": [],
+        "raw_data": []
+    }
+    
+    # Build base match query from filters
+    match_query = {}
+    
+    # Apply LLM-suggested filters
+    if query_plan.get("filters"):
+        filters = query_plan["filters"]
+        if filters.get("Year"):
+            match_query["Year"] = {"$in": filters["Year"]} if isinstance(filters["Year"], list) else filters["Year"]
+        if filters.get("Month"):
+            match_query["Month"] = {"$in": filters["Month"]} if isinstance(filters["Month"], list) else filters["Month"]
+        if filters.get("MonthName"):
+            match_query["MonthName"] = {"$in": filters["MonthName"]} if isinstance(filters["MonthName"], list) else filters["MonthName"]
+        if filters.get("New or returning customer"):
+            match_query["New or returning customer"] = filters["New or returning customer"]
+        if filters.get("Referring channel"):
+            match_query["Referring channel"] = filters["Referring channel"]
+        if filters.get("Shipping country"):
+            match_query["Shipping country"] = filters["Shipping country"]
+    
+    # Merge with preset filters (preset filters take precedence)
+    if preset_filters:
+        if 'year' in preset_filters:
+            match_query["Year"] = {"$in": [int(preset_filters['year'])]}
+        if 'month' in preset_filters:
+            month_map = {
+                'January': 1, 'February': 2, 'March': 3, 'April': 4,
+                'May': 5, 'June': 6, 'July': 7, 'August': 8,
+                'September': 9, 'October': 10, 'November': 11, 'December': 12
+            }
+            month_num = month_map.get(preset_filters['month'], None)
+            if month_num:
+                match_query["Month"] = {"$in": [month_num]}
+    
+    match_stage = {"$match": match_query} if match_query else {"$match": {}}
+    
+    # 1. Get summary statistics
+    summary_pipeline = [
+        match_stage,
+        {
+            "$group": {
+                "_id": None,
+                "total_sales": {"$sum": {"$toDouble": {"$ifNull": ["$Total sales", 0]}}},
+                "total_orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}},
+                "unique_customers": {"$addToSet": "$Customer email"}
+            }
+        },
+        {
+            "$project": {
+                "total_sales": 1,
+                "total_orders": 1,
+                "total_customers": {"$size": "$unique_customers"},
+                "avg_order_value": {"$divide": ["$total_sales", {"$cond": [{"$eq": ["$total_orders", 0]}, 1, "$total_orders"]}]}
+            }
+        }
+    ]
+    
+    summary_result = await db.shopify_data.aggregate(summary_pipeline).to_list(1)
+    results["summary"] = summary_result[0] if summary_result else {
+        "total_sales": 0,
+        "total_orders": 0,
+        "total_customers": 0,
+        "avg_order_value": 0
+    }
+    
+    # 2. Customer type breakdown (if needed)
+    if query_plan.get("needs_customer_breakdown", False):
+        customer_pipeline = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$New or returning customer",
+                    "sales": {"$sum": {"$toDouble": {"$ifNull": ["$Total sales", 0]}}},
+                    "orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}},
+                    "customers": {"$addToSet": "$Customer email"}
+                }
+            },
+            {
+                "$project": {
+                    "type": "$_id",
+                    "sales": 1,
+                    "orders": 1,
+                    "customers": {"$size": "$customers"}
+                }
+            }
+        ]
+        customer_results = await db.shopify_data.aggregate(customer_pipeline).to_list(10)
+        results["customer_breakdown"] = customer_results
+    
+    # 3. Channel breakdown (if needed)
+    if query_plan.get("needs_channel_breakdown", False):
+        channel_pipeline = [
+            match_stage,
+            {"$match": {"Referring channel": {"$ne": None, "$exists": True}}},
+            {
+                "$group": {
+                    "_id": "$Referring channel",
+                    "sales": {"$sum": {"$toDouble": {"$ifNull": ["$Total sales", 0]}}},
+                    "orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}}
+                }
+            },
+            {"$sort": {"sales": -1}},
+            {"$limit": 10}
+        ]
+        channel_results = await db.shopify_data.aggregate(channel_pipeline).to_list(10)
+        results["channel_breakdown"] = channel_results
+    
+    # 4. Geographic breakdown (if needed)
+    if query_plan.get("needs_geographic_breakdown", False):
+        country_pipeline = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$Shipping country",
+                    "sales": {"$sum": {"$toDouble": {"$ifNull": ["$Total sales", 0]}}},
+                    "orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}}
+                }
+            },
+            {"$sort": {"sales": -1}},
+            {"$limit": 10}
+        ]
+        country_results = await db.shopify_data.aggregate(country_pipeline).to_list(10)
+        results["geographic_breakdown"] = country_results
+    
+    # 5. Monthly breakdown (if needed)
+    if query_plan.get("needs_monthly_breakdown", False):
+        monthly_pipeline = [
+            match_stage,
+            {
+                "$match": {
+                    "Year": {"$ne": None, "$exists": True, "$type": "number"},
+                    "Month": {"$ne": None, "$exists": True, "$type": "number"}
+                }
+            },
+            {
+                "$group": {
+                    "_id": {"Year": "$Year", "Month": "$Month", "MonthName": "$MonthName"},
+                    "sales": {"$sum": {"$toDouble": {"$ifNull": ["$Total sales", 0]}}},
+                    "orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}},
+                    "customers": {"$addToSet": "$Customer email"}
+                }
+            },
+            {
+                "$project": {
+                    "Year": "$_id.Year",
+                    "Month": "$_id.Month",
+                    "MonthName": "$_id.MonthName",
+                    "sales": 1,
+                    "orders": 1,
+                    "customers": {"$size": "$customers"}
+                }
+            },
+            {"$sort": {"Year": 1, "Month": 1}}
+        ]
+        monthly_results = await db.shopify_data.aggregate(monthly_pipeline).to_list(100)
+        results["monthly_breakdown"] = monthly_results
+    
+    return results
+
+def format_data_for_llm(data: Dict[str, Any]) -> str:
+    """Format MongoDB query results into a readable string for LLM analysis"""
+    context_parts = []
+    
+    # Summary
+    summary = data.get("summary", {})
+    if summary:
+        context_parts.append("=== SUMMARY STATISTICS ===")
+        context_parts.append(f"Total Sales: €{summary.get('total_sales', 0):,.2f}")
+        context_parts.append(f"Total Orders: {summary.get('total_orders', 0):,}")
+        context_parts.append(f"Total Customers: {summary.get('total_customers', 0):,}")
+        context_parts.append(f"Average Order Value: €{summary.get('avg_order_value', 0):,.2f}")
+        context_parts.append("")
+    
+    # Customer breakdown
+    if data.get("customer_breakdown"):
+        context_parts.append("=== NEW VS RETURNING CUSTOMERS ===")
+        total_cust_sales = sum(item.get("sales", 0) for item in data["customer_breakdown"])
+        for item in data["customer_breakdown"]:
+            cust_type = item.get("type", "Unknown")
+            sales = item.get("sales", 0)
+            orders = item.get("orders", 0)
+            customers = item.get("customers", 0)
+            percentage = (sales / total_cust_sales * 100) if total_cust_sales > 0 else 0
+            context_parts.append(f"{cust_type}: €{sales:,.2f} ({percentage:.1f}% of sales), {orders:,} orders, {customers:,} customers")
+        context_parts.append("")
+    
+    # Channel breakdown
+    if data.get("channel_breakdown"):
+        context_parts.append("=== SALES BY CHANNEL ===")
+        for item in data["channel_breakdown"]:
+            channel = item.get("_id", "Unknown")
+            sales = item.get("sales", 0)
+            orders = item.get("orders", 0)
+            context_parts.append(f"{channel}: €{sales:,.2f} ({orders:,} orders)")
+        context_parts.append("")
+    
+    # Geographic breakdown
+    if data.get("geographic_breakdown"):
+        context_parts.append("=== SALES BY COUNTRY ===")
+        for item in data["geographic_breakdown"]:
+            country = item.get("_id", "Unknown")
+            sales = item.get("sales", 0)
+            orders = item.get("orders", 0)
+            context_parts.append(f"{country}: €{sales:,.2f} ({orders:,} orders)")
+        context_parts.append("")
+    
+    # Monthly breakdown
+    if data.get("monthly_breakdown"):
+        context_parts.append("=== MONTHLY TRENDS ===")
+        for item in data["monthly_breakdown"]:
+            year = item.get("Year", 0)
+            month = item.get("MonthName", "")
+            sales = item.get("sales", 0)
+            orders = item.get("orders", 0)
+            customers = item.get("customers", 0)
+            context_parts.append(f"{year}-{month}: €{sales:,.2f} ({orders:,} orders, {customers:,} customers)")
+        context_parts.append("")
+    
+    return "\n".join(context_parts)
+
+def generate_recommendations_and_followups(query, ai_response, context_data=None):
     """Generate dynamic recommendations and follow-up questions based on query and response"""
     query_lower = query.lower()
     
-    # Extract recommendations from AI response (they should be at the end)
+    # Extract recommendations from AI response
     recommendations = []
-    
-    # Try to extract recommendations from the AI response
-    # Look for numbered list at the end
     lines = ai_response.split('\n')
     in_recommendations_section = False
     
-    for line in reversed(lines):  # Start from the end
+    for line in reversed(lines):
         line = line.strip()
         if not line:
             continue
         
-        # Check if this looks like a recommendation (starts with number or bullet)
         if re.match(r'^\d+[\.\)]\s+', line) or line.startswith('-') or line.startswith('•'):
             in_recommendations_section = True
-            # Remove numbering/bullets and clean up
             rec_text = re.sub(r'^\d+[\.\)]\s*', '', line)
             rec_text = re.sub(r'^[-•]\s*', '', rec_text)
             rec_text = rec_text.strip()
             
-            if rec_text and len(rec_text) > 10:  # Valid recommendation
-                recommendations.insert(0, rec_text)  # Insert at beginning to maintain order
+            if rec_text and len(rec_text) > 10:
+                recommendations.insert(0, rec_text)
                 if len(recommendations) >= 5:
                     break
         elif in_recommendations_section and ('recommendation' in line.lower() or 'suggestion' in line.lower()):
-            # We've reached the recommendations header, stop
             break
     
-    # If no recommendations found, try to extract from the response text
     if len(recommendations) == 0:
-        # Look for patterns like "1.", "2.", etc. anywhere in the response
         for line in lines:
             line = line.strip()
             if re.match(r'^\d+[\.\)]\s+', line):
@@ -209,7 +463,6 @@ def generate_recommendations_and_followups(query, ai_response, filtered_df, cont
                     if len(recommendations) >= 5:
                         break
     
-    # Fallback recommendations if none found
     if len(recommendations) == 0:
         recommendations = [
             "Focus on retention programs to increase returning customer rate",
@@ -217,7 +470,7 @@ def generate_recommendations_and_followups(query, ai_response, filtered_df, cont
             "Create loyalty incentives to boost customer lifetime value"
         ]
     
-    # Generate follow-up questions based on query type
+    # Generate follow-up questions
     if "sales" in query_lower or "revenue" in query_lower:
         follow_up_questions = [
             "Show me sales trends by month",
@@ -247,7 +500,6 @@ def generate_recommendations_and_followups(query, ai_response, filtered_df, cont
             "Which months perform best?"
         ]
     else:
-        # Default follow-up questions
         follow_up_questions = [
             "Show sales overview",
             "Analyze profitability",
@@ -257,292 +509,15 @@ def generate_recommendations_and_followups(query, ai_response, filtered_df, cont
     
     return recommendations[:5], follow_up_questions[:4]
 
-def parse_query(query):
-    """Parse user query to extract filters and columns of interest"""
-    query_lower = query.lower()
-    filters = {}
-    columns = []
-    
-    # Detect query types
-    is_trend_query = "trend" in query_lower or "compare" in query_lower or "over time" in query_lower
-    is_customer_query = "customer" in query_lower or "clv" in query_lower or "lifetime" in query_lower
-    is_channel_query = "channel" in query_lower or "traffic" in query_lower or "referring" in query_lower
-    is_geographic_query = "country" in query_lower or "region" in query_lower or "geographic" in query_lower
-    
-    # Extract columns of interest
-    if "sales" in query_lower or "revenue" in query_lower:
-        columns.append("Total sales")
-    if "orders" in query_lower:
-        columns.append("Orders")
-    if "customers" in query_lower:
-        columns.append("Customers")
-    if "conversion" in query_lower:
-        columns.append("Conversion_Rate")
-    if "aov" in query_lower or "average order" in query_lower:
-        columns.append("Avg_Order_Value")
-    
-    # Extract filters
-    if "year" in query_lower:
-        for year in ["2023", "2024", "2025", "2026"]:
-            if year in query:
-                filters["Year"] = int(year)
-                break
-    
-    if "month" in query_lower:
-        month_map = {
-            "january": "January", "february": "February", "march": "March",
-            "april": "April", "may": "May", "june": "June",
-            "july": "July", "august": "August", "september": "September",
-            "october": "October", "november": "November", "december": "December",
-            "jan": "January", "feb": "February", "mar": "March",
-            "apr": "April", "jun": "June", "jul": "July",
-            "aug": "August", "sep": "September", "sept": "September",
-            "oct": "October", "nov": "November", "dec": "December"
-        }
-        for month_key, month_name in month_map.items():
-            if month_key in query_lower:
-                # Use 'Month' column to match app.py filtering logic
-                filters["Month"] = month_name
-                break
-    
-    if "new customer" in query_lower or "new" in query_lower:
-        filters["New or returning customer"] = "New"
-    elif "returning customer" in query_lower or "returning" in query_lower:
-        filters["New or returning customer"] = "Returning"
-    
-    if "channel" in query_lower:
-        # Try to extract specific channel
-        channels = ["google", "facebook", "instagram", "direct", "unknown"]
-        for channel in channels:
-            if channel in query_lower:
-                filters["Referring channel"] = channel.capitalize() if channel != "unknown" else "unknown"
-                break
-    
-    if "country" in query_lower:
-        # Common countries
-        countries = ["united kingdom", "uk", "ireland", "usa", "united states"]
-        for country in countries:
-            if country in query_lower:
-                if country in ["uk", "united kingdom"]:
-                    filters["Shipping country"] = "United Kingdom"
-                elif country == "ireland":
-                    filters["Shipping country"] = "Ireland"
-                elif country in ["usa", "united states"]:
-                    filters["Shipping country"] = "United States"
-                break
-    
-    return columns, filters, is_trend_query, is_customer_query, is_channel_query, is_geographic_query
-
-def pivot_shopify_data(df, columns, filters, is_trend_query, query_lower=""):
-    """Pivot and aggregate Shopify data based on query"""
-    filtered_df = df.copy()
-    
-    # Apply filters - matching app.py filtering logic
-    for key, value in filters.items():
-        if value is not None and key in filtered_df.columns:
-            # Handle month filtering - check both Month and MonthName columns
-            if key == "Month" or key == "MonthName":
-                # Try Month first (as per app.py), then MonthName for backward compatibility
-                if "Month" in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df["Month"] == value]
-                elif "MonthName" in filtered_df.columns:
-                    filtered_df = filtered_df[filtered_df["MonthName"] == value]
-            else:
-                filtered_df = filtered_df[filtered_df[key] == value]
-    
-    # Default columns if none specified
-    if not columns:
-        columns = ["Total sales", "Orders", "Customers"]
-    
-    # Restrict to columns that exist
-    selected_columns = [c for c in columns if c in filtered_df.columns]
-    if not selected_columns:
-        selected_columns = ["Total sales", "Orders", "Customers"]
-    
-    # Ensure numeric
-    for col in selected_columns:
-        if col in filtered_df.columns:
-            filtered_df[col] = pd.to_numeric(filtered_df[col], errors='coerce').fillna(0)
-    
-    # Determine pivot columns
-    pivot_columns = []
-    
-    if is_trend_query:
-        if "month" in query_lower:
-            # Use Month column to match app.py grouping
-            pivot_columns = ["Year", "Month", "Month_Num"]
-        elif "day" in query_lower or "daily" in query_lower:
-            pivot_columns = ["Date"]
-        else:
-            # Default to monthly grouping
-            pivot_columns = ["Year", "Month", "Month_Num"]
-    else:
-        # Group by relevant dimensions
-        if "channel" in query_lower:
-            pivot_columns = ["Referring channel"]
-        elif "country" in query_lower or "geographic" in query_lower:
-            pivot_columns = ["Shipping country"]
-        elif "customer" in query_lower:
-            pivot_columns = ["New or returning customer"]
-        elif "product" in query_lower:
-            pivot_columns = ["Product variant SKU"]
-        elif "hour" in query_lower:
-            pivot_columns = ["Hour of day"]
-        else:
-            # Default: aggregate all
-            pivot_columns = []
-    
-    # Create pivot table
-    if pivot_columns:
-        pivot_table = filtered_df.groupby(pivot_columns)[selected_columns].agg('sum').reset_index()
-        pivot_table = pivot_table.sort_values(by=selected_columns[0] if selected_columns else pivot_columns[0], ascending=False)
-    else:
-        # Overall summary
-        pivot_table = pd.DataFrame({
-            col: [filtered_df[col].sum()] for col in selected_columns
-        })
-    
-    # Format numeric columns and convert to native Python types
-    for col in selected_columns:
-        if col in pivot_table.columns:
-            pivot_table[col] = pd.to_numeric(pivot_table[col], errors='coerce').fillna(0).round(2)
-    
-    # Convert all numpy types to native Python types for JSON serialization
-    for col in pivot_table.columns:
-        if pivot_table[col].dtype == 'int64':
-            pivot_table[col] = pivot_table[col].astype('Int64').fillna(0).astype(int)
-        elif pivot_table[col].dtype == 'float64':
-            pivot_table[col] = pivot_table[col].astype(float)
-        # Convert object columns that might contain numpy types
-        elif pivot_table[col].dtype == 'object':
-            pivot_table[col] = pivot_table[col].astype(str)
-    
-    return pivot_table, filtered_df
-
-def generate_shopify_data_context(df, query, prev_messages=None, preset_filters: Optional[Dict[str, Any]] = None):
-    """Generate data context for AI based on Shopify data"""
-    columns, filters, is_trend_query, is_customer_query, is_channel_query, is_geographic_query = parse_query(query)
-    
-    # Merge preset filters
-    if preset_filters:
-        for k, v in preset_filters.items():
-            if v is not None:
-                # Map preset filter keys to Shopify column names
-                if k == 'year':
-                    filters['Year'] = int(v)
-                elif k == 'month':
-                    # Use Month column to match app.py
-                    filters['Month'] = str(v)
-                elif k == 'channel':
-                    filters['Referring channel'] = str(v)
-                elif k == 'customer_type':
-                    filters['New or returning customer'] = str(v)
-                elif k == 'country':
-                    filters['Shipping country'] = str(v)
-                else:
-                    filters[k] = v
-    
-    query_lower = query.lower()
-    pivot_table, filtered_df = pivot_shopify_data(df, columns, filters, is_trend_query, query_lower)
-    
-    # Build context string
-    context = f"Shopify Customer Data Analysis for '{query}':\n\n"
-    
-    # Add summary statistics
-    if not filtered_df.empty:
-        total_sales = float(filtered_df['Total sales'].sum()) if 'Total sales' in filtered_df.columns else 0.0
-        total_orders = int(filtered_df['Orders'].sum()) if 'Orders' in filtered_df.columns else 0
-        total_customers = int(filtered_df['Customer email'].nunique()) if 'Customer email' in filtered_df.columns else 0
-        
-        context += f"Summary Statistics:\n"
-        context += f"- Total Sales: €{total_sales:,.2f}\n"
-        context += f"- Total Orders: {total_orders:,}\n"
-        context += f"- Unique Customers: {total_customers:,}\n"
-        if total_orders > 0:
-            avg_order_value = float(total_sales / total_orders)
-            context += f"- Average Order Value: €{avg_order_value:,.2f}\n"
-        context += "\n"
-    
-    # Add monthly sales data (matching app.py logic)
-    if 'Month' in filtered_df.columns and 'Year' in filtered_df.columns:
-        monthly_sales = filtered_df.groupby(['Year', 'Month', 'Month_Num']).agg({
-            'Total sales': 'sum',
-            'Orders': 'sum',
-            'Customers': 'sum',
-            'Gross sales': 'sum' if 'Gross sales' in filtered_df.columns else 'Total sales',
-            'Net sales': 'sum' if 'Net sales' in filtered_df.columns else 'Total sales'
-        }).reset_index().sort_values(['Year', 'Month_Num'])
-        
-        if not monthly_sales.empty:
-            context += "Monthly Sales Data:\n"
-            for _, row in monthly_sales.iterrows():
-                context += f"- {row['Year']}-{row['Month']}: €{row['Total sales']:,.2f} ({int(row['Orders'])} orders, {int(row['Customers'])} customers)\n"
-            context += "\n"
-    
-    # Add monthly sales data (matching app.py logic) - BEFORE pivot table
-    if 'Month' in filtered_df.columns and 'Year' in filtered_df.columns:
-        monthly_sales = filtered_df.groupby(['Year', 'Month', 'Month_Num']).agg({
-            'Total sales': 'sum',
-            'Orders': 'sum',
-            'Customers': 'sum',
-            'Gross sales': 'sum' if 'Gross sales' in filtered_df.columns else 'Total sales',
-            'Net sales': 'sum' if 'Net sales' in filtered_df.columns else 'Total sales'
-        }).reset_index().sort_values(['Year', 'Month_Num'])
-        
-        if not monthly_sales.empty:
-            context += "Monthly Sales Breakdown:\n"
-            for _, row in monthly_sales.iterrows():
-                context += f"- {row['Year']}-{row['Month']}: €{row['Total sales']:,.2f} ({int(row['Orders'])} orders, {int(row['Customers'])} customers)\n"
-            context += "\n"
-    
-    # Add pivot table data
-    if not pivot_table.empty:
-        context += "Detailed Data:\n"
-        # Format pivot table for readability
-        pivot_str = pivot_table.to_string(index=False)
-        context += pivot_str
-        context += "\n\n"
-    
-    # Add additional insights based on query type
-    if is_customer_query and 'Customer email' in filtered_df.columns:
-        customer_segments = filtered_df['New or returning customer'].value_counts().to_dict()
-        customer_segments = convert_to_native_types(customer_segments)
-        context += f"Customer Segments: {customer_segments}\n"
-    
-    if is_channel_query and 'Referring channel' in filtered_df.columns:
-        top_channels = filtered_df.groupby('Referring channel')['Total sales'].sum().nlargest(5).to_dict()
-        top_channels = convert_to_native_types(top_channels)
-        context += f"Top Channels by Sales: {top_channels}\n"
-    
-    if is_geographic_query and 'Shipping country' in filtered_df.columns:
-        top_countries = filtered_df.groupby('Shipping country')['Total sales'].sum().nlargest(5).to_dict()
-        top_countries = convert_to_native_types(top_countries)
-        context += f"Top Countries by Sales: {top_countries}\n"
-    
-    # Add conversation history if follow-up
-    if prev_messages and len(prev_messages) > 0:
-        context += "\nPrevious conversation context:\n"
-        for msg in prev_messages[-3:]:  # Last 3 messages
-            role = msg.get("role", "user") if isinstance(msg, dict) else getattr(msg, "role", "user")
-            content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
-            context += f"{role.capitalize()}: {content}\n"
-    
-    return context, columns, filters, pivot_table, filtered_df, is_trend_query
-
-def process_customer_insights_chat(message: str, context: Optional[Dict] = None, 
-                                   conversation_history: Optional[List] = None,
-                                   chart_title: Optional[str] = None):
-    """Main function to process customer insights chat requests"""
+async def process_customer_insights_chat(
+    db: AsyncIOMotorDatabase,
+    message: str,
+    context: Optional[Dict] = None,
+    conversation_history: Optional[List] = None,
+    chart_title: Optional[str] = None
+):
+    """Main function to process customer insights chat requests using LLM-powered query understanding"""
     try:
-        df = load_shopify_data()
-        if df is None or df.empty:
-            return {
-                "response": "Sorry, I couldn't load the customer data. Please try again later.",
-                "timestamp": datetime.now().strftime("%I:%M %p IST on %B %d, %Y"),
-                "context": "",
-                "data": {}
-            }
-        
         # Extract preset filters from context
         preset_filters = {}
         if context:
@@ -554,11 +529,7 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
             if 'month' in context or 'selectedMonths' in context:
                 month_val = context.get('month') or (context.get('selectedMonths') or [None])[0]
                 if month_val:
-                    # Ensure month name is properly formatted (capitalize first letter)
-                    month_str = str(month_val)
-                    # Capitalize first letter and keep rest lowercase, then capitalize first letter of each word
-                    month_str = month_str.capitalize()
-                    # Handle full month names
+                    month_str = str(month_val).capitalize()
                     month_map = {
                         'Jan': 'January', 'Feb': 'February', 'Mar': 'March',
                         'Apr': 'April', 'May': 'May', 'Jun': 'June',
@@ -568,13 +539,23 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
                     if month_str in month_map:
                         month_str = month_map[month_str]
                     preset_filters['month'] = month_str
-            
-            if 'channel' in context or 'selectedChannels' in context:
-                channel_val = context.get('channel') or (context.get('selectedChannels') or [None])[0]
-                if channel_val:
-                    preset_filters['channel'] = str(channel_val)
         
-        # Convert conversation history to list of dicts
+        # Step 1: Use LLM to understand the question and generate query plan
+        logger.info(f"🤖 Step 1: Understanding question with LLM...")
+        query_plan = await llm_understand_question_and_generate_queries(message, chart_title, context)
+        
+        # Step 2: Execute MongoDB queries based on the plan
+        logger.info(f"📊 Step 2: Executing MongoDB queries...")
+        data = await execute_mongodb_queries(db, query_plan, preset_filters)
+        
+        # Step 3: Format data for LLM analysis
+        logger.info(f"📝 Step 3: Formatting data for LLM...")
+        data_context = format_data_for_llm(data)
+        
+        # Step 4: Use LLM to analyze data and generate comprehensive answer
+        logger.info(f"💬 Step 4: Generating answer with LLM...")
+        
+        # Convert conversation history
         conv_history = []
         if conversation_history:
             for msg in conversation_history:
@@ -588,53 +569,49 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
                         "content": getattr(msg, 'content', '')
                     })
         
-        # Generate data context
-        data_context, columns, filters, pivot_table, filtered_df, is_trend = generate_shopify_data_context(
-            df, message, conv_history, preset_filters
-        )
+        # Build comprehensive prompt
+        chart_context = f"\n\nChart Context: {chart_title}" if chart_title else ""
         
-        # Add chart title context if provided
-        chart_context = ""
-        if chart_title:
-            chart_context = f"\n\nCurrent Chart Context: {chart_title}"
-        
-        # Format pivot table for prompt
-        pivot_data_str = ""
-        if not pivot_table.empty:
-            top_rows = pivot_table.head(10)
-            pivot_data_str = f"\n\nKey Data Summary:\n{top_rows.to_string(index=False)}\n"
-            if len(pivot_table) > 10:
-                pivot_data_str += f"\n(Showing top 10 of {len(pivot_table)} rows)\n"
-        
-        # Build full prompt
-        full_prompt = f"Based on the following Shopify customer data, answer the question: {message}\n\n{data_context}{chart_context}{pivot_data_str}"
-        
+        full_prompt = f"""Based on the following Shopify customer data, provide a comprehensive analysis answering: "{message}"
+
+{data_context}{chart_context}
+
+Please provide:
+1. A detailed analysis of the data
+2. Key insights and patterns
+3. Specific numbers and percentages
+4. 3-5 actionable recommendations
+5. Visual suggestions (what charts/tables would help visualize this data)
+
+Be specific, use exact numbers from the data, and provide actionable insights."""
+
         # Query AI
         response_text = query_perplexity(full_prompt, conv_history if conv_history else None)
         
-        # Generate recommendations and follow-up questions based on query and response
+        # Generate recommendations and follow-up questions
         context_summary = {
-            'total_sales': float(filtered_df['Total sales'].sum()) if 'Total sales' in filtered_df.columns else 0.0,
-            'total_orders': int(filtered_df['Orders'].sum()) if 'Orders' in filtered_df.columns else 0,
-            'total_customers': int(filtered_df['Customer email'].nunique()) if 'Customer email' in filtered_df.columns else 0
+            'total_sales': data.get("summary", {}).get("total_sales", 0),
+            'total_orders': data.get("summary", {}).get("total_orders", 0),
+            'total_customers': data.get("summary", {}).get("total_customers", 0)
         }
         
         recommendations, follow_up_questions = generate_recommendations_and_followups(
-            message, response_text, filtered_df, context_summary
+            message, response_text, context_summary
         )
         
-        # Prepare response - convert numpy types to native Python types
+        # Prepare response
         timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
         
-        # Convert pivot_table to dict and ensure all values are JSON serializable
+        # Convert data to pivot table format for compatibility
         pivot_records = []
-        if not pivot_table.empty:
-            # Convert DataFrame to dict records, then convert numpy types
-            pivot_dict = pivot_table.to_dict('records')
-            pivot_records = convert_to_native_types(pivot_dict)
-        
-        # Convert filters to ensure JSON serializable
-        serializable_filters = convert_to_native_types(filters)
+        if data.get("customer_breakdown"):
+            for item in data["customer_breakdown"]:
+                pivot_records.append({
+                    "CustomerType": item.get("type", ""),
+                    "Total sales": item.get("sales", 0),
+                    "Orders": item.get("orders", 0),
+                    "Customers": item.get("customers", 0)
+                })
         
         return {
             "response": response_text,
@@ -642,13 +619,13 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
             "context": data_context[:500] + "..." if len(data_context) > 500 else data_context,
             "data": {
                 "pivot_table": pivot_records,
-                "columns": columns,
-                "filters": serializable_filters,
-                "is_trend_query": bool(is_trend),
-                "total_rows": int(len(filtered_df)),
+                "columns": ["Total sales", "Orders", "Customers"],
+                "filters": {},
+                "is_trend_query": query_plan.get("analysis_type") == "trend",
+                "total_rows": data.get("summary", {}).get("total_customers", 0),
                 "chart_title": chart_title,
-                "recommendations": recommendations,  # Add recommendations
-                "follow_up_questions": follow_up_questions  # Add follow-up questions
+                "recommendations": recommendations,
+                "follow_up_questions": follow_up_questions
             }
         }
     except Exception as e:
@@ -661,4 +638,3 @@ def process_customer_insights_chat(message: str, context: Optional[Dict] = None,
             "context": "",
             "data": {}
         }
-

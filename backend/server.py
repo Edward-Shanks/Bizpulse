@@ -4969,7 +4969,7 @@ async def customer_insights_chat_test_simple(request: CustomerInsightsChatReques
 # Customer Insights Chat endpoint - Uses FastAPI module
 @api_router.post("/analytics/customer-insights/chat", response_model=CustomerInsightsChatResponse, name="customer_insights_chat")
 async def customer_insights_chat(request: CustomerInsightsChatRequest):
-    """AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data"""
+    """AI Chat Assistant for Customer Deep Intelligence insights using Shopify customer data from MongoDB"""
     logger.info(f"🔵🔵🔵 Customer insights chat endpoint CALLED")
     logger.info(f"🔵🔵🔵 Request received: {request.message[:100] if request.message else 'None'}")
     logger.info(f"🔵🔵🔵 Full request path: /api/analytics/customer-insights/chat")
@@ -4978,8 +4978,9 @@ async def customer_insights_chat(request: CustomerInsightsChatRequest):
         # Import the FastAPI functions
         from customer_insights_fastapi import process_customer_insights_chat
         
-        # Process the chat request using the FastAPI functions
-        result = process_customer_insights_chat(
+        # Process the chat request using MongoDB (async)
+        result = await process_customer_insights_chat(
+            db=db,
             message=request.message or "",
             context=request.context or {},
             conversation_history=request.conversation_history or [],
@@ -4995,7 +4996,7 @@ async def customer_insights_chat(request: CustomerInsightsChatRequest):
         )
         
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="shopify_data.csv file not found")
+        raise HTTPException(status_code=404, detail="MongoDB shopify_data collection not found")
     except ImportError as e:
         logger.error(f"Failed to import customer_insights_fastapi: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to load customer insights FastAPI module: {str(e)}")
@@ -5317,7 +5318,7 @@ You can answer questions about:
 )
 async def customer_view_insights_chat(request: CustomerInsightsChatRequest, email: str = Depends(get_current_user)):
     """
-    Enhanced AI Chat Assistant for Customer Deep Intelligence view insights modal using FastAPI.
+    Enhanced AI Chat Assistant for Customer Deep Intelligence view insights modal using MongoDB.
     
     Processes user questions about Shopify customer data and returns AI-generated insights with data context.
     """
@@ -5328,8 +5329,9 @@ async def customer_view_insights_chat(request: CustomerInsightsChatRequest, emai
         # Import the FastAPI functions
         from customer_insights_fastapi import process_customer_insights_chat
         
-        # Process the chat request using the FastAPI functions
-        result = process_customer_insights_chat(
+        # Process the chat request using MongoDB (async)
+        result = await process_customer_insights_chat(
+            db=db,
             message=request.message or "",
             context=request.context or {},
             conversation_history=request.conversation_history or [],
