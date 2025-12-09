@@ -6,6 +6,7 @@ import requests
 import json
 import logging
 import os
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -53,51 +54,180 @@ def convert_to_native_types(obj):
         else:
             return str(obj)
 
-def query_perplexity(prompt, conversation_history=None):
-    """Query Perplexity API"""
+async def query_perplexity(prompt, conversation_history=None):
+    """Query Perplexity API with proper error handling and retry logic"""
     if not PPLX_API_KEY1:
         return "API key not configured. Please set PPLX_API_KEY1 environment variable."
     
     url = "https://api.perplexity.ai/chat/completions"
     headers = {"Authorization": f"Bearer {PPLX_API_KEY1}", "Content-Type": "application/json"}
     
-    messages = [{
-        "role": "system",
-        "content": (
-            "You are Vector AI, a friendly customer intelligence analyst for ThriveBrands, "
-            "assisting with actionable insights from Shopify customer data. "
-            "Analyze the provided data and deliver a detailed, confident answer in a conversational tone. "
-            "All monetary values are in Euros (€) or the currency shown in the data. "
-            "State results definitively, e.g., 'After analyzing the customer data, [answer].' "
-            "Include trends, growth rates (%), and percentages where relevant. "
-            "For customer behavior questions, identify patterns with specific numbers. "
-            "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
-            "Use conversation history for context in follow-ups. "
-            "Keep it engaging and provide comprehensive analysis. "
-            "At the end of your response, include a section with 3-5 numbered recommendations, each on a new line starting with a number."
-        )
-    }]
+    system_message = (
+        "You are Vector AI, a friendly customer intelligence analyst for ThriveBrands, "
+        "assisting with actionable insights from Shopify customer data. "
+        "Analyze the provided data and deliver a detailed, confident answer in a conversational tone. "
+        "All monetary values are in Euros (€) or the currency shown in the data. "
+        "State results definitively, e.g., 'After analyzing the customer data, [answer].' "
+        "Include trends, growth rates (%), and percentages where relevant. "
+        "For customer behavior questions, identify patterns with specific numbers. "
+        "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
+        "Use conversation history for context in follow-ups. "
+        "Keep it engaging and provide comprehensive analysis. "
+        "At the end of your response, include a section with 3-5 numbered recommendations, each on a new line starting with a number."
+    )
     
+    messages = [{"role": "system", "content": system_message}]
+    
+    # Add conversation history if provided
     if conversation_history:
-        messages.extend(conversation_history)
+        # Validate and clean conversation history
+        valid_roles = {"system", "user", "assistant"}
+        for msg in conversation_history:
+            if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                role = msg.get("role", "user")
+                # Ensure role is valid
+                if role not in valid_roles:
+                    logger.warning(f"Invalid role '{role}', defaulting to 'user'")
+                    role = "user"
+                
+                # Ensure content is a string and not too long
+                content = str(msg.get("content", ""))
+                if len(content) > 10000:  # Limit content length
+                    content = content[:10000] + "... [truncated]"
+                
+                # Only add non-empty messages
+                if content.strip():
+                    messages.append({
+                        "role": role,
+                        "content": content
+                    })
     
-    messages.append({"role": "user", "content": prompt})
-    payload = {"model": "sonar-pro", "messages": messages, "max_tokens": 2000}
+    # Add current prompt (limit length to avoid 400 errors)
+    prompt_str = str(prompt)
+    if len(prompt_str) > 15000:  # Limit prompt length
+        logger.warning(f"Prompt too long ({len(prompt_str)} chars), truncating to 15000")
+        prompt_str = prompt_str[:15000] + "... [truncated]"
     
-    try:
-        logger.info("Sending request to Perplexity API")
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-        logger.info("Received response from Perplexity API")
-        return response.json()['choices'][0]['message']['content']
-    except Exception as e:
-        logger.error(f"Perplexity API error: {e}")
-        return f"Error querying AI: {str(e)}"
+    messages.append({"role": "user", "content": prompt_str})
+    
+    # Validate total payload size (Perplexity has limits)
+    payload = {
+        "model": "sonar-pro",
+        "messages": messages,
+        "max_tokens": 2000,
+        "temperature": 0.7
+    }
+    
+    # Check payload size
+    payload_json = json.dumps(payload)
+    payload_size = len(payload_json)
+    if payload_size > 200000:  # ~200KB limit (conservative)
+        logger.warning(f"Payload too large ({payload_size} bytes), truncating conversation history")
+        # Keep only system message and current prompt, remove old conversation history
+        messages = [messages[0], messages[-1]]  # System + current user message
+        payload["messages"] = messages
+        payload_json = json.dumps(payload)
+        logger.info(f"Reduced payload to {len(payload_json)} bytes")
+    
+    # Retry logic with exponential backoff
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            def make_request():
+                response = requests.post(url, headers=headers, json=payload, timeout=60)
+                response.raise_for_status()
+                result = response.json()
+                if 'choices' not in result or len(result['choices']) == 0:
+                    raise ValueError("Invalid response format from Perplexity API")
+                return result['choices'][0]['message']['content']
+            
+            # Run the synchronous request in a thread pool
+            result = await asyncio.to_thread(make_request)
+            logger.info(f"✅ Perplexity API call successful on attempt {attempt + 1}")
+            return result
+            
+        except requests.exceptions.HTTPError as e:
+            error_detail = ""
+            if e.response is not None:
+                try:
+                    error_detail = e.response.json()
+                except:
+                    error_detail = e.response.text
+                status_code = e.response.status_code
+                
+                if status_code == 400:
+                    logger.error(f"❌ Perplexity API 400 Bad Request")
+                    logger.error(f"Error details: {error_detail}")
+                    logger.error(f"Payload messages count: {len(messages)}")
+                    logger.error(f"Total payload size: {len(json.dumps(payload))} bytes")
+                    # Don't retry 400 errors (bad request)
+                    error_msg = str(error_detail)
+                    if isinstance(error_detail, dict):
+                        error_msg = error_detail.get("message", str(error_detail))
+                    return f"I apologize, but I encountered an error processing your request. Please try rephrasing your question or contact support if the issue persists. Error: {error_msg[:200]}"
+                elif status_code == 429:
+                    # Rate limit - retry
+                    if attempt < max_retries - 1:
+                        logger.warning(f"⚠️ Rate limit hit, retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+                elif status_code >= 500:
+                    # Server error - retry
+                    if attempt < max_retries - 1:
+                        logger.warning(f"⚠️ Server error {status_code}, retrying in {retry_delay}s...")
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
+            else:
+                logger.error(f"❌ Perplexity API HTTP error: {str(e)}")
+                return f"Error querying AI: {str(e)}"
+            
+        except requests.exceptions.Timeout as e:
+            logger.warning(f"⚠️ Perplexity API timeout on attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            else:
+                logger.error(f"❌ Perplexity API timeout after {max_retries} attempts")
+                return "I apologize, but the AI service is taking too long to respond. Please try again."
+                
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"⚠️ Perplexity API request error on attempt {attempt + 1}/{max_retries}: {str(e)}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            else:
+                logger.error(f"❌ Perplexity API request failed after {max_retries} attempts: {str(e)}")
+                return f"Error querying AI: {str(e)}"
+                
+        except (KeyError, ValueError) as e:
+            logger.error(f"❌ Perplexity API response parsing error: {str(e)}")
+            # Don't retry parsing errors
+            return f"Error processing AI response: {str(e)}"
+            
+        except Exception as e:
+            logger.error(f"❌ Unexpected Perplexity API error on attempt {attempt + 1}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            else:
+                return f"I apologize, but I encountered an unexpected error: {str(e)}. Please try again."
+    
+    return "I apologize, but I couldn't process your request after multiple attempts. Please try again."
 
 async def llm_understand_question_and_generate_queries(
     question: str,
     chart_title: Optional[str] = None,
-    context: Optional[Dict] = None
+    context: Optional[Dict] = None,
+    conversation_history: Optional[List] = None
 ) -> Dict[str, Any]:
     """
     Use LLM to understand the question and determine what MongoDB queries to run.
@@ -119,14 +249,30 @@ async def llm_understand_question_and_generate_queries(
     - Hour of day (number): 0-23
     """
     
-    # Build prompt for LLM to understand the question
+    # Build conversation context from history
+    conversation_context = ""
+    if conversation_history:
+        recent_messages = conversation_history[-4:]  # Last 4 messages (2 exchanges)
+        if recent_messages:
+            conv_summary = []
+            for msg in recent_messages:
+                role = msg.get("role", "user") if isinstance(msg, dict) else getattr(msg, "role", "user")
+                content = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
+                if content:
+                    conv_summary.append(f"{role}: {content[:100]}")
+            if conv_summary:
+                conversation_context = f"\nRecent conversation context:\n" + "\n".join(conv_summary)
+    
     prompt = f"""You are a MongoDB query planner for a Shopify customer analytics system.
 
 User Question: "{question}"
 Chart Context: {chart_title if chart_title else "General customer insights"}
 Available Filters: {json.dumps(context or {})}
+{conversation_context}
 
 {available_fields}
+
+CRITICAL: Analyze THIS SPECIFIC QUESTION independently. Each question requires fresh data queries. Do NOT reuse data from previous questions unless the user explicitly references them (e.g., "compare with previous answer" or "show more details about that").
 
 Analyze the user's question and determine:
 1. What filters should be applied (Year, Month, Customer Type, Channel, Country, etc.)
@@ -158,11 +304,14 @@ Important:
 - If question mentions "new vs returning" or "new and returning", set needs_customer_breakdown: true and DON'T filter by customer type
 - If question asks about trends over time, set needs_monthly_breakdown: true
 - If question asks to compare, set analysis_type: "comparison"
+- If question asks about channels, set needs_channel_breakdown: true
+- If question asks about countries/regions, set needs_geographic_breakdown: true
 - Only include filters that are explicitly mentioned or can be inferred from context
+- CRITICAL: Each question should be analyzed independently. Generate fresh queries for each question, don't reuse data from previous questions unless explicitly referenced.
 - Return ONLY valid JSON, no additional text"""
 
     try:
-        response = query_perplexity(prompt, None)
+        response = await query_perplexity(prompt, None)
         # Extract JSON from response (might have markdown code blocks)
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
@@ -321,7 +470,16 @@ async def execute_mongodb_queries(
                 "$group": {
                     "_id": "$Shipping country",
                     "sales": {"$sum": {"$toDouble": {"$ifNull": ["$Total sales", 0]}}},
-                    "orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}}
+                    "orders": {"$sum": {"$toDouble": {"$ifNull": ["$Orders", 0]}}},
+                    "customers": {"$addToSet": "$Customer email"}  # Count unique customers
+                }
+            },
+            {
+                "$project": {
+                    "_id": 1,
+                    "sales": 1,
+                    "orders": 1,
+                    "customers": {"$size": "$customers"}  # Convert set to count
                 }
             },
             {"$sort": {"sales": -1}},
@@ -540,22 +698,7 @@ async def process_customer_insights_chat(
                         month_str = month_map[month_str]
                     preset_filters['month'] = month_str
         
-        # Step 1: Use LLM to understand the question and generate query plan
-        logger.info(f"🤖 Step 1: Understanding question with LLM...")
-        query_plan = await llm_understand_question_and_generate_queries(message, chart_title, context)
-        
-        # Step 2: Execute MongoDB queries based on the plan
-        logger.info(f"📊 Step 2: Executing MongoDB queries...")
-        data = await execute_mongodb_queries(db, query_plan, preset_filters)
-        
-        # Step 3: Format data for LLM analysis
-        logger.info(f"📝 Step 3: Formatting data for LLM...")
-        data_context = format_data_for_llm(data)
-        
-        # Step 4: Use LLM to analyze data and generate comprehensive answer
-        logger.info(f"💬 Step 4: Generating answer with LLM...")
-        
-        # Convert conversation history
+        # Convert conversation history to list of dicts (needed for both query planning and LLM analysis)
         conv_history = []
         if conversation_history:
             for msg in conversation_history:
@@ -569,24 +712,54 @@ async def process_customer_insights_chat(
                         "content": getattr(msg, 'content', '')
                     })
         
+        # Step 1: Use LLM to understand the question and generate query plan
+        logger.info(f"🤖 Step 1: Understanding question with LLM...")
+        query_plan = await llm_understand_question_and_generate_queries(message, chart_title, context, conv_history)
+        
+        # Step 2: Execute MongoDB queries based on the plan
+        logger.info(f"📊 Step 2: Executing MongoDB queries...")
+        data = await execute_mongodb_queries(db, query_plan, preset_filters)
+        
+        # Step 3: Format data for LLM analysis
+        logger.info(f"📝 Step 3: Formatting data for LLM...")
+        data_context = format_data_for_llm(data)
+        
+        # Step 4: Use LLM to analyze data and generate comprehensive answer
+        logger.info(f"💬 Step 4: Generating answer with LLM...")
+        
         # Build comprehensive prompt
         chart_context = f"\n\nChart Context: {chart_title}" if chart_title else ""
         
+        # Add context about what breakdowns are available
+        available_breakdowns = []
+        if data.get("customer_breakdown"):
+            available_breakdowns.append("Customer breakdown (New vs Returning)")
+        if data.get("channel_breakdown"):
+            available_breakdowns.append("Channel breakdown")
+        if data.get("geographic_breakdown"):
+            available_breakdowns.append("Geographic breakdown (by country)")
+        if data.get("monthly_breakdown"):
+            available_breakdowns.append("Monthly trend breakdown")
+        
+        breakdowns_context = f"\nAvailable data breakdowns: {', '.join(available_breakdowns)}" if available_breakdowns else ""
+        
         full_prompt = f"""Based on the following Shopify customer data, provide a comprehensive analysis answering: "{message}"
 
-{data_context}{chart_context}
+{data_context}{chart_context}{breakdowns_context}
+
+IMPORTANT: This is a NEW question. Analyze THIS specific question independently. Use the data provided above to answer THIS question, not previous questions.
 
 Please provide:
-1. A detailed analysis of the data
-2. Key insights and patterns
-3. Specific numbers and percentages
+1. A detailed analysis of the data relevant to THIS specific question
+2. Key insights and patterns from the data above
+3. Specific numbers and percentages from the data
 4. 3-5 actionable recommendations
 5. Visual suggestions (what charts/tables would help visualize this data)
 
-Be specific, use exact numbers from the data, and provide actionable insights."""
+Be specific, use exact numbers from the data provided, and provide actionable insights based on THIS question."""
 
         # Query AI
-        response_text = query_perplexity(full_prompt, conv_history if conv_history else None)
+        response_text = await query_perplexity(full_prompt, conv_history if conv_history else None)
         
         # Generate recommendations and follow-up questions
         context_summary = {
@@ -602,9 +775,73 @@ Be specific, use exact numbers from the data, and provide actionable insights.""
         # Prepare response
         timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
         
-        # Convert data to pivot table format for compatibility
+        # Dynamically generate pivot table based on what data is available and what the question asks for
         pivot_records = []
-        if data.get("customer_breakdown"):
+        columns = []
+        
+        # Determine PRIMARY breakdown based on question keywords and query plan
+        # Priority: Geographic > Channel > Monthly > Customer > Summary
+        # This ensures the most relevant breakdown for the question is shown
+        
+        message_lower = message.lower() if message else ""
+        
+        # Check for geographic keywords (highest priority for region questions)
+        geographic_keywords = ["region", "country", "countries", "geographic", "location", "across regions", "by country", "by region"]
+        is_geographic_question = any(keyword in message_lower for keyword in geographic_keywords) or query_plan.get("needs_geographic_breakdown", False)
+        
+        # Check for channel keywords
+        channel_keywords = ["channel", "channels", "traffic source", "referring", "source"]
+        is_channel_question = any(keyword in message_lower for keyword in channel_keywords) or query_plan.get("needs_channel_breakdown", False)
+        
+        # Check for monthly/time keywords
+        monthly_keywords = ["month", "monthly", "trend", "over time", "by month", "sales trends"]
+        is_monthly_question = any(keyword in message_lower for keyword in monthly_keywords) or query_plan.get("needs_monthly_breakdown", False)
+        
+        # Check for customer type keywords
+        customer_keywords = ["new vs returning", "new and returning", "customer type", "new customer", "returning customer"]
+        is_customer_question = any(keyword in message_lower for keyword in customer_keywords) or query_plan.get("needs_customer_breakdown", False)
+        
+        # Determine which breakdown to use based on priority and availability
+        if is_geographic_question and data.get("geographic_breakdown"):
+            # Geographic breakdown data (highest priority for region questions)
+            logger.info("📍 Using geographic breakdown for pivot table")
+            for item in data["geographic_breakdown"]:
+                pivot_records.append({
+                    "Country": item.get("_id", ""),
+                    "Total sales": item.get("sales", 0),
+                    "Orders": item.get("orders", 0),
+                    "Customers": item.get("customers", 0) if "customers" in item else None
+                })
+            # Remove None values from columns
+            if pivot_records and pivot_records[0].get("Customers") is not None:
+                columns = ["Country", "Total sales", "Orders", "Customers"]
+            else:
+                columns = ["Country", "Total sales", "Orders"]
+        elif is_channel_question and data.get("channel_breakdown"):
+            # Channel breakdown data
+            logger.info("📡 Using channel breakdown for pivot table")
+            for item in data["channel_breakdown"]:
+                pivot_records.append({
+                    "Channel": item.get("_id", ""),
+                    "Total sales": item.get("sales", 0),
+                    "Orders": item.get("orders", 0)
+                })
+            columns = ["Channel", "Total sales", "Orders"]
+        elif is_monthly_question and data.get("monthly_breakdown"):
+            # Monthly breakdown data
+            logger.info("📅 Using monthly breakdown for pivot table")
+            for item in data["monthly_breakdown"]:
+                pivot_records.append({
+                    "Year": item.get("Year", 0),
+                    "Month": item.get("MonthName", ""),
+                    "Total sales": item.get("sales", 0),
+                    "Orders": item.get("orders", 0),
+                    "Customers": item.get("customers", 0)
+                })
+            columns = ["Year", "Month", "Total sales", "Orders", "Customers"]
+        elif is_customer_question and data.get("customer_breakdown"):
+            # Customer breakdown data
+            logger.info("👥 Using customer breakdown for pivot table")
             for item in data["customer_breakdown"]:
                 pivot_records.append({
                     "CustomerType": item.get("type", ""),
@@ -612,20 +849,85 @@ Be specific, use exact numbers from the data, and provide actionable insights.""
                     "Orders": item.get("orders", 0),
                     "Customers": item.get("customers", 0)
                 })
+            columns = ["CustomerType", "Total sales", "Orders", "Customers"]
+        else:
+            # Default: use summary or first available breakdown
+            if data.get("geographic_breakdown"):
+                logger.info("📍 Default: Using geographic breakdown")
+                for item in data["geographic_breakdown"]:
+                    pivot_records.append({
+                        "Country": item.get("_id", ""),
+                        "Total sales": item.get("sales", 0),
+                        "Orders": item.get("orders", 0)
+                    })
+                columns = ["Country", "Total sales", "Orders"]
+            elif data.get("channel_breakdown"):
+                logger.info("📡 Default: Using channel breakdown")
+                for item in data["channel_breakdown"]:
+                    pivot_records.append({
+                        "Channel": item.get("_id", ""),
+                        "Total sales": item.get("sales", 0),
+                        "Orders": item.get("orders", 0)
+                    })
+                columns = ["Channel", "Total sales", "Orders"]
+            elif data.get("monthly_breakdown"):
+                logger.info("📅 Default: Using monthly breakdown")
+                for item in data["monthly_breakdown"]:
+                    pivot_records.append({
+                        "Year": item.get("Year", 0),
+                        "Month": item.get("MonthName", ""),
+                        "Total sales": item.get("sales", 0),
+                        "Orders": item.get("orders", 0)
+                    })
+                columns = ["Year", "Month", "Total sales", "Orders"]
+            elif data.get("customer_breakdown"):
+                logger.info("👥 Default: Using customer breakdown")
+                for item in data["customer_breakdown"]:
+                    pivot_records.append({
+                        "CustomerType": item.get("type", ""),
+                        "Total sales": item.get("sales", 0),
+                        "Orders": item.get("orders", 0),
+                        "Customers": item.get("customers", 0)
+                    })
+                columns = ["CustomerType", "Total sales", "Orders", "Customers"]
+            else:
+                # Fallback: summary data
+                logger.info("📊 Default: Using summary data")
+                summary = data.get("summary", {})
+                pivot_records.append({
+                    "Total sales": summary.get("total_sales", 0),
+                    "Orders": summary.get("total_orders", 0),
+                    "Customers": summary.get("total_customers", 0),
+                    "Avg Order Value": summary.get("avg_order_value", 0)
+                })
+                columns = ["Total sales", "Orders", "Customers", "Avg Order Value"]
+        
+        # Include all breakdowns in the response for frontend to use
+        breakdowns = {}
+        if data.get("customer_breakdown"):
+            breakdowns["customer_breakdown"] = convert_to_native_types(data["customer_breakdown"])
+        if data.get("channel_breakdown"):
+            breakdowns["channel_breakdown"] = convert_to_native_types(data["channel_breakdown"])
+        if data.get("geographic_breakdown"):
+            breakdowns["geographic_breakdown"] = convert_to_native_types(data["geographic_breakdown"])
+        if data.get("monthly_breakdown"):
+            breakdowns["monthly_breakdown"] = convert_to_native_types(data["monthly_breakdown"])
         
         return {
             "response": response_text,
             "timestamp": timestamp,
             "context": data_context[:500] + "..." if len(data_context) > 500 else data_context,
             "data": {
-                "pivot_table": pivot_records,
-                "columns": ["Total sales", "Orders", "Customers"],
+                "pivot_table": convert_to_native_types(pivot_records),
+                "columns": columns,
                 "filters": {},
                 "is_trend_query": query_plan.get("analysis_type") == "trend",
-                "total_rows": data.get("summary", {}).get("total_customers", 0),
+                "total_rows": len(pivot_records),
                 "chart_title": chart_title,
                 "recommendations": recommendations,
-                "follow_up_questions": follow_up_questions
+                "follow_up_questions": follow_up_questions,
+                "breakdowns": breakdowns,  # Include all breakdowns for dynamic chart generation
+                "summary": convert_to_native_types(data.get("summary", {}))
             }
         }
     except Exception as e:
