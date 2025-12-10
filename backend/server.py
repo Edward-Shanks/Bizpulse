@@ -5732,32 +5732,49 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
             break
     
     # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman")
+    # CRITICAL FIX: Don't match "brands by Revenue" or "top brands" - these are asking FOR brands, not filtering BY brand
+    # Only match if it's clearly a brand name filter (e.g., "brand Koka", "brands: Bonne Maman and Chivers")
     brand_patterns = [
-        r'brands?\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|and|category)',
-        r'brands?:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|and|category)',
+        r'brands?\s+(?:is|are|of|for|by|top|all|the)\s+',  # Skip patterns like "brands by Revenue", "top brands", etc.
+        r'brands?\s+([a-zA-Z][^,\.\?]+?)(?:\s+(?:and|or|,)\s+[a-zA-Z]|\s*$|\s*[,\?\.]|\s+category|\s+customer|\s+channel)',  # Match actual brand names
+        r'brands?:\s*([a-zA-Z][^,\.\?]+?)(?:\s+(?:and|or|,)\s+[a-zA-Z]|\s*$|\s*[,\?\.]|\s+category|\s+customer|\s+channel)',
     ]
-    for pattern in brand_patterns:
-        matches = re.findall(pattern, message_lower, re.IGNORECASE)
-        if matches:
-            brand_name = matches[0].strip()
-            # Remove trailing words that might be part of next filter
-            brand_name = re.sub(r'\s+(and|category).*$', '', brand_name, flags=re.IGNORECASE).strip()
-            for db_brand in all_brands:
-                if db_brand:
-                    db_brand_lower = str(db_brand).lower()
-                    brand_name_lower = brand_name.lower()
-                    if brand_name_lower == db_brand_lower or brand_name_lower in db_brand_lower or db_brand_lower in brand_name_lower:
-                        if 'Brand' in query:
-                            if isinstance(query['Brand'], dict) and '$in' in query['Brand']:
-                                if str(db_brand) not in query['Brand']['$in']:
-                                    query['Brand']['$in'].append(str(db_brand))
+    
+    # Skip brand extraction if the message is asking FOR brands (not filtering BY brand)
+    is_asking_for_brands = any(phrase in message_lower for phrase in [
+        'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
+        'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+        'list brands', 'show brands', 'which brands', 'what brands'
+    ])
+    
+    if not is_asking_for_brands:
+        for pattern in brand_patterns[1:]:  # Skip the first pattern (negative match)
+            matches = re.findall(pattern, message_lower, re.IGNORECASE)
+            if matches:
+                brand_name = matches[0].strip()
+                # Remove trailing words that might be part of next filter
+                brand_name = re.sub(r'\s+(and|or|category|customer|channel).*$', '', brand_name, flags=re.IGNORECASE).strip()
+                # Skip if it's a common phrase like "by revenue", "by profit", etc.
+                if brand_name.lower() in ['by revenue', 'by profit', 'by', 'revenue', 'profit', 'top', 'all']:
+                    continue
+                for db_brand in all_brands:
+                    if db_brand:
+                        db_brand_lower = str(db_brand).lower()
+                        brand_name_lower = brand_name.lower()
+                        if brand_name_lower == db_brand_lower or brand_name_lower in db_brand_lower or db_brand_lower in brand_name_lower:
+                            if 'Brand' in query:
+                                if isinstance(query['Brand'], dict) and '$in' in query['Brand']:
+                                    if str(db_brand) not in query['Brand']['$in']:
+                                        query['Brand']['$in'].append(str(db_brand))
+                                else:
+                                    query['Brand'] = {'$in': [str(db_brand)]}
                             else:
                                 query['Brand'] = {'$in': [str(db_brand)]}
-                        else:
-                            query['Brand'] = {'$in': [str(db_brand)]}
-                        logger.info(f"✅ Matched brand: '{brand_name}' -> '{db_brand}'")
-                        break
-            break
+                            logger.info(f"✅ Matched brand: '{brand_name}' -> '{db_brand}'")
+                            break
+                break
+    else:
+        logger.info("ℹ️ Skipping brand extraction - user is asking FOR brands, not filtering BY brand")
     
     # Extract category (e.g., "category curry", "category: curry")
     category_patterns = [
@@ -6121,7 +6138,10 @@ async def get_comprehensive_data_context(
     user_msg_lower = user_message.lower()
     
     try:
+        # CRITICAL: If query is empty, use empty match to get ALL data
+        # If query has filters, use those filters
         match_stage = {"$match": query} if query else {"$match": {}}
+        logger.info(f"🔍 Data context - Query: {query}, Match stage: {match_stage}")
         
         # Get overall totals
         pipeline_totals = [
@@ -6287,6 +6307,7 @@ async def get_comprehensive_data_context(
         
         # Brand breakdown (if brand mentioned or comparison)
         if "brand" in user_msg_lower or is_comparison:
+            logger.info(f"🔍 Data context - Fetching brand breakdown with query: {query}")
             pipeline_brand = [
                 match_stage,
                 {
@@ -6297,20 +6318,25 @@ async def get_comprehensive_data_context(
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                     }
                 },
+                {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
                 {"$sort": {"Revenue": -1}},
                 {"$limit": 20}
             ]
             brand_results = await db.business_data.aggregate(pipeline_brand).to_list(20)
+            logger.info(f"📊 Data context - Brand results count: {len(brand_results)}")
             if brand_results:
                 context_parts.append("\nBrand Performance:")
-                for item in brand_results:
+                for idx, item in enumerate(brand_results, 1):
                     brand = str(item.get("_id", ""))
                     if brand and brand.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
                         profit = safe_float(item.get("Gross_Profit", 0))
                         if revenue > 0:
                             margin = (profit / revenue) * 100
-                            context_parts.append(f"  {brand}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+                            context_parts.append(f"  {idx}. {brand}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+                            logger.info(f"  Brand {idx}: {brand} - Revenue: {revenue}")
+            else:
+                logger.warning(f"⚠️ Data context - No brand results found with query: {query}")
         
         # Business breakdown (if business mentioned or comparison)
         if "business" in user_msg_lower or is_comparison:
@@ -6437,7 +6463,31 @@ async def insights_chat(
             else:
                 query[key] = value
         
+        # CRITICAL FIX: If both context_query and parsed_query are empty, ensure query is empty
+        # This ensures "Top 15 Brands" without filters gets ALL brands
+        if not context_query and not parsed_query:
+            query = {}
+            logger.info("✅ No filters detected - using empty query to get all data")
+        
         logger.info(f"🔍 Final MongoDB Query (merged): {query}")
+        logger.info(f"📋 Context query: {context_query}")
+        logger.info(f"📋 Parsed query: {parsed_query}")
+        
+        # Verify query will return data
+        if query:
+            test_count = await db.business_data.count_documents(query)
+            logger.info(f"📊 Documents matching final query: {test_count}")
+            if test_count == 0:
+                logger.warning(f"⚠️ WARNING: Final query returns 0 documents! Query: {query}")
+        else:
+            test_count = await db.business_data.count_documents({})
+            logger.info(f"📊 Total documents in database (no filters): {test_count}")
+        
+        # Verify query doesn't have any unexpected filters
+        if query:
+            logger.info(f"📊 Query has {len(query)} filter(s): {list(query.keys())}")
+        else:
+            logger.info(f"📊 Query is empty - will fetch all data (no filters applied)")
         
         # Log query details for debugging
         if query:
@@ -6451,6 +6501,23 @@ async def insights_chat(
         # Get comprehensive data context based on the query
         # Check what type of analysis is requested
         user_msg_lower = user_message.lower()
+        chart_title_lower = (request.chart_title or "").lower()
+        
+        # CRITICAL FIX: If asking FOR brands (not filtering BY brand), remove Brand filter from query
+        # This ensures data context shows all brands, not just one
+        is_asking_for_brands = any(phrase in user_msg_lower for phrase in [
+            'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
+            'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+            'list brands', 'show brands', 'which brands', 'what brands', 'tell me brands'
+        ]) or "brand" in chart_title_lower
+        
+        # Use a modified query for data context that excludes Brand filter when asking FOR brands
+        data_context_query = query.copy() if query else {}
+        if is_asking_for_brands and 'Brand' in data_context_query:
+            logger.info(f"🔍 Removing Brand filter from data context query (user is asking FOR brands)")
+            logger.info(f"🔍 Original query had Brand filter: {data_context_query.get('Brand')}")
+            data_context_query = {k: v for k, v in data_context_query.items() if k != 'Brand'}
+            logger.info(f"🔍 Data context query after removing Brand filter: {data_context_query}")
         
         # Determine analysis type
         is_comparison = any(word in user_msg_lower for word in ['compare', 'comparison', 'vs', 'versus', 'against'])
@@ -6459,10 +6526,12 @@ async def insights_chat(
         is_yearly = any(word in user_msg_lower for word in ['yearly', 'year', 'yoy', 'year over year'])
         is_metrics = any(word in user_msg_lower for word in ['metrics', 'details', 'show me', 'tell me'])
         
-        # Get comprehensive data context
+        # Get comprehensive data context using the modified query
+        # IMPORTANT: Use the modified query (without Brand filter) for data context when asking FOR brands
+        logger.info(f"🔍 Query being passed to data context: {data_context_query}")
         try:
             data_context = await get_comprehensive_data_context(
-                query, 
+                data_context_query,  # Use modified query without Brand filter when asking FOR brands
                 user_message,
                 is_comparison=is_comparison,
                 is_quarterly=is_quarterly,
@@ -6472,6 +6541,16 @@ async def insights_chat(
             )
             logger.info(f"📈 Data context length: {len(data_context)} characters")
             logger.info(f"📈 Data context preview: {data_context[:500]}...")
+            
+            # If data context shows very little data, log a warning
+            if "Overall Totals" in data_context:
+                # Extract total revenue from context
+                import re
+                revenue_match = re.search(r'Total Revenue: (€[\d.]+[kM]?)', data_context)
+                if revenue_match:
+                    logger.info(f"📊 Total revenue in data context: {revenue_match.group(1)}")
+                else:
+                    logger.warning(f"⚠️ Could not extract total revenue from data context")
         except Exception as e:
             logger.error(f"❌ Error getting data context: {str(e)}")
             import traceback
@@ -6524,9 +6603,18 @@ async def insights_chat(
             f"{comparison_context}"
             f"{quarterly_context}"
             f"{monthly_context}"
+            "CRITICAL: You MUST provide comprehensive analysis for EVERY question, including: "
+            "(1) Key insights and patterns you observe in the data, "
+            "(2) What these numbers mean for the business, "
+            "(3) Specific, actionable recommendations (at least 3-5) with clear 'why' and 'how' for each, "
+            "(4) Potential risks or opportunities identified, "
+            "(5) Next steps the user should take. "
+            "Do NOT just list the data - analyze it, interpret it, and provide strategic guidance. "
             "IMPORTANT: If the user asks for a specific number (e.g., 'top 15 brands', '15 brands'), you MUST provide exactly that number of items in your response. "
             "CRITICAL: Use the EXACT numbers from the data provided to you. Do NOT round, estimate, or modify the numbers. The data contains precise values - use them exactly as shown. "
             "Format monetary values in millions (M) or thousands (k) where appropriate, e.g., €59.0M or €1.6k, and cases as whole numbers. "
+            "CRITICAL: Analyze EACH question independently. Do NOT reuse data or insights from previous questions unless the user explicitly asks for a comparison or follow-up. "
+            "For every new question, generate fresh analysis based on the current question and the data provided. "
             "IMPORTANT: If the user asks about a specific brand, category, customer, or entity, and that entity only exists in certain years or has limited data availability, you should: "
             "(1) Mention this limitation clearly in your response (e.g., 'Cali Cali brand data is only available for 2023 and 2024'), "
             "(2) Provide analysis based on the available data for those years, and "
@@ -6570,26 +6658,57 @@ async def insights_chat(
             # Check for brand questions FIRST (most common case)
             if "brand" in user_msg_lower or "brand" in chart_title_lower:
                 logger.info("Detected BRAND question - generating brand-level pivot table")
-                # User asked about brands - show brand-level aggregated data
-                match_stage = {"$match": query} if query else {"$match": {}}
-                # Filter out null brands
-                if 'Brand' not in match_stage["$match"]:
-                    match_stage["$match"]["Brand"] = {"$exists": True, "$nin": [None, "", "Unknown", "null", "None"]}
+                logger.info(f"🔍 Query being used for brand pivot: {query}")
                 
-                # Detect how many brands requested
+                # Build match stage - ensure we're not accidentally filtering out data
+                # CRITICAL: When asking "Top 15 Brands", don't filter by Brand unless explicitly requested
+                match_conditions = {}
+                if query:
+                    # Only copy non-Brand filters (Year, Month, Business, Channel, Category, Customer)
+                    # Don't copy Brand filter unless the user explicitly asked for a specific brand
+                    for key, value in query.items():
+                        if key != 'Brand':  # Don't filter by Brand when asking FOR brands
+                            match_conditions[key] = value
+                
+                # Filter out null brands (but don't restrict to specific brands unless explicitly requested)
+                if 'Brand' not in match_conditions:
+                    match_conditions["Brand"] = {"$exists": True, "$nin": [None, "", "Unknown", "null", "None"]}
+                
+                match_stage = {"$match": match_conditions}
+                logger.info(f"🔍 Match stage for brand pivot: {match_stage}")
+                logger.info(f"🔍 Original query had Brand filter: {'Brand' in (query or {})}")
+                
+                # Test query first to see how many documents match
+                test_count = await db.business_data.count_documents(match_conditions)
+                logger.info(f"📊 Documents matching brand query: {test_count}")
+                
+                # If count is suspiciously low, log a warning
+                if test_count < 1000:
+                    logger.warning(f"⚠️ WARNING: Only {test_count} documents match brand query. This might be too restrictive!")
+                    # Test with empty query to see total documents
+                    total_docs = await db.business_data.count_documents({})
+                    logger.info(f"📊 Total documents in database: {total_docs}")
+                
+                # Detect how many brands requested - CRITICAL: Use CURRENT message only, not conversation history
                 import re
-                numbers = re.findall(r'\b(\d+)\b', user_msg_lower + " " + chart_title_lower)
+                # Only use the CURRENT message to detect the limit, not previous messages
+                current_message = request.message or ""
+                numbers = re.findall(r'\b(\d+)\b', current_message.lower() + " " + chart_title_lower)
                 brand_limit = 20  # Default
                 if numbers:
                     try:
                         valid_numbers = [int(num) for num in numbers if 1 <= int(num) <= 50]
                         if valid_numbers:
                             brand_limit = max(valid_numbers)
+                            logger.info(f"✅ Detected brand limit from CURRENT message: {brand_limit}")
                     except:
                         pass
+                else:
+                    logger.info(f"ℹ️ No specific limit detected in current message, using default: {brand_limit}")
                 
                 # Log the detected limit for debugging
-                logger.info(f"Brand pivot table: Detected limit = {brand_limit} from message: {request.message}")
+                logger.info(f"Brand pivot table: Detected limit = {brand_limit} from CURRENT message: {request.message}")
+                logger.info(f"🔍 This pivot table will show top {brand_limit} brands (regenerated for this question)")
                 
                 pipeline_pivot = [
                     match_stage,
@@ -6605,8 +6724,19 @@ async def insights_chat(
                     {"$sort": {"Revenue": -1}},
                     {"$limit": brand_limit + 10}  # Get extra to ensure we have enough after filtering
                 ]
+                
+                logger.info(f"📊 Brand pipeline: {json.dumps(pipeline_pivot, default=str)[:300]}...")
+                
                 pivot_results = await db.business_data.aggregate(pipeline_pivot).to_list(brand_limit + 10)  # Get extra to filter nulls
+                logger.info(f"📊 Brand pivot results count: {len(pivot_results)} (will show top {brand_limit})")
+                
+                # CRITICAL: Reset pivot_table for this question to ensure fresh data
+                # Only populate with the exact number requested (brand_limit)
+                brands_added = 0
                 for item in pivot_results:
+                    if brands_added >= brand_limit:
+                        logger.info(f"✅ Reached requested limit of {brand_limit} brands, stopping")
+                        break
                     brand_name = str(item.get("_id", ""))
                     if brand_name and brand_name.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
@@ -6622,10 +6752,14 @@ async def insights_chat(
                             else:
                                 pivot_row["Margin_%"] = 0.0
                             pivot_table.append(pivot_row)
+                            brands_added += 1
+                            logger.info(f"  Added brand {brands_added}/{brand_limit}: {brand_name} - Revenue: {revenue}")
                             # Stop when we reach the requested limit
                             if len(pivot_table) >= brand_limit:
                                 logger.info(f"Brand pivot table: Reached limit of {brand_limit}, stopping")
                                 break
+                
+                logger.info(f"📊 Final brand pivot table has {len(pivot_table)} brands")
             
             # Check for trend questions (must have explicit trend keywords)
             elif ("trend" in user_msg_lower or "monthly" in user_msg_lower or "yearly" in user_msg_lower or "over time" in user_msg_lower or 

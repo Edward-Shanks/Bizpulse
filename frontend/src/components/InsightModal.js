@@ -16,12 +16,14 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   const [messages, setMessages] = useState([
     {
       role: 'ai',
-      content: `I'm analyzing ${chartTitle}. What would you like to know about this data?`
+      content: `I'm analyzing ${chartTitle}. What would you like to know about this data?`,
+      pivot_table: [] // Store pivot data with each message
     }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [lastPivot, setLastPivot] = useState([]);
+  const [pivotKey, setPivotKey] = useState(0); // Key to force re-render when pivot data changes
   const [streamingMessage, setStreamingMessage] = useState('');
   const [dynamicRecommendations, setDynamicRecommendations] = useState([]);
   const [dynamicFollowUps, setDynamicFollowUps] = useState([]);
@@ -132,7 +134,11 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
     const msgToSend = messageText || input.trim();
     if (!msgToSend) return;
 
-    const userMessage = { role: 'user', content: msgToSend };
+    // CRITICAL: Clear lastPivot when sending a new message to avoid stale data
+    setLastPivot([]);
+    setPivotKey(prev => prev + 1); // Increment key to force re-render
+    
+    const userMessage = { role: 'user', content: msgToSend, pivot_table: [] };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
@@ -183,7 +189,11 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
 
       const fullResponse = response.data?.response || 'No response';
       const pivot = response?.data?.data?.pivot_table || [];
-      setLastPivot(Array.isArray(pivot) ? pivot : []);
+      const pivotArray = Array.isArray(pivot) ? pivot : [];
+      
+      // CRITICAL: Update lastPivot with fresh data for this response
+      setLastPivot(pivotArray);
+      setPivotKey(prev => prev + 1); // Increment key to force re-render with new data
       
       // Extract dynamic recommendations and follow-up questions from API response
       const apiRecommendations = response?.data?.data?.recommendations || [];
@@ -200,8 +210,12 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       // Start streaming the message word by word
       setLoading(false);
       streamMessage(fullResponse, () => {
-        // When streaming completes, add the full message to chat
-        const aiMessage = { role: 'ai', content: fullResponse };
+        // When streaming completes, add the full message to chat with pivot data
+        const aiMessage = { 
+          role: 'ai', 
+          content: fullResponse,
+          pivot_table: pivotArray // Store pivot data with this message
+        };
         setMessages((prev) => [...prev, aiMessage]);
       });
     } catch (error) {
@@ -374,12 +388,13 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                 </div>
               ))}
 
-              {/* Visualization from AI data */}
-              {lastPivot && lastPivot.length > 0 && (
-                <div className="mb-6">
+              {/* Visualization from AI data - Show only for the most recent AI message */}
+              {/* CRITICAL: Use key prop to force re-render when pivot data changes */}
+              {lastPivot && lastPivot.length > 0 && messages.length > 0 && (
+                <div className="mb-6" key={`pivot-container-${pivotKey}`}>
                   <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <h4 className="text-sm font-semibold mb-3 text-gray-800">Visuals from AI data</h4>
-                    <AIDataVisuals pivot={lastPivot} />
+                    <AIDataVisuals pivot={lastPivot} key={`pivot-${pivotKey}`} />
                   </div>
                 </div>
               )}
