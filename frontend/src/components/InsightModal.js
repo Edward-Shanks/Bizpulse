@@ -191,9 +191,25 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       const pivot = response?.data?.data?.pivot_table || [];
       const pivotArray = Array.isArray(pivot) ? pivot : [];
       
+      // CRITICAL: Log pivot data for debugging
+      console.log('🔍 InsightModal - Received pivot data:', {
+        length: pivotArray.length,
+        firstItem: pivotArray[0],
+        question: msgToSend
+      });
+      
       // CRITICAL: Update lastPivot with fresh data for this response
-      setLastPivot(pivotArray);
-      setPivotKey(prev => prev + 1); // Increment key to force re-render with new data
+      // Increment pivotKey FIRST to force component unmount, then update pivot data
+      setPivotKey(prev => {
+        const newKey = prev + 1;
+        console.log('🔄 InsightModal - Incrementing pivotKey to:', newKey);
+        // Update pivot data after key change
+        setTimeout(() => {
+          setLastPivot(pivotArray);
+          console.log('✅ InsightModal - Updated lastPivot with', pivotArray.length, 'items for question:', msgToSend);
+        }, 10);
+        return newKey;
+      });
       
       // Extract dynamic recommendations and follow-up questions from API response
       const apiRecommendations = response?.data?.data?.recommendations || [];
@@ -214,9 +230,13 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         const aiMessage = { 
           role: 'ai', 
           content: fullResponse,
-          pivot_table: pivotArray // Store pivot data with this message
+          pivot_table: pivotArray, // Store pivot data with this message
+          messageId: Date.now() // Unique ID for this message to force re-render
         };
         setMessages((prev) => [...prev, aiMessage]);
+        // CRITICAL: Update lastPivot AFTER message is added to ensure visualization updates
+        setLastPivot(pivotArray);
+        setPivotKey(prev => prev + 1);
       });
     } catch (error) {
       console.error('InsightModal API Error:', error);
@@ -389,12 +409,18 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
               ))}
 
               {/* Visualization from AI data - Show only for the most recent AI message */}
-              {/* CRITICAL: Use key prop to force re-render when pivot data changes */}
+              {/* CRITICAL: Use pivotKey AND pivot data hash to force re-render */}
               {lastPivot && lastPivot.length > 0 && messages.length > 0 && (
-                <div className="mb-6" key={`pivot-container-${pivotKey}`}>
+                <div className="mb-6" key={`pivot-container-${pivotKey}-${lastPivot.length}`}>
                   <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <h4 className="text-sm font-semibold mb-3 text-gray-800">Visuals from AI data</h4>
-                    <AIDataVisuals pivot={lastPivot} key={`pivot-${pivotKey}`} />
+                    {/* CRITICAL: Create unique key from pivotKey + first item's brand/revenue to force re-render */}
+                    {lastPivot[0] && (
+                      <AIDataVisuals 
+                        pivot={lastPivot} 
+                        key={`pivot-${pivotKey}-${lastPivot.length}-${lastPivot[0].Brand || lastPivot[0].Category || lastPivot[0].Customer || 'default'}-${lastPivot[0].Revenue || 0}`} 
+                      />
+                    )}
                   </div>
                 </div>
               )}

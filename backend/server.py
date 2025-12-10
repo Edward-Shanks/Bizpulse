@@ -6689,25 +6689,43 @@ async def insights_chat(
                     total_docs = await db.business_data.count_documents({})
                     logger.info(f"📊 Total documents in database: {total_docs}")
                 
-                # Detect how many brands requested - CRITICAL: Use CURRENT message only, not conversation history
+                # Detect how many brands requested - CRITICAL: Prioritize user message over chart title
                 import re
-                # Only use the CURRENT message to detect the limit, not previous messages
-                current_message = request.message or ""
-                numbers = re.findall(r'\b(\d+)\b', current_message.lower() + " " + chart_title_lower)
+                # CRITICAL: Check user message FIRST, then chart title as fallback
+                # This ensures "Top 10" in message overrides "Top 15" in chart title
+                current_message = (request.message or "").lower()
+                chart_title_lower = (request.chart_title or "").lower()
+                
                 brand_limit = 20  # Default
-                if numbers:
+                
+                # First, try to find number in user message
+                message_numbers = re.findall(r'\b(\d+)\b', current_message)
+                if message_numbers:
                     try:
-                        valid_numbers = [int(num) for num in numbers if 1 <= int(num) <= 50]
-                        if valid_numbers:
-                            brand_limit = max(valid_numbers)
-                            logger.info(f"✅ Detected brand limit from CURRENT message: {brand_limit}")
+                        valid_message_numbers = [int(num) for num in message_numbers if 1 <= int(num) <= 50]
+                        if valid_message_numbers:
+                            brand_limit = max(valid_message_numbers)
+                            logger.info(f"✅ Detected brand limit from USER MESSAGE: {brand_limit} (message: '{request.message}')")
                     except:
                         pass
-                else:
-                    logger.info(f"ℹ️ No specific limit detected in current message, using default: {brand_limit}")
+                
+                # If no number in message, check chart title
+                if brand_limit == 20:  # Still default, check chart title
+                    chart_numbers = re.findall(r'\b(\d+)\b', chart_title_lower)
+                    if chart_numbers:
+                        try:
+                            valid_chart_numbers = [int(num) for num in chart_numbers if 1 <= int(num) <= 50]
+                            if valid_chart_numbers:
+                                brand_limit = max(valid_chart_numbers)
+                                logger.info(f"✅ Detected brand limit from CHART TITLE: {brand_limit} (chart: '{request.chart_title}')")
+                        except:
+                            pass
+                
+                if brand_limit == 20:
+                    logger.info(f"ℹ️ No specific limit detected, using default: {brand_limit}")
                 
                 # Log the detected limit for debugging
-                logger.info(f"Brand pivot table: Detected limit = {brand_limit} from CURRENT message: {request.message}")
+                logger.info(f"Brand pivot table: Final limit = {brand_limit} for message: '{request.message}'")
                 logger.info(f"🔍 This pivot table will show top {brand_limit} brands (regenerated for this question)")
                 
                 pipeline_pivot = [
