@@ -1,0 +1,123 @@
+[
+  {
+    "title": "Defend Core Grocery Revenue with Joint Business Plans for Top 3 Retailers",
+    "description": "Create 3 retailer-specific Joint Business Plans (JBPs) with Dunnes ROI, Musgrave ROI, and Tesco ROI to protect and grow Grocery channel revenue, focusing on Food and Household & Beauty ranges. Tactics: (1) Range & space optimization for top-margin SKUs; (2) co-funded in-store activations (end caps, POS, secondary sitings) around key trading peaks; (3) retailer-personalized promo plans with clear ROI targets; (4) quarterly performance reviews.\nExecution example: For each retailer, identify top 50 SKUs by revenue and margin, build promo calendar with volume and GP targets, and secure incremental features in exchange for agreed support budgets.",
+    "category": "retention",
+    "startDate": "2026-01-15",
+    "endDate": "2026-06-15",
+    "budget": 350000,
+    "impact": {
+      "value": 1600000,
+      "percentage": 7.5
+    },
+    "reasoning": "Grocery is the dominant channel with €20.42M revenue and ~68% of total revenue, and gross profit of €5.60M. Dunnes ROI, Musgrave ROI, and Tesco ROI together represent ~66%+ of total revenue (approx. €18.25M combined), making them critical to defend in the face of YoY revenue decline from €17.94M (2023) to €9.87M (2024), a -45% drop. Focusing on existing key accounts is more cost-effective than chasing new ones and is a recommended strategy in challenging economic conditions.[3] A 7.5% uplift on the Grocery business over 6 months (~€21M annualized baseline) equates conservatively to ~€1.6M incremental revenue, driven by increased in-store visibility and better promo planning. The budget (~1.7% of target incremental revenue) is realistic given retailer co-op norms and the business scale. This prioritizes proven value and retention rather than expensive broad acquisition.[3]",
+    "channels": [
+      "In-store POS & merchandising",
+      "Retailer media (Tesco/Dunnes/Musgrave)",
+      "Trade marketing",
+      "Category management & space planning"
+    ],
+    "aiScore": 90
+  },
+  {
+    "title": "Accelerate Online & DTC Expansion Leveraging Proven Performance Marketing Playbook",
+    "description": "Scale the prior DTC performance marketing and loyalty framework to grow Online channel revenue and diversify away from Grocery dependency. Tactics: (1) Replicate and expand Meta Ads and Google Shopping campaigns with improved creative and audiences; (2) add structured loyalty tiers with points on Food and Kinetica products, plus household auto-replenish offers; (3) implement email automation flows (welcome, abandon cart, replenishment, win-back); (4) test 2–3 mid-tier influencers in fitness and eco-living aligned with Kinetica and Green Aware brands.\nExecution example: Allocate budget across 40% Meta (prospecting/retargeting), 35% Google Shopping/Search, 15% influencers, 10% CRM tools and creative, with weekly ROAS tracking and bid optimization.",
+    "category": "acquisition",
+    "startDate": "2026-02-01",
+    "endDate": "2026-07-31",
+    "budget": 220000,
+    "impact": {
+      "value": 600000,
+      "percentage": 35.0
+    },
+    "reasoning": "The Online channel is relatively small (€0.75M revenue, €0.40M GP) but has strong gross margin (≈53%) and therefore high leverage for profitable growth. The past DTC performance marketing and loyalty campaign with a €120k budget projected €275k incremental revenue, a ~2.3x ROAS and ~36.8% uplift. Scaling budget by ~1.8x to €220k with better targeting and automation can realistically drive ~€600k incremental revenue (~35% uplift on an assumed €1.7M 12‑month online run-rate once modest organic growth is included). Using data and digital channels to re-allocate spend toward high-ROI performance campaigns is recommended in downturns and for pipeline growth.[2][3] Emphasis on loyalty and email flows supports both acquisition and repeat purchase without over-reliance on discounts.[4]",
+    "channels": [
+      "Meta Ads",
+      "Google Shopping & Search",
+      "Email/CRM",
+      "Influencer Marketing",
+      "On-site personalization"
+    ],
+    "aiScore": 88
+  },
+  {
+    "title": "Upsell and Cross-Sell in Wholesale & Convenience to Monetize Existing Accounts",
+    "description": "Launch a structured upsell and cross-sell program for Wholesale and Convenience customers, packaging Food, Household & Beauty, and Green Aware ranges into tailored bundles. Tactics: (1) Identify top 20 wholesale and convenience accounts by revenue and map current share of wallet; (2) create good-better-best case-size bundles and margin-friendly multipacks; (3) run a 3-month outbound campaign via sales reps and email to pitch bundles and volume incentives; (4) provide simple POS kits for independents highlighting value and eco credentials.\nExecution example: Set account-level targets of +10–15% case growth across identified customers, with rep-level incentives tied to incremental gross profit, not just volume.",
+    "category": "engagement",
+    "startDate": "2026-01-15",
+    "endDate": "2026-05-15",
+    "budget": 120000,
+    "impact": {
+      "value": 500000,
+      "percentage": 10.0
+    },
+    "reasoning": "Wholesale (€3.99M revenue, €1.38M GP) and Convenience (€1.31M revenue, €0.49M GP) together account for ~19% of revenue with solid margins and many repeat customers. Low-hanging revenue strategies emphasize upselling, cross-selling, and renewal optimization to grow revenue from existing customers with minimal acquisition cost.[6] Applying a 10% uplift target across their combined €5.3M base over 6 months yields ~€530k potential incremental revenue; adjusting slightly for execution risk we target €500k (~10% uplift). Structured bundles and value-focused offers resonate in price-sensitive environments and help combat volume decline without significant new customer acquisition spend.[2][5] The campaign mainly leverages existing salesforce and light trade marketing investment, so a €120k budget is realistic and high-ROI.",
+    "channels": [
+      "Field sales",
+      "Email to B2B buyers",
+      "Trade brochures & POS",
+      "WhatsApp/SMS for order prompts (where used)"
+    ],
+    "aiScore": 84
+  },
+  {
+    "title": "International & UK Growth Sprint Focused on High-Margin Brands",
+    "description": "Run a focused export growth initiative targeting the UK and key International customers, anchored on Kinetica and Green Aware as hero brands. Tactics: (1) Build tailored price and promo ladders to win incremental listings and distribution points; (2) launch digital demand-generation in target markets (search + social) geo-fenced to retailer catchments; (3) co-fund retailer.com media (sponsored products, banners) for UK; (4) quarterly business reviews with the UK and top export partners.\nExecution example: Start with the top 5 UK/International customers by revenue, co-create 6‑month growth plans aiming at more SKUs per store and more stores per banner, tracked monthly.",
+    "category": "acquisition",
+    "startDate": "2026-03-01",
+    "endDate": "2026-08-31",
+    "budget": 180000,
+    "impact": {
+      "value": 550000,
+      "percentage": 20.0
+    },
+    "reasoning": "International (€1.19M revenue, €0.28M GP) and the UK customer (€2.15M revenue, €0.63M GP) are already in the top 5 customers/channels, indicating proven product fit. Kinetica (€1.61M revenue, €0.63M GP) and Green Aware (€0.84M revenue, €0.27M GP) have strong margins and brand narratives suited for digital-led export growth. A 20% uplift on a ~€2.3–2.7M combined baseline over 6 months (~€550k) is attainable with focused distribution and media support. Export and international growth are ways to diversify when domestic revenue is under pressure, while still leveraging existing operational capabilities.[2][7] Budget allocation to geo-targeted digital media and retailer.com placements is more efficient than broad above-the-line when resources are constrained.[2]",
+    "channels": [
+      "Google Search (geo-targeted)",
+      "Meta Ads (geo-targeted)",
+      "Retailer.com media (UK)",
+      "Trade marketing with distributors"
+    ],
+    "aiScore": 80
+  },
+  {
+    "title": "Margin-Optimized Promo & Pricing Review Across Food and Household & Beauty",
+    "description": "Implement a data-driven promo and pricing program to protect and enhance profit margin across the two largest business lines (Food; Household & Beauty). Tactics: (1) Analyze historic promo performance by SKU, customer, and channel to identify unprofitable or low-ROI promotions; (2) redesign promo mechanics toward smaller but more frequent, margin-friendly offers; (3) introduce tiered discounts favoring multi-buy and trade-up; (4) roll out a central promo governance process with pre- and post-evaluations.\nExecution example: Over 3–4 promo cycles, test revised mechanics in Grocery and Wholesale, measure uplift vs. control, and codify a ‘promo playbook’ for future planning.",
+    "category": "engagement",
+    "startDate": "2026-01-20",
+    "endDate": "2026-06-20",
+    "budget": 90000,
+    "impact": {
+      "value": 400000,
+      "percentage": 1.5
+    },
+    "reasoning": "Overall profit margin is ~29.5% on €27.8M revenue. Optimizing pricing and promotions is a key lever to grow revenue and profit without major volume increases, especially in flat or declining environments.[1][6] Food (€19.30M revenue, €5.54M GP) and Household & Beauty (€4.15M revenue, €1.25M GP) together make up ~84% of revenue. Even a modest 1.5% revenue uplift (~€417k) plus a 0.5–1 percentage point margin improvement from better promo design would generate substantial incremental profit. Replacing blanket discounts with data-backed, value-based promotions aligns with best practices for maximizing revenue while addressing consumer price sensitivity through smart, targeted deals.[4][6] The budget mainly funds analytics support, promo testing, and internal tools, making it highly efficient relative to revenue impact.",
+    "channels": [
+      "In-store promotions",
+      "Retailer promo systems",
+      "Price file & trade terms management",
+      "BI/analytics tools"
+    ],
+    "aiScore": 82
+  },
+  {
+    "title": "Customer Retention & Re‑Activation Program for Top 10 Customers",
+    "description": "Deploy a structured retention and re-activation program for the top 10 customers (including Dunnes ROI, Musgrave ROI, Tesco ROI, UK, BWG), focused on reducing churn risk and recapturing lost volume. Tactics: (1) build health scores using YoY volume, margin, and assortment depth; (2) identify 3–4 at‑risk accounts and design tailored offers (exclusive SKUs, joint marketing, service enhancements); (3) run a re‑engagement cadence (quarterly business reviews, exec‑to‑exec meetings, targeted value stories); (4) launch a simple B2B loyalty framework (retro rebates tied to incremental cases or revenue bands).\nExecution example: Assign account owners clear retention KPIs and track them via a monthly dashboard, with escalation paths for accounts showing >10% YoY decline.",
+    "category": "retention",
+    "startDate": "2026-02-01",
+    "endDate": "2026-07-31",
+    "budget": 80000,
+    "impact": {
+      "value": 450000,
+      "percentage": 2.0
+    },
+    "reasoning": "YoY revenue has declined materially between 2023 (€17.94M) and 2024 (€9.87M), indicating either demand pressure, distribution loss, or reduced sell-in from key accounts. Focusing on customer retention is widely recognized as more cost-effective than acquisition during downturns and is critical for stabilizing revenue.[3][4] The top 5 customers already account for a large portion of revenue (over €22M), so small improvements in retention and reactivation of lost lines can materially impact results. A conservative 2% uplift on the total revenue base (~€560k) is achievable via reduced churn and regained listings, approximated here as €450k to reflect execution risk. Low-hanging revenue strategies emphasize renewal optimization and customer success as primary levers in such situations.[6] The program requires limited media spend, focusing instead on structured account management and customer success practices, hence a modest €80k budget.",
+    "channels": [
+      "Account management & sales",
+      "Executive business reviews",
+      "Email & direct communication",
+      "Trade terms & loyalty mechanics"
+    ],
+    "aiScore": 86
+  }
+]

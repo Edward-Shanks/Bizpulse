@@ -1,0 +1,49 @@
+"""
+User-related Pydantic models
+"""
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional
+from datetime import datetime, timezone
+import uuid
+
+class User(BaseModel):
+    """User model for database"""
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    email: str
+    password_hash: str
+    name: Optional[str] = None
+    department: Optional[str] = None  # sales, operations, finance, hr, marketing, technology
+    role: Optional[str] = None  # VP, Director, Manager, Team Member
+    status: str = "active"  # active, inactive
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LoginRequest(BaseModel):
+    """Login request model"""
+    email: str
+    password: str
+
+class LoginResponse(BaseModel):
+    """Login response model"""
+    token: str
+    email: str
+
+class SignupRequest(BaseModel):
+    """Signup request model"""
+    email: str
+    password: str
+    name: str
+    department: str  # sales, operations, finance, hr, marketing, technology
+    role: str  # VP, Director, Manager, Team Member
+
+class UserResponse(BaseModel):
+    """User response model"""
+    id: str
+    email: str
+    name: Optional[str] = None
+    department: Optional[str] = None
+    role: Optional[str] = None
+    status: str
+
+
+
