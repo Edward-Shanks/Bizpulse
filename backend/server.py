@@ -6447,7 +6447,34 @@ async def insights_chat(
         user_message = request.message or ""
         year_pattern = r'\b(20\d{2})\b'  # Match years like 2023, 2024, 2025
         years_in_message = re.findall(year_pattern, user_message)
-        requested_years = []  # Initialize to avoid scope issues
+        # Convert extracted years to integers and filter valid years (2000-2100)
+        requested_years = [int(y) for y in years_in_message if 2000 <= int(y) <= 2100]
+        
+        # Extract months from user message if mentioned (e.g., "January", "Jan", "March", "Mar")
+        month_mapping = {
+            'january': 'January', 'jan': 'January',
+            'february': 'February', 'feb': 'February',
+            'march': 'March', 'mar': 'March',
+            'april': 'April', 'apr': 'April',
+            'may': 'May',
+            'june': 'June', 'jun': 'June',
+            'july': 'July', 'jul': 'July',
+            'august': 'August', 'aug': 'August',
+            'september': 'September', 'sep': 'September', 'sept': 'September',
+            'october': 'October', 'oct': 'October',
+            'november': 'November', 'nov': 'November',
+            'december': 'December', 'dec': 'December'
+        }
+        user_msg_lower_for_months = user_message.lower()
+        requested_months = []
+        for month_key, month_full in month_mapping.items():
+            # Match whole words only to avoid false positives (e.g., "march" in "marching")
+            # Since user_msg_lower_for_months is already lowercase, we don't need IGNORECASE flag
+            pattern = r'\b' + re.escape(month_key) + r'\b'
+            if re.search(pattern, user_msg_lower_for_months):
+                if month_full not in requested_months:
+                    requested_months.append(month_full)
+        logger.info(f"📅 Extracted months from message: {requested_months if requested_months else 'None'}")
         
         # Build MongoDB query from context
         context_query = await build_mongodb_query_from_context(request.context or {})
@@ -6582,6 +6609,12 @@ async def insights_chat(
         if years_in_message and requested_years:
             year_context = f"CRITICAL: The user specifically asked about year(s) {', '.join(map(str, requested_years))}. You MUST focus your analysis ONLY on data from these year(s). Do NOT include data from other years unless explicitly requested. "
         
+        # Check if user asked for a specific month
+        month_context = ""
+        if requested_months:
+            month_list_str = ', '.join(requested_months)
+            month_context = f"CRITICAL: The user specifically asked about month(s) {month_list_str}. You MUST focus your analysis ONLY on data from these month(s). Do NOT include data from other months unless explicitly requested. "
+        
         # Enhanced system context for comprehensive queries
         email_context = ""
         if "email" in user_msg_lower or "write" in user_msg_lower and "email" in user_msg_lower:
@@ -6607,6 +6640,7 @@ async def insights_chat(
             "When suggesting data analysis, say 'analyze your sales data' or 'review your performance metrics', NOT 'query the database' or 'use MongoDB'. "
             "When suggesting automation, say 'automate your reporting' or 'set up automated alerts', NOT 'deploy MongoDB-powered analytics' or 'use aggregation framework'. "
             f"{year_context}"
+            f"{month_context}"
             f"{email_context}"
             f"{comparison_context}"
             f"{quarterly_context}"
