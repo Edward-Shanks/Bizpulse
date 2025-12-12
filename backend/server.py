@@ -1269,10 +1269,12 @@ async def get_filter_options(
     channels: str = None,
     brands: str = None,
     categories: str = None,
+    customers: str = None,
+    sub_categories: str = None,
     email: str = Depends(get_current_user)
 ):
     """Get dynamic filter options based on current filter selections (cascading filters)"""
-    logger.info(f"🔍 GET /api/filters/options called with filters: years={years}, months={months}, businesses={businesses}, channels={channels}, brands={brands}, categories={categories}")
+    logger.info(f"🔍 GET /api/filters/options called with filters: years={years}, months={months}, businesses={businesses}, channels={channels}, brands={brands}, categories={categories}, customers={customers}, sub_categories={sub_categories}")
     try:
         # Helper function to parse comma-separated lists
         def parse_list(value: Optional[str], cast=None):
@@ -1310,16 +1312,50 @@ async def get_filter_options(
         brand_list = parse_list(brands)
         if brand_list:
             query['Brand'] = {'$in': brand_list}
+        
+        customer_list = parse_list(customers)
+        if customer_list:
+            query['Customer'] = {'$in': customer_list}
+        
+        sub_category_list = parse_list(sub_categories)
+        if sub_category_list:
+            # Handle both Sub_Cat and Sub_Category fields
+            if '$or' in query:
+                existing_or = query.pop('$or')
+                query['$and'] = [
+                    {'$or': existing_or},
+                    {'$or': [
+                        {'Sub_Cat': {'$in': sub_category_list}},
+                        {'Sub_Category': {'$in': sub_category_list}}
+                    ]}
+                ]
+            else:
+                query['$or'] = [
+                    {'Sub_Cat': {'$in': sub_category_list}},
+                    {'Sub_Category': {'$in': sub_category_list}}
+                ]
 
         category_list = parse_list(categories)
         if category_list:
             # Normalize category names for query matching (case-insensitive)
             normalized_categories = [normalize_category_name(cat) for cat in category_list]
-            # Use case-insensitive regex matching to catch variations
-            category_regex_list = []
-            for cat in normalized_categories:
-                category_regex_list.append({'$regex': f'^{re.escape(cat)}$', '$options': 'i'})
-            query['Category'] = {'$in': category_regex_list}
+            # Use $or with $regex for multiple categories (MongoDB doesn't support $in with regex)
+            if len(normalized_categories) == 1:
+                escaped_cat = re.escape(normalized_categories[0])
+                query['Category'] = {'$regex': f'^{escaped_cat}$', '$options': 'i'}
+            else:
+                category_or_conditions = [
+                    {'Category': {'$regex': f'^{re.escape(cat)}$', '$options': 'i'}} 
+                    for cat in normalized_categories
+                ]
+                if '$or' in query:
+                    existing_or = query.pop('$or')
+                    query['$and'] = [
+                        {'$or': existing_or},
+                        {'$or': category_or_conditions}
+                    ]
+                else:
+                    query['$or'] = category_or_conditions
         
         logger.info(f"📊 Building dynamic filter options with query: {query}")
         
@@ -1350,21 +1386,21 @@ async def get_filter_options(
         else:
             businesses_pipeline = [{"$group": {"_id": "$Business"}}]
         businesses_results = await db.business_data.aggregate(businesses_pipeline).to_list(1000)
-        businesses = [str(item['_id']) for item in businesses_results if item.get('_id') is not None]
+        businesses = sorted([str(item['_id']) for item in businesses_results if item.get('_id') and str(item['_id']).strip() and str(item['_id']) not in ["", " ", "Unknown", "null", "None"]])
         
         # Channels: Get all channels that exist given current filters (excluding Channel filter itself)
         channels_query = {k: v for k, v in query.items() if k != 'Channel'}
         channels_match = {"$match": channels_query} if channels_query else {"$match": {}}
         channels_pipeline = [channels_match, {"$group": {"_id": "$Channel"}}]
         channels_results = await db.business_data.aggregate(channels_pipeline).to_list(1000)
-        channels = [item['_id'] for item in channels_results if item.get('_id') is not None]
+        channels = sorted([str(item['_id']) for item in channels_results if item.get('_id') and str(item['_id']).strip() and str(item['_id']) not in ["", " ", "Unknown", "null", "None"]])
         
         # Brands: Get all brands that exist given current filters (excluding Brand filter itself)
         brands_query = {k: v for k, v in query.items() if k != 'Brand'}
         brands_match = {"$match": brands_query} if brands_query else {"$match": {}}
         brands_pipeline = [brands_match, {"$group": {"_id": "$Brand"}}]
         brands_results = await db.business_data.aggregate(brands_pipeline).to_list(1000)
-        brands = [item['_id'] for item in brands_results if item.get('_id') is not None]
+        brands = sorted([str(item['_id']) for item in brands_results if item.get('_id') and str(item['_id']).strip() and str(item['_id']).lower() not in ["unknown", "none", "null", ""]])
         
         # Categories: Get all categories that exist given current filters (excluding Category filter itself)
         categories_query = {k: v for k, v in query.items() if k != 'Category'}
@@ -1376,49 +1412,74 @@ async def get_filter_options(
         categories_normalized = {}
         for cat in categories_raw:
             normalized = normalize_category_name(str(cat))
-            if normalized not in categories_normalized:
+            if normalized and normalized not in categories_normalized:
                 categories_normalized[normalized] = cat
-        categories = list(categories_normalized.keys())
+        categories = sorted(list(categories_normalized.keys()))
         
-        # Customers: Get all customers that exist given current filters
-        customers_pipeline = [match_stage, {"$group": {"_id": "$Customer"}}]
+        # Customers: Get all customers that exist given current filters (excluding Customer filter itself)
+        customers_query = {k: v for k, v in query.items() if k != 'Customer'}
+        customers_match = {"$match": customers_query} if customers_query else {"$match": {}}
+        customers_pipeline = [
+            customers_match,
+            {"$match": {"Customer": {"$ne": None, "$exists": True, "$nin": ["", " ", "Unknown", "null", "None", None]}}},
+            {"$group": {"_id": "$Customer"}},
+            {"$sort": {"_id": 1}}
+        ]
         customers_results = await db.business_data.aggregate(customers_pipeline).to_list(1000)
-        customers = [item['_id'] for item in customers_results if item.get('_id') is not None]
+        customers = sorted([str(item['_id']) for item in customers_results if item.get('_id') and str(item['_id']).strip() and str(item['_id']).lower() not in ["unknown", "none", "null"]])
         
-        # Sub Categories: Get all sub categories that exist given current filters
-        sub_categories_pipeline = [match_stage, {"$group": {"_id": "$Sub_Cat"}}]
+        # Sub Categories: Get all sub categories that exist given current filters (excluding Sub_Cat/Sub_Category filter)
+        sub_categories_query = {k: v for k, v in query.items() if k not in ['Sub_Cat', 'Sub_Category']}
+        sub_categories_match = {"$match": sub_categories_query} if sub_categories_query else {"$match": {}}
+        sub_categories_pipeline = [
+            sub_categories_match,
+            {
+                "$match": {
+                    "$or": [
+                        {"Sub_Cat": {"$ne": None, "$exists": True, "$nin": ["", " ", "Unknown", "null", "None", None]}},
+                        {"Sub_Category": {"$ne": None, "$exists": True, "$nin": ["", " ", "Unknown", "null", "None", None]}}
+                    ]
+                }
+            },
+            {
+                "$project": {
+                    "sub_cat": {"$ifNull": ["$Sub_Cat", "$Sub_Category"]}
+                }
+            },
+            {"$group": {"_id": "$sub_cat"}},
+            {"$sort": {"_id": 1}}
+        ]
         sub_categories_results = await db.business_data.aggregate(sub_categories_pipeline).to_list(1000)
-        sub_categories = [item['_id'] for item in sub_categories_results if item.get('_id') is not None]
+        sub_categories = sorted([str(item['_id']) for item in sub_categories_results if item.get('_id') and str(item['_id']).strip() and str(item['_id']).lower() not in ["unknown", "none", "null"]])
         
-        # Filter out None values
-        months = [m for m in months if m is not None]
-        businesses = [b for b in businesses if b is not None]
-        channels = [c for c in channels if c is not None]
-        customers = [c for c in customers if c is not None]
-        brands = [b for b in brands if b is not None]
-        categories = [c for c in categories if c is not None]
-        sub_categories = [s for s in sub_categories if s is not None]
+        # Filter out None, empty, and invalid values (maintain sorting)
+        months = [m for m in months if m is not None and str(m).strip() and str(m) not in ["", " ", "Unknown", "null", "None"]]
+        # businesses, channels, brands, categories, customers, sub_categories already filtered and sorted above
         
-        # Sort months chronologically (handle both full names and abbreviations)
-        month_order_full = [
-            'January', 'February', 'March', 'April', 'May', 'June',
-            'July', 'August', 'September', 'October', 'November', 'December'
-        ]
-        month_order_abbr = [
-            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-        ]
+        # Sort months chronologically and format as abbreviations
+        month_order = {
+            'January': 1, 'February': 2, 'March': 3, 'April': 4,
+            'May': 5, 'June': 6, 'July': 7, 'August': 8,
+            'September': 9, 'October': 10, 'November': 11, 'December': 12,
+            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
+            'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
+            'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        }
         
         def get_month_index(month):
             """Get month index for sorting"""
-            if month in month_order_full:
-                return month_order_full.index(month)
-            elif month in month_order_abbr:
-                return month_order_abbr.index(month)
-            else:
-                return 999
+            return month_order.get(str(month), 999)
         
-        months = sorted(months, key=get_month_index)
+        months_sorted = sorted(months, key=get_month_index)
+        
+        # Format months as abbreviations
+        month_map = {
+            'January': 'Jan', 'February': 'Feb', 'March': 'Mar',
+            'April': 'Apr', 'May': 'May', 'June': 'Jun',
+            'July': 'Jul', 'August': 'Aug', 'September': 'Sep',
+            'October': 'Oct', 'November': 'Nov', 'December': 'Dec'
+        }
+        months = [month_map.get(str(m), str(m)[:3] if len(str(m)) >= 3 else str(m)) for m in months_sorted]
         
         result = {
             "years": years,
@@ -6481,6 +6542,24 @@ async def insights_chat(
         
         # Parse query from natural language message
         parsed_query = await parse_query_from_natural_language(user_message, db)
+        
+        # Add extracted months to parsed query if they were found in the message
+        # This ensures months mentioned in the message are actually used in the MongoDB query
+        if requested_months:
+            logger.info(f"📅 Adding extracted months to query: {requested_months}")
+            if 'Month_Name' in parsed_query:
+                # Merge with existing month filter
+                existing_months = parsed_query['Month_Name'].get('$in', [])
+                if isinstance(existing_months, list):
+                    # Combine and deduplicate
+                    combined_months = list(set(existing_months + requested_months))
+                    parsed_query['Month_Name'] = {'$in': combined_months}
+                    logger.info(f"📅 Merged months: {combined_months}")
+                else:
+                    parsed_query['Month_Name'] = {'$in': requested_months}
+            else:
+                parsed_query['Month_Name'] = {'$in': requested_months}
+                logger.info(f"📅 Added months to query: {requested_months}")
         
         # Merge context query with parsed query (parsed query takes precedence for filters it specifies)
         query = context_query.copy()

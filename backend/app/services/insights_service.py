@@ -66,6 +66,24 @@ class InsightsService:
             # Parse query from natural language message
             parsed_query = await parse_query_from_natural_language(user_message, self.db)
             
+            # Add extracted months to parsed query if they were found in the message
+            # This ensures months mentioned in the message are actually used in the MongoDB query
+            if requested_months:
+                logger.info(f"📅 Adding extracted months to query: {requested_months}")
+                if 'Month_Name' in parsed_query:
+                    # Merge with existing month filter
+                    existing_months = parsed_query['Month_Name'].get('$in', [])
+                    if isinstance(existing_months, list):
+                        # Combine and deduplicate
+                        combined_months = list(set(existing_months + requested_months))
+                        parsed_query['Month_Name'] = {'$in': combined_months}
+                        logger.info(f"📅 Merged months: {combined_months}")
+                    else:
+                        parsed_query['Month_Name'] = {'$in': requested_months}
+                else:
+                    parsed_query['Month_Name'] = {'$in': requested_months}
+                    logger.info(f"📅 Added months to query: {requested_months}")
+            
             # Merge context query with parsed query (parsed query takes precedence for filters it specifies)
             query = context_query.copy()
             for key, value in parsed_query.items():
@@ -159,8 +177,10 @@ class InsightsService:
                     is_yearly=is_yearly,
                     is_metrics=is_metrics
                 )
-                logger.info(f"📈 Data context length: {len(data_context)} characters")
-                logger.info(f"📈 Data context preview: {data_context[:500]}...")
+            logger.info(f"📈 Data context length: {len(data_context)} characters")
+            logger.info(f"📈 Data context preview: {data_context[:500]}...")
+            logger.info(f"📅 Year context added: {bool(year_context)}")
+            logger.info(f"📅 Month context added: {bool(month_context)}")
                 
                 # If data context shows very little data, log a warning
                 if "Overall Totals" in data_context:
