@@ -489,13 +489,27 @@ async def get_customer_insights_mongodb(
     ]
     top_products = await db.shopify_data.aggregate(top_products_pipeline).to_list(15)
     
-    # 18. Day of Week Analysis (requires Day field to be a date)
+    # 18. Day of Week Analysis (handles both date and string date fields)
     day_of_week_pipeline = [
-        {'$match': {**base_match, 'Day': {'$ne': None, '$exists': True, '$type': 'date'}}},
+        {'$match': {**base_match, 'Day': {'$ne': None, '$exists': True}}},
         {'$project': {
-            'dayOfWeek': {'$dayOfWeek': '$Day'},
+            # Convert Day to date if it's a string, otherwise use as-is
+            'dayDate': {
+                '$cond': {
+                    'if': {'$eq': [{'$type': '$Day'}, 'string']},
+                    'then': {'$dateFromString': {'dateString': '$Day', 'onError': None}},
+                    'else': '$Day'
+                }
+            },
             'Total sales': {'$toDouble': {'$ifNull': ['$Total sales', 0]}},
             'Orders': {'$toDouble': {'$ifNull': ['$Orders', 0]}},
+            'Customer email': 1
+        }},
+        {'$match': {'dayDate': {'$ne': None, '$type': 'date'}}},
+        {'$project': {
+            'dayOfWeek': {'$dayOfWeek': '$dayDate'},
+            'Total sales': 1,
+            'Orders': 1,
             'Customer email': 1
         }},
         {'$group': {

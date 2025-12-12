@@ -390,10 +390,27 @@ class AnalyticsService:
         totals_result = await self.business_data_repo.aggregate(pipeline_totals, limit=1)
         totals = totals_result[0] if totals_result else {}
         
-        active_brands = sum(
-            1 for item in brand_performance
-            if item["Brand"] != "Unknown" and item["Revenue"] > 0
-        )
+        # Count all distinct brands that have data (not just revenue > 0)
+        # This includes brands with 0 revenue but have units, profit, or other data
+        # Exclude only "Unknown", null, empty, or invalid brand names
+        active_brands = 0
+        excluded_brands = []
+        for item in brand_performance:
+            brand = item.get("Brand")
+            if brand:
+                brand_str = str(brand).strip()
+                if (brand_str and 
+                    brand_str != "Unknown" and 
+                    brand_str.lower() not in ["unknown", "none", "null", ""]):
+                    active_brands += 1
+                else:
+                    excluded_brands.append(brand_str)
+            else:
+                excluded_brands.append("None/Null")
+        
+        # Log excluded brands for debugging
+        if excluded_brands:
+            logger.info(f"⚠️ Excluded {len(excluded_brands)} brand(s) from active_brands count: {excluded_brands}")
         
         return {
             "brand_performance": brand_performance,

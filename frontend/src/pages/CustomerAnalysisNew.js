@@ -49,6 +49,7 @@ const CustomerAnalysis = () => {
         if (selectedBusinesses.length) params.set('businesses', selectedBusinesses.join(','));
         if (selectedChannels.length) params.set('channels', selectedChannels.join(','));
         if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
+        if (selectedCustomers.length) params.set('customers', selectedCustomers.join(','));
 
         const url = `${API}/filters/options${params.toString() ? `?${params.toString()}` : ''}`;
         const res = await axios.get(url, {
@@ -89,11 +90,24 @@ const CustomerAnalysis = () => {
             setSelectedBrands(validBrands);
           }
         }
+        // Preserve customer selection even if not in cascaded filter results
+        // This allows users to keep filters applied even when they result in 0 data
+        // Only validate on initial load when filters object is null/empty
+        // After that, preserve user's explicit selections
         if (selectedCustomers.length > 0) {
-          const validCustomers = selectedCustomers.filter(c => newFilters.customers.includes(c));
-          if (validCustomers.length !== selectedCustomers.length) {
-            setSelectedCustomers(validCustomers);
+          // Only validate if this is the initial filter load (filters is null/empty)
+          // This prevents removing valid selections when cascading filters update the options
+          const isInitialLoad = !filters || !filters.customers || filters.customers.length === 0;
+          
+          if (isInitialLoad) {
+            // On initial load, validate against the returned customer list
+            const validCustomers = selectedCustomers.filter(c => newFilters.customers.includes(c));
+            if (validCustomers.length !== selectedCustomers.length) {
+              setSelectedCustomers(validCustomers);
+            }
           }
+          // Otherwise, preserve the user's selection - don't remove customers even if
+          // they're not in the cascaded results (e.g., Austria not in Feb data)
         }
       } catch (error) {
         console.error('Failed to load filters', error);

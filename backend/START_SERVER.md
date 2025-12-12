@@ -1,90 +1,99 @@
-# How to Start the New Backend Server
+# How to Start the Server
 
-## Step-by-Step Instructions
+## ⚠️ Important: Always Activate Virtual Environment First!
 
-### 1. Open PowerShell or Command Prompt
-Navigate to the backend directory:
+The server **MUST** be run with the virtual environment activated, otherwise you'll get `ModuleNotFoundError`.
+
+## Method 1: Use the Startup Script (Recommended)
+
 ```powershell
-cd "C:\Users\Sumit Mishra\Documents\Bizpulse\backend"
+.\start_new_server.ps1
 ```
 
-### 2. Activate Virtual Environment
+This script will:
+- ✅ Check if venv exists
+- ✅ Activate the virtual environment automatically
+- ✅ Start the server with reload enabled
 
-**For PowerShell:**
+## Method 2: Manual Activation
+
+### Step 1: Activate Virtual Environment
 ```powershell
 .\venv\Scripts\Activate.ps1
 ```
 
-**For Command Prompt (cmd):**
-```cmd
-venv\Scripts\activate.bat
-```
-
-**Alternative (if PowerShell execution policy blocks it):**
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\venv\Scripts\Activate.ps1
-```
-
-### 3. Verify Venv is Activated
-You should see `(venv)` at the beginning of your command prompt:
+You should see `(venv)` in your prompt:
 ```
 (venv) PS C:\Users\Sumit Mishra\Documents\Bizpulse\backend>
 ```
 
-### 4. Start the Server
+### Step 2: Start Server
 ```powershell
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 5. Verify Server is Running
-You should see output like:
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process
-INFO:     Started server process
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-```
-
-## Quick Test Commands
-
-Once the server is running, test the endpoints:
-
-### Test Health Check
+Or with auto-reload (for development):
 ```powershell
-curl http://localhost:8000/health
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Test Root Endpoint
+## Method 3: Direct Python Execution
+
+If you want to run it directly:
 ```powershell
-curl http://localhost:8000/
+.\venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-### Test Login (Get Token)
+## Verify Virtual Environment is Active
+
+Check if you're using the venv Python:
 ```powershell
-curl -X POST "http://localhost:8000/api/auth/login" -H "Content-Type: application/json" -d '{\"email\": \"data.admin@thrivebrands.ai\", \"password\": \"ThriveBrands@2024\"}'
+python -c "import sys; print(sys.executable)"
+```
+
+Should show:
+```
+C:\Users\Sumit Mishra\Documents\Bizpulse\backend\venv\Scripts\python.exe
 ```
 
 ## Troubleshooting
 
-### If venv activation fails:
-1. Make sure you're in the `backend` directory
-2. Check that `venv` folder exists
-3. Try using Command Prompt instead of PowerShell
+### Error: `ModuleNotFoundError: No module named 'fastapi'`
 
-### If server fails to start:
-1. Check that all dependencies are installed: `pip install -r requirements.txt`
-2. Verify `.env` file exists and has correct `MONGO_URL` and `DB_NAME`
-3. Check MongoDB is running and accessible
+**Solution:** Virtual environment is not activated!
+1. Activate venv: `.\venv\Scripts\Activate.ps1`
+2. Verify: `python -c "import fastapi; print('OK')"`
+3. If still fails, reinstall: `pip install -r requirements.txt`
 
-### If you see import errors:
-1. Make sure venv is activated (you should see `(venv)` in prompt)
-2. Reinstall dependencies: `pip install -r requirements.txt`
+### Error: `[Errno 10048] error while attempting to bind on address ('0.0.0.0', 8000)`
 
-## Stopping the Server
+**Solution:** Port 8000 is already in use!
+1. Stop existing server: `.\stop_server.ps1`
+2. Or use a different port: `--port 8001`
 
-Press `CTRL+C` in the terminal where the server is running.
+### Error: `ExecutionPolicy` error when activating venv
 
+**Solution:** Run this command once:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
+## Quick Commands Reference
 
+```powershell
+# Activate venv
+.\venv\Scripts\Activate.ps1
+
+# Start server (with reload)
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Stop server
+.\stop_server.ps1
+
+# Check if server is running
+curl http://localhost:8000/health
+```
+
+---
+
+**Remember:** Always activate the virtual environment before running Python commands!

@@ -22,6 +22,8 @@ async def get_filter_options(
     channels: Optional[str] = Query(None),
     brands: Optional[str] = Query(None),
     categories: Optional[str] = Query(None),
+    customers: Optional[str] = Query(None),
+    sub_categories: Optional[str] = Query(None),
     email: str = Depends(get_current_user),
     db: AsyncIOMotorDatabase = Depends(get_database)
 ):
@@ -34,7 +36,9 @@ async def get_filter_options(
             businesses=businesses,
             channels=channels,
             brands=brands,
-            categories=categories
+            categories=categories,
+            customers=customers,
+            sub_categories=sub_categories
         )
     except Exception as e:
         logger.error(f"Filter options error: {str(e)}")

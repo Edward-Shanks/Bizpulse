@@ -161,12 +161,21 @@ def build_analytics_query(
         if category_list:
             # Normalize categories for case-insensitive matching
             from app.utils.helpers import normalize_category_name
+            import re
             normalized_categories = [normalize_category_name(cat) for cat in category_list]
-            # Use case-insensitive regex matching
-            category_regex_list = []
-            for cat in normalized_categories:
-                category_regex_list.append({'$regex': f'^{cat}$', '$options': 'i'})
-            query['Category'] = {'$in': category_regex_list}
+            # Use $or with regex for case-insensitive matching (MongoDB doesn't support $in with regex)
+            # Escape special regex characters
+            if len(normalized_categories) == 1:
+                # Single category - use regex directly with escaped special chars
+                escaped_cat = re.escape(normalized_categories[0])
+                query['Category'] = {'$regex': f'^{escaped_cat}$', '$options': 'i'}
+            else:
+                # Multiple categories - use $or with regex
+                category_or_conditions = [
+                    {'Category': {'$regex': f'^{re.escape(cat)}$', '$options': 'i'}} 
+                    for cat in normalized_categories
+                ]
+                query['$or'] = category_or_conditions
     
     if customers:
         customer_list = parse_list(customers)
@@ -177,10 +186,20 @@ def build_analytics_query(
         subcategory_list = parse_list(sub_categories)
         if subcategory_list:
             # Handle both Sub_Cat (normalized) and Sub_Category (legacy)
-            query['$or'] = [
+            # If $or already exists (from categories), combine with $and
+            subcat_or = [
                 {'Sub_Cat': {'$in': subcategory_list}},
                 {'Sub_Category': {'$in': subcategory_list}},
             ]
+            if '$or' in query:
+                # Categories already created $or, combine with $and
+                existing_or = query.pop('$or')
+                query['$and'] = [
+                    {'$or': existing_or},
+                    {'$or': subcat_or}
+                ]
+            else:
+                query['$or'] = subcat_or
     
     return query
 
