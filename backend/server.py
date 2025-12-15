@@ -4869,8 +4869,19 @@ async def _get_customer_insights_csv_legacy(
         platform_analysis.columns = ['platform', 'sales', 'orders', 'customers']
         platform_analysis = platform_analysis[platform_analysis['platform'].notna()].sort_values('sales', ascending=False).head(10)
         
-        # 10. Traffic Type Performance
-        traffic_type = df.groupby('Traffic type').agg({
+        # 10. Traffic Type Performance (normalize case to prevent duplicates like "Unknown" vs "unknown")
+        def normalize_traffic_type(value):
+            """Normalize traffic type to title case, with special handling for 'unknown'"""
+            if pd.isna(value) or value is None or str(value).strip() == '':
+                return 'Unknown'
+            value_str = str(value).strip()
+            if value_str.lower() == 'unknown':
+                return 'Unknown'  # Standardize to "Unknown" with capital U
+            # Convert to title case (first letter uppercase, rest lowercase)
+            return value_str[0].upper() + value_str[1:].lower() if len(value_str) > 1 else value_str.upper()
+        
+        df['Traffic type normalized'] = df['Traffic type'].apply(normalize_traffic_type)
+        traffic_type = df.groupby('Traffic type normalized').agg({
             'Total sales': 'sum',
             'Orders': 'sum',
             'Customer email': 'nunique'

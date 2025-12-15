@@ -355,11 +355,36 @@ async def get_customer_insights_mongodb(
     ]
     platform_analysis = await db.shopify_data.aggregate(platform_pipeline).to_list(10)
     
-    # 11. Traffic Type
+    # 11. Traffic Type (normalize case to prevent duplicates like "Unknown" vs "unknown")
+    # First, get all traffic types and normalize them
     traffic_type_pipeline = [
         {'$match': {**base_match, 'Traffic type': {'$ne': None, '$exists': True}}},
+        {'$addFields': {
+            'traffic_type_lower': {'$toLower': {'$ifNull': ['$Traffic type', '']}},
+            'traffic_type_original': {'$ifNull': ['$Traffic type', '']}
+        }},
+        {'$addFields': {
+            'normalized_traffic_type': {
+                '$cond': {
+                    'if': {
+                        '$or': [
+                            {'$eq': ['$traffic_type_lower', 'unknown']},
+                            {'$eq': ['$traffic_type_original', '']},
+                            {'$eq': ['$traffic_type_original', None]}
+                        ]
+                    },
+                    'then': 'Unknown',  # Standardize to "Unknown" with capital U
+                    'else': {
+                        '$concat': [
+                            {'$toUpper': {'$substr': ['$traffic_type_original', 0, 1]}},  # First letter uppercase
+                            {'$toLower': {'$substr': ['$traffic_type_original', 1, {'$strLenCP': '$traffic_type_original'}]}}  # Rest lowercase
+                        ]
+                    }
+                }
+            }
+        }},
         {'$group': {
-            '_id': '$Traffic type',
+            '_id': '$normalized_traffic_type',
             'sales': {'$sum': {'$toDouble': {'$ifNull': ['$Total sales', 0]}}},
             'orders': {'$sum': {'$toDouble': {'$ifNull': ['$Orders', 0]}}},
             'customers': {'$addToSet': '$Customer email'}
