@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown, X, Search } from 'lucide-react';
 
 const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange, placeholder = 'Select...' }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -43,6 +44,18 @@ const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange,
     ? selectedValues[0] 
     : `${selectedValues.length} selected`;
 
+  // Filter options based on search query
+  const filteredOptions = options.filter(option =>
+    option.toString().toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Reset search when dropdown closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchQuery('');
+    }
+  }, [isOpen]);
+
   return (
     <div className="relative" ref={dropdownRef}>
       {label && (
@@ -78,30 +91,55 @@ const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange,
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
+          {/* Search Input */}
           <div className="sticky top-0 bg-gray-50 border-b border-gray-200 p-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                autoFocus
+              />
+            </div>
+          </div>
+          
+          {/* Select All Button */}
+          <div className="sticky top-[41px] bg-gray-50 border-b border-gray-200 p-2">
             <button
               onClick={handleSelectAll}
               className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded transition"
             >
-              {selectedValues.length === options.length ? '✓ Deselect All' : 'Select All'}
+              {selectedValues.length === filteredOptions.length && filteredOptions.length > 0 ? '✓ Deselect All' : 'Select All'}
             </button>
           </div>
-          <div className="p-1">
-            {options.map((option) => (
-              <label
-                key={option}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer transition"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedValues.includes(option)}
-                  onChange={() => handleToggle(option)}
-                  className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
-                />
-                <span className="text-sm text-gray-700">{option}</span>
-              </label>
-            ))}
+          
+          {/* Options List */}
+          <div className="overflow-y-auto flex-1 p-1">
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => (
+                <label
+                  key={option}
+                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer transition"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedValues.includes(option)}
+                    onChange={() => handleToggle(option)}
+                    className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                  />
+                  <span className="text-sm text-gray-700">{option}</span>
+                </label>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                No options found
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -781,12 +781,35 @@ const BrandAnalysis = () => {
                         indexAxis: 'y',
                         responsive: true,
                         maintainAspectRatio: false,
+                        interaction: {
+                          intersect: false,
+                          mode: 'index',
+                        },
                         plugins: {
                           legend: { display: false },
                           tooltip: {
+                            enabled: true,
+                            displayColors: true,
+                            intersect: false,
+                            mode: 'index',
                             callbacks: {
-                              label: context => `${formatNumber(context.parsed.x)}`,
+                              label: (context) => {
+                                const value = context.parsed.x || 0;
+                                // Always show value, even if very small
+                                return `Revenue: ${formatNumber(value)}`;
+                              },
+                              afterLabel: (context) => {
+                                const value = context.parsed.x || 0;
+                                // Show exact value for very small numbers
+                                if (value > 0 && value < 1) {
+                                  return `Exact: €${value.toFixed(4)}`;
+                                }
+                                return '';
+                              },
                             },
+                            padding: 8,
+                            titleFont: { size: 12, weight: 'bold' },
+                            bodyFont: { size: 11 },
                           },
                         },
                         scales: {
@@ -837,15 +860,29 @@ const BrandAnalysis = () => {
                             labels: { boxWidth: 12, padding: 8, font: { size: 10 } },
                           },
                           tooltip: {
+                            enabled: true,
+                            displayColors: true,
                             callbacks: {
-                              label: context => {
+                              label: (context) => {
                                 const label = context.label || '';
                                 const value = context.parsed || 0;
                                 const total = context.dataset.data.reduce((a, b) => a + b, 0) || 1;
-                                const percentage = ((value / total) * 100).toFixed(1);
+                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                                // Always show value, even if very small
                                 return `${label}: ${formatNumber(value)} (${percentage}%)`;
                               },
+                              afterLabel: (context) => {
+                                const value = context.parsed || 0;
+                                // Show exact value for very small numbers
+                                if (value > 0 && value < 1) {
+                                  return `Exact: €${value.toFixed(4)}`;
+                                }
+                                return '';
+                              },
                             },
+                            padding: 8,
+                            titleFont: { size: 12, weight: 'bold' },
+                            bodyFont: { size: 11 },
                           },
                         },
                       }}
@@ -885,9 +922,26 @@ const BrandAnalysis = () => {
                         plugins: {
                           legend: { display: false },
                           tooltip: {
+                            enabled: true,
+                            displayColors: true,
                             callbacks: {
-                              label: context => `Profit: ${formatNumber(context.parsed.y)}`,
+                              label: (context) => {
+                                const value = context.parsed.y || 0;
+                                // Always show value, even if very small
+                                return `Profit: ${formatNumber(value)}`;
+                              },
+                              afterLabel: (context) => {
+                                const value = context.parsed.y || 0;
+                                // Show exact value for very small numbers
+                                if (value > 0 && value < 1) {
+                                  return `Exact: €${value.toFixed(4)}`;
+                                }
+                                return '';
+                              },
                             },
+                            padding: 8,
+                            titleFont: { size: 12, weight: 'bold' },
+                            bodyFont: { size: 11 },
                           },
                         },
                         scales: {
@@ -944,9 +998,27 @@ const BrandAnalysis = () => {
                         plugins: {
                           legend: { position: 'top' },
                           tooltip: {
+                            enabled: true,
+                            displayColors: true,
                             callbacks: {
-                              label: context => `${context.dataset.label}: ${formatNumber(context.parsed.y)}`,
+                              label: (context) => {
+                                const label = context.dataset.label || '';
+                                const value = context.parsed.y || 0;
+                                // Always show value, even if very small
+                                return `${label}: ${formatNumber(value)}`;
+                              },
+                              afterLabel: (context) => {
+                                const value = context.parsed.y || 0;
+                                // Show exact value for very small numbers
+                                if (value > 0 && value < 1) {
+                                  return `Exact: €${value.toFixed(4)}`;
+                                }
+                                return '';
+                              },
                             },
+                            padding: 8,
+                            titleFont: { size: 12, weight: 'bold' },
+                            bodyFont: { size: 11 },
                           },
                         },
                         scales: {

@@ -531,9 +531,27 @@ const SalesAnalysis = () => {
     plugins: {
       legend: { display: true, position: 'top' },
       tooltip: {
+        enabled: true,
+        displayColors: true,
         callbacks: {
-          label: (context) => `${context.dataset.label}: ${formatNumber(context.parsed.y)}`,
+          label: (context) => {
+            const label = context.dataset.label || '';
+            const value = context.parsed.y || 0;
+            // Always show value, even if very small
+            return `${label}: ${formatNumber(value)}`;
+          },
+          afterLabel: (context) => {
+            const value = context.parsed.y || 0;
+            // Show exact value for very small numbers
+            if (value > 0 && value < 1) {
+              return `Exact: €${value.toFixed(4)}`;
+            }
+            return '';
+          },
         },
+        padding: 8,
+        titleFont: { size: 12, weight: 'bold' },
+        bodyFont: { size: 11 },
       },
     },
     scales: {

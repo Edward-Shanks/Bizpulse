@@ -945,9 +945,26 @@ const Dashboard = () => {
                     plugins: {
                       legend: { display: false },
                       tooltip: {
+                        enabled: true,
+                        displayColors: true,
                         callbacks: {
-                          label: (context) => `${formatNumber(context.parsed.y)}`
-                        }
+                          label: (context) => {
+                            const value = context.parsed.y || 0;
+                            // Always show value, even if very small
+                            return `Revenue: ${formatNumber(value)}`;
+                          },
+                          afterLabel: (context) => {
+                            const value = context.parsed.y || 0;
+                            // Show exact value for very small numbers
+                            if (value > 0 && value < 1) {
+                              return `Exact: €${value.toFixed(4)}`;
+                            }
+                            return '';
+                          },
+                        },
+                        padding: 8,
+                        titleFont: { size: 12, weight: 'bold' },
+                        bodyFont: { size: 11 },
                       }
                     },
                     scales: {
@@ -998,9 +1015,27 @@ const Dashboard = () => {
                       plugins: {
                         legend: { position: 'top' },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
-                            label: (context) => `${context.dataset.label}: ${formatNumber(context.parsed.y)}`
-                          }
+                            label: (context) => {
+                              const label = context.dataset.label || '';
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `${label}: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
                       },
                       scales: {
@@ -1042,15 +1077,36 @@ const Dashboard = () => {
                       plugins: {
                         legend: { display: false },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
-                            label: (context) => `${formatUnits(context.parsed.y)} cases`
-                          }
+                            label: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `Cases: ${formatUnits(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: ${value.toFixed(4)} cases`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
+                      },
+                      interaction: {
+                        intersect: false,
+                        mode: 'index',
                       },
                       scales: {
                         y: {
                           beginAtZero: true,
-                          ticks: { callback: (value) => formatNumber(value) }
+                          ticks: { callback: (value) => formatUnits(value) }
                         },
                         x: { ticks: { maxRotation: 45, minRotation: 45 } }
                       }
@@ -1084,12 +1140,35 @@ const Dashboard = () => {
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
+                      interaction: {
+                        intersect: false,
+                        mode: 'index',
+                      },
                       plugins: {
                         legend: { display: false },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
+                          intersect: false,
+                          mode: 'index',
                           callbacks: {
-                            label: (context) => `${formatNumber(context.parsed.y)}`
-                          }
+                            label: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `Revenue: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
                       },
                       scales: {
@@ -1129,12 +1208,35 @@ const Dashboard = () => {
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
+                      interaction: {
+                        intersect: false,
+                        mode: 'index',
+                      },
                       plugins: {
                         legend: { display: false },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
+                          intersect: false,
+                          mode: 'index',
                           callbacks: {
-                            label: (context) => `${formatNumber(context.parsed.y)}`
-                          }
+                            label: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `Profit: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
                       },
                       scales: {
@@ -1177,9 +1279,27 @@ const Dashboard = () => {
                       plugins: {
                         legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
-                            label: (context) => `${context.label}: ${formatNumber(context.parsed)}`
-                          }
+                            label: (context) => {
+                              const label = context.label || '';
+                              const value = context.parsed || 0;
+                              // Always show value, even if very small
+                              return `${label}: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
                       }
                     }}
@@ -1215,9 +1335,27 @@ const Dashboard = () => {
                       plugins: {
                         legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
-                            label: (context) => `${context.label}: ${formatNumber(context.parsed)}`
-                          }
+                            label: (context) => {
+                              const label = context.label || '';
+                              const value = context.parsed || 0;
+                              // Always show value, even if very small
+                              return `${label}: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
                       }
                     }}
@@ -1261,9 +1399,27 @@ const Dashboard = () => {
                       plugins: {
                         legend: { position: 'top' },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
-                            label: (context) => `${context.dataset.label}: ${formatNumber(context.parsed.y)}`
-                          }
+                            label: (context) => {
+                              const label = context.dataset.label || '';
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `${label}: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         }
                       },
                       scales: {

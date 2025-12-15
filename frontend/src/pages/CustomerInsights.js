@@ -897,10 +897,42 @@ const CustomerInsights = () => {
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: 'index',
+    },
     plugins: {
       legend: {
         display: true,
         position: 'top',
+      },
+      tooltip: {
+        enabled: true,
+        displayColors: true,
+        intersect: false,
+        mode: 'index',
+        callbacks: {
+          label: (context) => {
+            const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed || 0;
+            const label = context.dataset.label || '';
+            // Always show value, even if very small
+            if (label) {
+              return `${label}: ${formatNumber(value)}`;
+            }
+            return formatNumber(value);
+          },
+          afterLabel: (context) => {
+            const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed || 0;
+            // Show exact value for very small numbers
+            if (value > 0 && value < 1) {
+              return `Exact: €${value.toFixed(4)}`;
+            }
+            return '';
+          },
+        },
+        padding: 8,
+        titleFont: { size: 12, weight: 'bold' },
+        bodyFont: { size: 11 },
       },
     },
   };
@@ -927,18 +959,32 @@ const CustomerInsights = () => {
         },
       },
       tooltip: {
+        enabled: true,
+        displayColors: true,
         callbacks: {
           label: (context) => {
             const label = context.label || '';
             const value = context.parsed || 0;
-            const total = context.dataset.data.reduce((a, b) => a + b, 0);
-            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+            const total = context.dataset.data.reduce((a, b) => a + (b || 0), 0) || 1;
+            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
             // Check if the dataset label suggests it's a count (Customers) or currency (Sales)
             const isCurrency = context.dataset.label && (context.dataset.label.includes('Sales') || context.dataset.label.includes('€'));
             const formattedValue = isCurrency ? formatCurrency(value) : formatUnits(value);
+            // Always show value, even if very small
             return `${label}: ${formattedValue} (${percentage}%)`;
           },
+          afterLabel: (context) => {
+            const value = context.parsed || 0;
+            // Show exact value for very small numbers
+            if (value > 0 && value < 1) {
+              return `Exact: ${value.toFixed(4)}`;
+            }
+            return '';
+          },
         },
+        padding: 8,
+        titleFont: { size: 12, weight: 'bold' },
+        bodyFont: { size: 11 },
       },
     },
     cutout: '60%',
@@ -947,10 +993,42 @@ const CustomerInsights = () => {
   const lineChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: 'index',
+    },
     plugins: {
       legend: {
         display: true,
         position: 'top',
+      },
+      tooltip: {
+        enabled: true,
+        displayColors: true,
+        intersect: false,
+        mode: 'index',
+        callbacks: {
+          label: (context) => {
+            const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed || 0;
+            const label = context.dataset.label || '';
+            // Always show value, even if very small
+            if (label) {
+              return `${label}: ${formatNumber(value)}`;
+            }
+            return formatNumber(value);
+          },
+          afterLabel: (context) => {
+            const value = context.parsed.y !== undefined ? context.parsed.y : context.parsed || 0;
+            // Show exact value for very small numbers
+            if (value > 0 && value < 1) {
+              return `Exact: €${value.toFixed(4)}`;
+            }
+            return '';
+          },
+        },
+        padding: 8,
+        titleFont: { size: 12, weight: 'bold' },
+        bodyFont: { size: 11 },
       },
     },
     scales: {

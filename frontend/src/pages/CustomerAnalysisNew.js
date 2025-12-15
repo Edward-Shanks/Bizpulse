@@ -768,12 +768,35 @@ const CustomerAnalysis = () => {
                     options={{
                       responsive: true,
                       maintainAspectRatio: false,
+                      interaction: {
+                        intersect: false,
+                        mode: 'index',
+                      },
                       plugins: {
                         legend: { display: false },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
+                          intersect: false,
+                          mode: 'index',
                           callbacks: {
-                            label: (context) => `Revenue: ${formatNumber(context.parsed.y)}`,
+                            label: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `Revenue: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
                           },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         },
                       },
                       scales: {
@@ -819,13 +842,27 @@ const CustomerAnalysis = () => {
                           labels: { boxWidth: 12, padding: 10, font: { size: 11 } },
                         },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
                             label: (context) => {
                               const label = context.label || '';
                               const value = context.parsed || 0;
+                              // Always show value, even if very small
                               return `${label}: ${formatNumber(value)}`;
                             },
+                            afterLabel: (context) => {
+                              const value = context.parsed || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
                           },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         },
                       },
                     }}
@@ -860,9 +897,26 @@ const CustomerAnalysis = () => {
                       plugins: {
                         legend: { display: false },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
-                            label: (context) => `Profit: ${formatNumber(context.parsed.y)}`,
+                            label: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `Profit: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
                           },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         },
                       },
                       scales: {
@@ -908,13 +962,27 @@ const CustomerAnalysis = () => {
                           labels: { boxWidth: 12, padding: 10, font: { size: 11 } },
                         },
                         tooltip: {
+                          enabled: true,
+                          displayColors: true,
                           callbacks: {
                             label: (context) => {
                               const label = context.label || '';
                               const value = context.parsed || 0;
+                              // Always show value, even if very small
                               return `${label}: ${formatUnits(value)} cases`;
                             },
+                            afterLabel: (context) => {
+                              const value = context.parsed || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: ${value.toFixed(4)} cases`;
+                              }
+                              return '';
+                            },
                           },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
                         },
                       },
                     }}
