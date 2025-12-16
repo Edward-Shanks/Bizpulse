@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Layout from '@/components/Layout';
 import MultiSelectFilter from '@/components/MultiSelectFilter';
 import ChartComponent from '@/components/ChartComponent';
@@ -15,6 +15,7 @@ const SalesAnalysis = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(null);
+  const filtersRef = useRef(null);
 
   // Multi-select filter states
   const [selectedYears, setSelectedYears] = useState([]);
@@ -27,6 +28,11 @@ const SalesAnalysis = () => {
   
   // Chart-specific data (for charts with individual filters)
   const [chartData, setChartData] = useState({});
+  
+  // Chart-specific dynamic filter options (for cascading filters)
+  const [chartFilterOptions, setChartFilterOptions] = useState({});
+  // Track last fetched filterKey per chart to prevent duplicate fetches
+  const lastFetchedFilterKeyRef = useRef({});
 
   const [insightModal, setInsightModal] = useState({
     isOpen: false,
@@ -36,6 +42,7 @@ const SalesAnalysis = () => {
     context: {},
   });
 
+  // Load filters only once on mount or when token changes
   useEffect(() => {
     if (!token) {
       console.warn('No token available, skipping filter load');
@@ -47,29 +54,66 @@ const SalesAnalysis = () => {
         const res = await axios.get(`${API}/filters/options`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setFilters(res.data);
+        
+        const newFilters = res.data;
+        setFilters(newFilters);
+        filtersRef.current = newFilters;
       } catch (error) {
         console.error('Failed to load filters', error);
         if (error.response?.status === 401) {
           toast.error('Session expired. Please login again.');
-          // Optionally redirect to login
-          // window.location.href = '/login';
         } else {
           toast.error('Unable to load filter options');
         }
-        setFilters({
+        const emptyFilters = {
           years: [],
           months: [],
           businesses: [],
           channels: [],
-          brands: [],
-          categories: [],
-        });
+        };
+        setFilters(emptyFilters);
+        filtersRef.current = emptyFilters;
       }
     };
 
     loadFilters();
   }, [token]);
+
+  // Validate and clean up filter selections when filters change
+  useEffect(() => {
+    if (!filters) return;
+    
+    // Remove invalid selections (selections that no longer exist in the filtered options)
+    // Use functional updates to avoid dependency on selected values
+    setSelectedYears(prev => {
+      if (prev.length === 0) return prev;
+      const validYears = prev.filter(y => filters.years?.includes(y));
+      return validYears.length !== prev.length ? validYears : prev;
+    });
+    
+    setSelectedMonths(prev => {
+      if (prev.length === 0) return prev;
+      const validMonths = prev.filter(m => filters.months?.includes(m));
+      return validMonths.length !== prev.length ? validMonths : prev;
+    });
+    
+    setSelectedBusinesses(prev => {
+      if (prev.length === 0) return prev;
+      const validBusinesses = prev.filter(b => filters.businesses?.includes(b));
+      return validBusinesses.length !== prev.length ? validBusinesses : prev;
+    });
+    
+    setSelectedChannels(prev => {
+      if (prev.length === 0) return prev;
+      const validChannels = prev.filter(c => filters.channels?.includes(c));
+      return validChannels.length !== prev.length ? validChannels : prev;
+    });
+  }, [filters]); // Only depend on filters, using functional updates to avoid dependency on selected values
+
+  // Keep ref in sync with filters
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   useEffect(() => {
     if (!token) {
@@ -109,6 +153,38 @@ const SalesAnalysis = () => {
     loadData();
   }, [token, selectedYears, selectedMonths, selectedBusinesses, selectedChannels]);
 
+  // Fetch dynamic filter options for a specific chart based on merged filters
+  const fetchChartFilterOptions = useCallback(async (chartId, mergedFilters) => {
+    if (!token) return;
+    
+    try {
+      const params = new URLSearchParams();
+      if (mergedFilters.years.length) params.set('years', mergedFilters.years.join(','));
+      if (mergedFilters.months.length) params.set('months', mergedFilters.months.join(','));
+      if (mergedFilters.businesses.length) params.set('businesses', mergedFilters.businesses.join(','));
+      
+      const url = `${API}/filters/options${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      
+      setChartFilterOptions(prev => ({
+        ...prev,
+        [chartId]: res.data
+      }));
+    } catch (error) {
+      console.error(`Failed to load filter options for chart ${chartId}:`, error);
+      // Use current filters from ref instead of closure
+      setChartFilterOptions(prev => {
+        const currentFilters = filtersRef.current || { years: [], months: [], businesses: [], channels: [] };
+        return {
+          ...prev,
+          [chartId]: currentFilters
+        };
+      });
+    }
+  }, [token]); // Remove filters from dependencies to prevent recreation
+
   // Helper function to merge global and individual filters (individual overrides global)
   const getMergedFilters = (chartName = null) => {
     const globalFilters = {
@@ -145,6 +221,8 @@ const SalesAnalysis = () => {
   useEffect(() => {
     setChartFilters({});
     setChartData({});
+    // Clear the fetched filter keys when global filters change
+    lastFetchedFilterKeyRef.current = {};
   }, [selectedYears, selectedMonths, selectedBusinesses, selectedChannels]);
 
   // Fetch data for a specific chart with merged filters
@@ -438,14 +516,54 @@ const SalesAnalysis = () => {
   };
 
   const ChartCard = ({ title, chartId, children, renderChart }) => {
-    const mergedFilters = getMergedFilters(chartId);
+    // Create stable keys for memoization
+    const yearsKey = selectedYears.join(',');
+    const monthsKey = selectedMonths.join(',');
+    const businessesKey = selectedBusinesses.join(',');
+    const channelsKey = selectedChannels.join(',');
+    const chartFilterKey = chartId ? [
+      chartFilters[chartId]?.years?.join(',') || '',
+      chartFilters[chartId]?.months?.join(',') || '',
+      chartFilters[chartId]?.businesses?.join(',') || '',
+      chartFilters[chartId]?.channels?.join(',') || ''
+    ].join('|') : '';
+    
+    // Memoize merged filters to prevent new object on every render
+    const mergedFilters = useMemo(() => getMergedFilters(chartId), [
+      chartId,
+      yearsKey,
+      monthsKey,
+      businessesKey,
+      channelsKey,
+      chartFilterKey
+    ]);
+    
+    // Memoize filter values as strings for stable comparison
+    const yearsStr = mergedFilters.years.join(',');
+    const monthsStr = mergedFilters.months.join(',');
+    const businessesStr = mergedFilters.businesses.join(',');
+    const filterKey = useMemo(() => {
+      return `${chartId}-${yearsStr}-${monthsStr}-${businessesStr}`;
+    }, [chartId, yearsStr, monthsStr, businessesStr]);
+    
+    // Get chart-specific filter options (dynamic/cascading)
+    const chartOptions = chartFilterOptions[chartId] || filters;
+    
+    // Fetch dynamic filter options when merged filters change (using stable key)
+    useEffect(() => {
+      // Only fetch if filterKey has changed for this chart
+      if (lastFetchedFilterKeyRef.current[chartId] !== filterKey) {
+        lastFetchedFilterKeyRef.current[chartId] = filterKey;
+        fetchChartFilterOptions(chartId, mergedFilters);
+      }
+    }, [filterKey, chartId, fetchChartFilterOptions, mergedFilters]); // fetchChartFilterOptions is stable (only depends on token)
     
     // Get chart-specific data arrays
     const { yearlyData: chartYearlyData, businessData: chartBusinessData } = getChartDataArrays(chartId);
     
     return (
       <div 
-        className="rounded-lg p-5"
+        className="rounded-lg p-5 relative"
         style={{
           background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
           border: '1px solid rgba(0, 0, 0, 0.1)'
@@ -462,61 +580,41 @@ const SalesAnalysis = () => {
           </button>
         </div>
         
-        {/* Chart Filters - Show merged filter values (individual overrides global) */}
+        {/* Chart Filters - Show merged filter values (individual overrides global) with search functionality - Only Years, Months, Businesses */}
         <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
-          <select
-            value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
-            onChange={async (e) => {
-              const value = e.target.value;
-              if (value === 'all') {
-                await handleChartFilterChange(chartId, 'years', []);
-              } else {
-                await handleChartFilterChange(chartId, 'years', [Number(value)]);
-              }
-            }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
-          >
-            <option value="all">All Years</option>
-            {filters?.years?.map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
+          <div className="relative" style={{ zIndex: 1000 }}>
+            <MultiSelectFilter
+              options={chartOptions?.years || []}
+              selectedValues={mergedFilters.years.map(y => String(y))}
+              onChange={async (selected) => {
+                const yearNumbers = selected.map(y => Number(y));
+                await handleChartFilterChange(chartId, 'years', yearNumbers);
+              }}
+              placeholder="All Years"
+            />
+          </div>
           
-          <select
-            value={mergedFilters.months.length === 1 ? mergedFilters.months[0] : mergedFilters.months.length > 1 ? 'multiple' : 'all'}
-            onChange={async (e) => {
-              const value = e.target.value;
-              if (value === 'all') {
-                await handleChartFilterChange(chartId, 'months', []);
-              } else {
-                await handleChartFilterChange(chartId, 'months', [value]);
-              }
-            }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
-          >
-            <option value="all">All Months</option>
-            {filters?.months?.map(month => (
-              <option key={month} value={month}>{month}</option>
-            ))}
-          </select>
+          <div className="relative" style={{ zIndex: 999 }}>
+            <MultiSelectFilter
+              options={chartOptions?.months || []}
+              selectedValues={mergedFilters.months}
+              onChange={async (selected) => {
+                await handleChartFilterChange(chartId, 'months', selected);
+              }}
+              placeholder="All Months"
+            />
+          </div>
           
-          <select
-            value={mergedFilters.businesses.length === 1 ? mergedFilters.businesses[0] : mergedFilters.businesses.length > 1 ? 'multiple' : 'all'}
-            onChange={async (e) => {
-              const value = e.target.value;
-              if (value === 'all') {
-                await handleChartFilterChange(chartId, 'businesses', []);
-              } else {
-                await handleChartFilterChange(chartId, 'businesses', [value]);
-              }
-            }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
-          >
-            <option value="all">All Businesses</option>
-            {filters?.businesses?.map(business => (
-              <option key={business} value={business}>{business}</option>
-            ))}
-          </select>
+          <div className="relative" style={{ zIndex: 998 }}>
+            <MultiSelectFilter
+              options={chartOptions?.businesses || []}
+              selectedValues={mergedFilters.businesses}
+              onChange={async (selected) => {
+                await handleChartFilterChange(chartId, 'businesses', selected);
+              }}
+              placeholder="All Businesses"
+            />
+          </div>
         </div>
         
         {/* Render chart with chart-specific data */}

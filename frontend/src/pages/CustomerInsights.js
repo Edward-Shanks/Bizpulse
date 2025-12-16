@@ -464,12 +464,31 @@ const CustomerInsights = () => {
     ],
   };
 
+  // Helper function to sort CLV data by order bucket
+  const sortClvData = (clvData) => {
+    const bucketOrder = {
+      '1': 1,
+      '2-3': 2,
+      '4-5': 3,
+      '6-10': 4,
+      '11-20': 5,
+      '20+': 6
+    };
+    
+    return [...clvData].sort((a, b) => {
+      const orderA = bucketOrder[a.order_bucket] || 999;
+      const orderB = bucketOrder[b.order_bucket] || 999;
+      return orderA - orderB;
+    });
+  };
+
+  const sortedClv = sortClvData(clv);
   const clvChart = {
-    labels: clv.map((item) => `${item.order_bucket} orders`),
+    labels: sortedClv.map((item) => `${item.order_bucket} orders`),
     datasets: [
       {
         label: 'Avg Sales per Customer (€)',
-        data: clv.map((item) => item.avg_sales_per_customer || 0),
+        data: sortedClv.map((item) => item.avg_sales_per_customer || 0),
         backgroundColor: '#1e293b',
       },
     ],
@@ -668,16 +687,19 @@ const CustomerInsights = () => {
           },
         ],
       },
-      clv: {
-        labels: chartClv.map((item) => `${item.order_bucket} orders`),
-        datasets: [
-          {
-            label: 'Avg Sales per Customer (€)',
-            data: chartClv.map((item) => item.avg_sales_per_customer || 0),
-            backgroundColor: '#1e293b',
-          },
-        ],
-      },
+      clv: (() => {
+        const sortedClv = sortClvData(chartClv);
+        return {
+          labels: sortedClv.map((item) => `${item.order_bucket} orders`),
+          datasets: [
+            {
+              label: 'Avg Sales per Customer (€)',
+              data: sortedClv.map((item) => item.avg_sales_per_customer || 0),
+              backgroundColor: '#1e293b',
+            },
+          ],
+        };
+      })(),
       monthlyTrend: {
         labels: chartMonthlyTrend.map((item) => item.month_label || item.MonthName || 'Unknown'),
         datasets: [
