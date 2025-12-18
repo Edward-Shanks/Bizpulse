@@ -45,11 +45,20 @@ const AIAssistant = () => {
     }, 30); // 30ms delay between words for smooth typing effect
   };
 
-  const handleSendMessage = async (messageText = null) => {
-    const msgToSend = messageText || input.trim();
+    const handleSendMessage = async (messageText = null) => {
+    // Ensure messageText is always a string, never an event object
+    let msgToSend = null;
+    if (messageText !== null && messageText !== undefined) {
+      msgToSend = typeof messageText === 'string' ? messageText.trim() : String(messageText || '').trim();
+    } else {
+      msgToSend = input.trim();
+    }
+    
     if (!msgToSend) return;
 
-    const userMessage = { role: 'user', content: msgToSend };
+    // Ensure content is always a string
+    const safeContent = typeof msgToSend === 'string' ? msgToSend : String(msgToSend || '');
+    const userMessage = { role: 'user', content: safeContent };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
@@ -57,10 +66,14 @@ const AIAssistant = () => {
     try {
       // Build conversation history from previous messages
       // If context was cleared, send empty history to ensure backend doesn't use old context
-      const conversationHistory = isContextCleared ? [] : messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'assistant',
-        content: msg.content
-      }));
+      const conversationHistory = isContextCleared ? [] : messages.map(msg => {
+        // Ensure content is always a string
+        const safeContent = typeof msg.content === 'string' ? msg.content : String(msg.content || '');
+        return {
+          role: msg.role === 'user' ? 'user' : 'assistant',
+          content: safeContent
+        };
+      });
 
       const payload = {
         message: msgToSend,
@@ -104,9 +117,11 @@ const AIAssistant = () => {
       }
       
       const fullResponse = response.data?.response || 'No response';
+      // Ensure content is always a string
+      const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
       const aiMessage = { 
         role: 'ai', 
-        content: fullResponse,
+        content: safeContent,
         needs_clarification: needsClarification,
         suggested_questions: suggestedQuestions
       };
@@ -233,7 +248,14 @@ const AIAssistant = () => {
                   {suggestedQuestions.map((q, idx) => (
                     <button
                       key={idx}
-                      onClick={() => handleSendMessage(q)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const questionText = typeof q === 'string' ? q : String(q || '');
+                        if (questionText && questionText.trim()) {
+                          handleSendMessage(questionText.trim());
+                        }
+                      }}
                       className="w-full text-left px-4 py-2 rounded-lg text-sm text-gray-700 bg-white hover:bg-blue-50 transition border border-gray-200 break-words"
                     >
                       {q}
@@ -256,11 +278,13 @@ const AIAssistant = () => {
                   }`}
                 >
                   {msg.role === 'user' ? (
-                    <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                    <p className="text-sm whitespace-pre-wrap break-words">
+                      {typeof msg.content === 'string' ? msg.content : String(msg.content || '')}
+                    </p>
                   ) : (
                     <div className="prose prose-sm max-w-none break-words">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
+                        {typeof msg.content === 'string' ? msg.content : String(msg.content || '')}
                       </ReactMarkdown>
                       
                       {/* Suggested Questions for Clarification */}
@@ -274,8 +298,9 @@ const AIAssistant = () => {
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  if (suggestedQ && typeof suggestedQ === 'string') {
-                                    handleSendMessage(suggestedQ);
+                                  const questionText = typeof suggestedQ === 'string' ? suggestedQ : String(suggestedQ || '');
+                                  if (questionText && questionText.trim()) {
+                                    handleSendMessage(questionText.trim());
                                   }
                                 }}
                                 className="text-left px-4 py-3 rounded-lg text-sm transition-all hover:shadow-md border-2 border-blue-200 hover:border-blue-400 bg-white hover:bg-blue-50 w-full"
@@ -310,7 +335,7 @@ const AIAssistant = () => {
                 <div className="max-w-[85%] px-4 py-3 rounded-2xl bg-white text-gray-800 border border-gray-200 break-words">
                   <div className="prose prose-sm max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {streamingMessage}
+                      {typeof streamingMessage === 'string' ? streamingMessage : String(streamingMessage || '')}
                     </ReactMarkdown>
                   </div>
                   <span className="animate-pulse">▊</span>
@@ -332,7 +357,11 @@ const AIAssistant = () => {
                 data-testid="ai-chat-input"
               />
               <Button
-                onClick={handleSendMessage}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSendMessage();
+                }}
                 disabled={loading || !input.trim()}
                 className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700"
                 data-testid="ai-send-button"

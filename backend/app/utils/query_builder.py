@@ -10,6 +10,8 @@ import re
 
 logger = logging.getLogger(__name__)
 
+logger = logging.getLogger(__name__)
+
 async def apply_business_filter(
     query: Dict[str, Any],
     businesses: str,
@@ -297,13 +299,22 @@ async def parse_query_from_natural_language(
     month_abbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
     found_months = []
     for i, month in enumerate(month_names):
-        if month in message_lower:
-            found_months.append(month_names[i].capitalize())
+        # Use word boundary to match whole words only (e.g., "november" not "novemberly")
+        pattern = r'\b' + re.escape(month) + r'\b'
+        if re.search(pattern, message_lower):
+            month_capitalized = month_names[i].capitalize()
+            if month_capitalized not in found_months:
+                found_months.append(month_capitalized)
     for i, abbr in enumerate(month_abbr):
-        if f' {abbr} ' in message_lower or message_lower.startswith(abbr) or message_lower.endswith(abbr):
-            found_months.append(month_names[i].capitalize())
+        # Use word boundary for abbreviations too
+        pattern = r'\b' + re.escape(abbr) + r'\b'
+        if re.search(pattern, message_lower):
+            month_capitalized = month_names[i].capitalize()
+            if month_capitalized not in found_months:
+                found_months.append(month_capitalized)
     if found_months:
         query['Month_Name'] = {'$in': found_months}
+        logger.info(f"📅 Extracted months from query builder: {found_months}")
     
     # Extract quarters (Q1, Q2, Q3, Q4)
     quarter_pattern = r'\bq([1-4])\b'
@@ -361,17 +372,19 @@ async def parse_query_from_natural_language(
     # But skip if comparing businesses or asking for all businesses (we want all businesses)
     if not is_comparing_business and not is_asking_for_all_businesses:
         business_patterns = [
-            r'business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
-            r'for\s+business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
-            r'business:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
-            r'business\s+([a-zA-Z\s,&]+?)(?:\s+channel|\s+customer|\s+brand|\s+category|$)',
+            r'business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category|across)',
+            r'for\s+business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category|across)',
+            r'business:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category|across)',
+            r'business\s+([a-zA-Z\s,&]+?)(?:\s+channel|\s+customer|\s+brand|\s+category|\s+across|$)',
+            # Pattern for "Compare Q1 for business Food" - extract "Food"
+            r'(?:for|of|in)\s+business\s+([a-zA-Z\s,&]+?)(?:\s+across|\s+years|\s+year|$)',
         ]
         for pattern in business_patterns:
             matches = re.findall(pattern, message_lower, re.IGNORECASE)
             if matches:
                 business_name = matches[0].strip()
                 # Remove trailing words that might be part of next filter
-                business_name = re.sub(r'\s+(channel|customer|brand|category).*$', '', business_name, flags=re.IGNORECASE).strip()
+                business_name = re.sub(r'\s+(channel|customer|brand|category|across|years|year).*$', '', business_name, flags=re.IGNORECASE).strip()
                 # Try to match with database businesses
                 matched = False
                 for db_business in all_businesses:
@@ -455,11 +468,19 @@ async def parse_query_from_natural_language(
     
     # Skip brand extraction if the message is asking FOR brands (not filtering BY brand)
     # Also skip if comparing brands - we want to show all brands for comparison
-    is_asking_for_brands = any(phrase in message_lower for phrase in [
-        'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
-        'brands by revenue', 'brands by profit', 'brands by', 'all brands',
-        'list brands', 'show brands', 'which brands', 'what brands'
-    ])
+    is_asking_for_brands = (
+        any(phrase in message_lower for phrase in [
+            'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands', 'top 20 brands',
+            'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+            'list brands', 'show brands', 'which brands', 'what brands',
+            'tell me about brands', 'tell me about brand', 'show me brands', 'show me brand',
+            'show me the top', 'tell me about all brands', 'brand performance', 'brand rankings',
+            'brand revenue', 'brand profit', 'compare brand', 'compare brands'
+        ]) or 
+        re.search(r'top\s+\d+\s+brand', message_lower) or
+        re.search(r'show\s+me\s+(the\s+)?top\s+\d+\s+brand', message_lower) or
+        re.search(r'tell\s+me\s+about\s+(all\s+)?brand', message_lower)
+    )
     
     is_comparing_brand = any(phrase in message_lower for phrase in [
         'compare brand', 'compare brands', 'brand vs', 'brands vs', 'brand versus', 'brands versus',

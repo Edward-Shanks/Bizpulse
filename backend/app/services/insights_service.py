@@ -29,6 +29,7 @@ class InsightsService:
         user_msg_lower = user_message.lower().strip()
         
         # Patterns that indicate a CLEAR question (skip LLM check)
+        # Also include patterns for suggested questions (which are always well-formed)
         clear_patterns = [
             r'top\s+\d+\s+(brand|brands|business|businesses|category|categories|customer|customers|channel|channels)',
             r'show\s+me\s+top\s+\d+\s+(brand|brands|business|businesses|category|categories|customer|customers)',
@@ -37,6 +38,31 @@ class InsightsService:
             r'all\s+(brand|brands|business|businesses|category|categories|customer|customers)',
             r'tell\s+me\s+about\s+all\s+(brand|brands|business|businesses|category|categories)',
             r'show\s+me\s+all\s+(brand|brands|business|businesses|category|categories)',
+            # Board summary and report questions are always clear
+            r'write\s+(me\s+)?(the\s+)?(a\s+)?(comprehensive\s+)?(board\s+)?summary',
+            r'write\s+(me\s+)?(the\s+)?(a\s+)?(comprehensive\s+)?(board\s+)?summary\s+for',
+            r'write\s+(me\s+)?(the\s+)?(a\s+)?(comprehensive\s+)?(board\s+)?summary\s+for\s+the\s+month',
+            r'board\s+summary\s+for',
+            r'board\s+summary\s+for\s+the\s+month',
+            r'provide\s+(a\s+)?(board\s+)?summary',
+            r'create\s+(a\s+)?(comprehensive\s+)?(board\s+)?summary',
+            r'summarize\s+key',
+            r'draft\s+(a\s+)?(board\s+)?(level\s+)?summary',
+            r'generate\s+(a\s+)?(board\s+)?summary',
+            r'board\s+summary',
+            r'executive\s+summary',
+            r'monthly\s+summary',
+            # Email and report generation questions are clear if they mention business data context
+            r'draft\s+(an\s+)?(a\s+)?email',
+            r'write\s+(me\s+)?(an\s+)?(a\s+)?email',
+            r'create\s+(an\s+)?(a\s+)?email',
+            r'generate\s+(an\s+)?(a\s+)?email',
+            r'focusing\s+on\s+key',
+            r'highlighting\s+(top\s+)?(kpis?|business|performance)',
+            r'covering\s+(sales|customer|operational|marketing)',
+            r'including\s+(year|comparisons|achievements)',
+            r'with\s+(highlights|insights|recommendations)',
+            r'emphasizing\s+(hr|employee|metrics)',
         ]
         
         for pattern in clear_patterns:
@@ -47,7 +73,9 @@ class InsightsService:
         try:
             # System prompt for question clarity analysis
             clarity_system_prompt = (
-                "You are a question clarity analyzer for a business intelligence chatbot. "
+                "You are a question clarity analyzer for a BUSINESS INTELLIGENCE chatbot. "
+                "This chatbot ONLY answers questions about BUSINESS DATA: revenue, profit, units, margins, brands, businesses, categories, customers, channels, SKUs, sub-categories. "
+                "It does NOT answer questions about: global news, world events, politics, elections, wars, conflicts, natural disasters, economics, international relations, or any non-business topics. "
                 "Your job is to determine if a user's question is clear and unambiguous, or if it needs clarification. "
                 ""
                 "A question is UNCLEAR if it has: "
@@ -65,19 +93,21 @@ class InsightsService:
                 "- Specifies what information is needed (revenue, profit, comparison, etc.) "
                 "- Is well-formed and unambiguous "
                 "- Contains specific requests like 'top 10', 'top 5', 'all', 'compare', 'show me', 'tell me about' "
-                "- Examples of CLEAR questions: 'tell me top 10 brands', 'show me all businesses', 'compare brands', 'tell me about brand performance' "
+                "- Examples of CLEAR questions: 'tell me top 10 brands', 'show me all businesses', 'compare brands', 'tell me about brand performance', 'draft an email about November 2025 business performance' "
                 ""
-                "CRITICAL: Questions like 'tell me top 10 brands' or 'show me top 10 brands by revenue' are CLEAR and should NOT need clarification. "
-                "Only mark as unclear if the question is truly ambiguous or missing critical information."
+                "CRITICAL: Questions like 'tell me top 10 brands', 'show me top 10 brands by revenue', 'draft an email about November 2025', 'write me the board summary for November 2025' are CLEAR and should NOT need clarification. "
+                "Only mark as unclear if the question is truly ambiguous or missing critical information about BUSINESS DATA."
                 ""
                 "If the question is UNCLEAR, you MUST generate EXACTLY 5-6 clarified versions that cover different possible interpretations. "
-                "Each suggested question should be: "
-                "- Well-formed with proper grammar "
-                "- Specific and clear "
-                "- Cover different possible interpretations of the unclear question "
-                "- Be actionable and specific (e.g., 'Tell me about all brands', 'Show me top 10 brands', 'Compare all brands') "
+                "Each suggested question MUST: "
+                "- Be about BUSINESS DATA ONLY (revenue, profit, units, margins, brands, businesses, categories, customers, channels) "
+                "- Reference business entities (brands, businesses, categories, customers, channels) "
+                "- Reference business metrics (revenue, profit, units, margins, sales, performance) "
+                "- Reference business time periods (years: 2023, 2024, 2025; months: January through December) "
+                "- NEVER suggest questions about: global news, world events, politics, elections, wars, conflicts, natural disasters, economics, international relations "
+                "- Be actionable and specific (e.g., 'Tell me about all brands by revenue and profit', 'Show me top 10 brands by revenue', 'Compare all brands by margin', 'Draft an email summarizing November 2025 business performance') "
                 ""
-                "CRITICAL: If is_clear is false, you MUST provide 5-6 suggested questions. Never return an empty array. "
+                "CRITICAL: If is_clear is false, you MUST provide 5-6 suggested questions. Never return an empty array."
                 ""
                 "Respond ONLY with a JSON object in this exact format: "
                 '{"is_clear": true/false, "suggested_questions": ["question1", "question2", "question3", "question4", "question5", "question6"]}'
@@ -164,52 +194,62 @@ class InsightsService:
                 user_msg_lower = user_message.lower()
                 fallback_suggestions = []
                 
-                # Detect entity type
+                # Detect entity type - ALL suggestions MUST be about business data only
                 if 'brand' in user_msg_lower or 'brands' in user_msg_lower:
                     fallback_suggestions = [
-                        "Tell me about all brands",
-                        "Show me the top 10 brands",
-                        "Compare all brands",
-                        "Tell me about brand performance",
-                        "Show me brand rankings",
-                        "Tell me about brand revenue and profit"
+                        "Tell me about all brands by revenue and profit",
+                        "Show me the top 10 brands by revenue",
+                        "Compare all brands by revenue and margin",
+                        "Tell me about brand performance by revenue and profit margin",
+                        "Show me brand rankings by revenue",
+                        "Tell me about brand revenue, profit, and units"
                     ]
                 elif 'business' in user_msg_lower or 'businesses' in user_msg_lower:
                     fallback_suggestions = [
-                        "Tell me about all businesses",
-                        "Show me the top 10 businesses",
-                        "Compare all businesses",
-                        "Tell me about business performance",
-                        "Show me business rankings",
-                        "Tell me about business revenue and profit"
+                        "Tell me about all businesses by revenue and profit",
+                        "Show me the top 10 businesses by revenue",
+                        "Compare all businesses by revenue and margin",
+                        "Tell me about business performance by revenue and profit margin",
+                        "Show me business rankings by revenue",
+                        "Tell me about business revenue, profit, and units"
                     ]
                 elif 'category' in user_msg_lower or 'categories' in user_msg_lower:
                     fallback_suggestions = [
-                        "Tell me about all categories",
-                        "Show me the top 10 categories",
-                        "Compare all categories",
-                        "Tell me about category performance",
-                        "Show me category rankings",
-                        "Tell me about category revenue and profit"
+                        "Tell me about all categories by revenue and profit",
+                        "Show me the top 10 categories by revenue",
+                        "Compare all categories by revenue and margin",
+                        "Tell me about category performance by revenue and profit margin",
+                        "Show me category rankings by revenue",
+                        "Tell me about category revenue, profit, and units"
                     ]
                 elif 'customer' in user_msg_lower or 'customers' in user_msg_lower:
                     fallback_suggestions = [
-                        "Tell me about all customers",
-                        "Show me the top 10 customers",
-                        "Compare all customers",
-                        "Tell me about customer performance",
-                        "Show me customer rankings",
-                        "Tell me about customer revenue and profit"
+                        "Tell me about all customers by revenue and profit",
+                        "Show me the top 10 customers by revenue",
+                        "Compare all customers by revenue and margin",
+                        "Tell me about customer performance by revenue and profit margin",
+                        "Show me customer rankings by revenue",
+                        "Tell me about customer revenue, profit, and units"
+                    ]
+                elif 'email' in user_msg_lower or 'draft' in user_msg_lower:
+                    # Email-related questions should be about business data
+                    fallback_suggestions = [
+                        "Draft an email summarizing November 2025 business performance",
+                        "Write an email about business revenue and profit for November 2025",
+                        "Create an email highlighting key business metrics for November 2025",
+                        "Generate an email with business performance summary for November 2025",
+                        "Draft a business performance email for November 2025",
+                        "Write an email about top business KPIs for November 2025"
                     ]
                 else:
-                    # Generic fallback
+                    # Generic fallback - ensure all are business-related
                     fallback_suggestions = [
-                        f"Tell me about {user_message}",
-                        f"Show me details about {user_message}",
-                        f"Compare {user_message}",
-                        f"Show me top 10 {user_message}",
-                        f"Tell me about {user_message} performance",
-                        f"Show me rankings for {user_message}"
+                        f"Tell me about all {user_message} by revenue and profit",
+                        f"Show me the top 10 {user_message} by revenue",
+                        f"Compare all {user_message} by revenue and margin",
+                        f"Tell me about {user_message} performance by revenue and profit margin",
+                        f"Show me {user_message} rankings by revenue",
+                        f"Tell me about {user_message} revenue, profit, and units"
                     ]
                 
                 suggested_questions = fallback_suggestions[:6]  # Limit to 6
@@ -223,30 +263,39 @@ class InsightsService:
                     user_msg_lower = user_message.lower()
                     if 'brand' in user_msg_lower or 'brands' in user_msg_lower:
                         suggested_questions = [
-                            "Tell me about all brands",
-                            "Show me the top 10 brands",
-                            "Compare all brands",
-                            "Tell me about brand performance",
-                            "Show me brand rankings",
-                            "Tell me about brand revenue and profit"
+                            "Tell me about all brands by revenue and profit",
+                            "Show me the top 10 brands by revenue",
+                            "Compare all brands by revenue and margin",
+                            "Tell me about brand performance by revenue and profit margin",
+                            "Show me brand rankings by revenue",
+                            "Tell me about brand revenue, profit, and units"
                         ]
                     elif 'business' in user_msg_lower or 'businesses' in user_msg_lower:
                         suggested_questions = [
-                            "Tell me about all businesses",
-                            "Show me the top 10 businesses",
-                            "Compare all businesses",
-                            "Tell me about business performance",
-                            "Show me business rankings",
-                            "Tell me about business revenue and profit"
+                            "Tell me about all businesses by revenue and profit",
+                            "Show me the top 10 businesses by revenue",
+                            "Compare all businesses by revenue and margin",
+                            "Tell me about business performance by revenue and profit margin",
+                            "Show me business rankings by revenue",
+                            "Tell me about business revenue, profit, and units"
+                        ]
+                    elif 'email' in user_msg_lower or 'draft' in user_msg_lower:
+                        suggested_questions = [
+                            "Draft an email summarizing November 2025 business performance",
+                            "Write an email about business revenue and profit for November 2025",
+                            "Create an email highlighting key business metrics for November 2025",
+                            "Generate an email with business performance summary for November 2025",
+                            "Draft a business performance email for November 2025",
+                            "Write an email about top business KPIs for November 2025"
                         ]
                     else:
                         suggested_questions = [
-                            f"Tell me about all {user_message}",
-                            f"Show me the top 10 {user_message}",
-                            f"Compare all {user_message}",
-                            f"Tell me about {user_message} performance",
-                            f"Show me {user_message} rankings",
-                            f"Tell me about {user_message} revenue and profit"
+                            f"Tell me about all {user_message} by revenue and profit",
+                            f"Show me the top 10 {user_message} by revenue",
+                            f"Compare all {user_message} by revenue and margin",
+                            f"Tell me about {user_message} performance by revenue and profit margin",
+                            f"Show me {user_message} rankings by revenue",
+                            f"Tell me about {user_message} revenue, profit, and units"
                         ]
                     logger.info(f"✅ Generated emergency suggestions: {suggested_questions}")
                 
@@ -263,37 +312,56 @@ class InsightsService:
                 )
             
             # STEP 2: Process the question normally if it's clear
+            # CRITICAL: Check for "across years" BEFORE extracting years
+            # If user wants "across years", we should NOT filter by specific years
+            user_msg_lower_for_years = user_message.lower()
+            is_across_years = (
+                any(phrase in user_msg_lower_for_years for phrase in [
+                    'across years', 'across all years', 'all years', 'year over year', 'yoy'
+                ]) or
+                re.search(r'compare.*across\s+years?', user_msg_lower_for_years) is not None
+            )
+            
             # Extract year from user message if mentioned (e.g., "2025", "sales trend for 2025")
-            year_pattern = r'\b(20\d{2})\b'  # Match years like 2023, 2024, 2025
-            years_in_message = re.findall(year_pattern, user_message)
-            # Convert extracted years to integers and filter valid years (2000-2100)
-            requested_years = [int(y) for y in years_in_message if 2000 <= int(y) <= 2100]
+            # BUT skip if "across years" is mentioned (user wants all years)
+            requested_years = []
+            if not is_across_years:
+                year_pattern = r'\b(20\d{2})\b'  # Match years like 2023, 2024, 2025
+                years_in_message = re.findall(year_pattern, user_message)
+                # Convert extracted years to integers and filter valid years (2000-2100)
+                requested_years = [int(y) for y in years_in_message if 2000 <= int(y) <= 2100]
+            else:
+                logger.info("📅 User asked for 'across years' - will NOT filter by specific years")
+                years_in_message = []  # Don't extract years if comparing across years
             
             # Extract months from user message if mentioned (e.g., "January", "Jan", "March", "Mar")
+            # CRITICAL: Database stores months as full names (January, February, etc.) AND abbreviations (Jan, Feb, etc.)
+            # We need to check both formats to ensure we match the data
             month_mapping = {
-                'january': 'January', 'jan': 'January',
-                'february': 'February', 'feb': 'February',
-                'march': 'March', 'mar': 'March',
-                'april': 'April', 'apr': 'April',
-                'may': 'May',
-                'june': 'June', 'jun': 'June',
-                'july': 'July', 'jul': 'July',
-                'august': 'August', 'aug': 'August',
-                'september': 'September', 'sep': 'September', 'sept': 'September',
-                'october': 'October', 'oct': 'October',
-                'november': 'November', 'nov': 'November',
-                'december': 'December', 'dec': 'December'
+                'january': ['January', 'Jan'], 'jan': ['January', 'Jan'],
+                'february': ['February', 'Feb'], 'feb': ['February', 'Feb'],
+                'march': ['March', 'Mar'], 'mar': ['March', 'Mar'],
+                'april': ['April', 'Apr'], 'apr': ['April', 'Apr'],
+                'may': ['May'],
+                'june': ['June', 'Jun'], 'jun': ['June', 'Jun'],
+                'july': ['July', 'Jul'], 'jul': ['July', 'Jul'],
+                'august': ['August', 'Aug'], 'aug': ['August', 'Aug'],
+                'september': ['September', 'Sep', 'Sept'], 'sep': ['September', 'Sep', 'Sept'], 'sept': ['September', 'Sep', 'Sept'],
+                'october': ['October', 'Oct'], 'oct': ['October', 'Oct'],
+                'november': ['November', 'Nov'], 'nov': ['November', 'Nov'],
+                'december': ['December', 'Dec'], 'dec': ['December', 'Dec']
             }
             user_msg_lower_for_months = user_message.lower()
             requested_months = []
-            for month_key, month_full in month_mapping.items():
+            for month_key, month_variants in month_mapping.items():
                 # Match whole words only to avoid false positives (e.g., "march" in "marching")
-                # Since user_msg_lower_for_months is already lowercase, we don't need IGNORECASE flag
                 pattern = r'\b' + re.escape(month_key) + r'\b'
                 if re.search(pattern, user_msg_lower_for_months):
-                    if month_full not in requested_months:
-                        requested_months.append(month_full)
-            logger.info(f"📅 Extracted months from message: {requested_months if requested_months else 'None'}")
+                    # Add all possible month formats to ensure we match database
+                    for month_variant in month_variants:
+                        if month_variant not in requested_months:
+                            requested_months.append(month_variant)
+            logger.info(f"📅 Extracted months from message (with all variants): {requested_months if requested_months else 'None'}")
             
             # CRITICAL: Detect "all business" queries BEFORE building queries
             # This ensures we don't add Business filter from context when user wants all businesses
@@ -352,8 +420,8 @@ class InsightsService:
                     logger.info(f"📅 Added months to query: {requested_months}")
             
             # Add extracted years to parsed query if they were found in the message
-            # This ensures years mentioned in the message are actually used in the MongoDB query
-            if requested_years:
+            # BUT skip if "across years" is detected (user wants all years)
+            if requested_years and not is_across_years:
                 logger.info(f"📅 Adding extracted years to query: {requested_years}")
                 if 'Year' in parsed_query:
                     # Merge with existing year filter
@@ -368,16 +436,55 @@ class InsightsService:
                 else:
                     parsed_query['Year'] = {'$in': requested_years}
                     logger.info(f"📅 Added years to query: {requested_years}")
+            elif is_across_years and 'Year' in parsed_query:
+                # Remove Year filter from parsed_query if "across years" is detected
+                logger.info("📅 Removing Year filter from parsed_query for cross-year comparison")
+                parsed_query = {k: v for k, v in parsed_query.items() if k != 'Year'}
             
             # Merge context query with parsed query (parsed query takes precedence for filters it specifies)
             query = context_query.copy()
+            
+            # CRITICAL: Ensure extracted months and years are in the final query
+            # If they were extracted from the message, they MUST be in the query
+            if requested_months:
+                if 'Month_Name' in query:
+                    existing_months = query['Month_Name'].get('$in', [])
+                    if isinstance(existing_months, list):
+                        merged_months = list(set(existing_months + requested_months))
+                        query['Month_Name'] = {'$in': merged_months}
+                        logger.info(f"📅 Final query - Merged months: {merged_months}")
+                    else:
+                        query['Month_Name'] = {'$in': requested_months}
+                        logger.info(f"📅 Final query - Added months: {requested_months}")
+                else:
+                    query['Month_Name'] = {'$in': requested_months}
+                    logger.info(f"📅 Final query - Added months: {requested_months}")
+            
+            if requested_years:
+                if 'Year' in query:
+                    existing_years = query['Year'].get('$in', [])
+                    if isinstance(existing_years, list):
+                        merged_years = list(set([int(y) for y in existing_years] + requested_years))
+                        query['Year'] = {'$in': merged_years}
+                        logger.info(f"📅 Final query - Merged years: {merged_years}")
+                    else:
+                        query['Year'] = {'$in': requested_years}
+                        logger.info(f"📅 Final query - Added years: {requested_years}")
+                else:
+                    query['Year'] = {'$in': requested_years}
+                    logger.info(f"📅 Final query - Added years: {requested_years}")
+            
+            # Now merge other parsed_query filters
             for key, value in parsed_query.items():
                 if key in query:
+                    # Skip if we already handled Month_Name or Year above
+                    if key in ['Month_Name', 'Year']:
+                        continue
                     # Merge filters (intersect for $in queries)
                     if isinstance(query[key], dict) and '$in' in query[key] and isinstance(value, dict) and '$in' in value:
                         existing_values = query[key]['$in']
                         new_values = value['$in']
-                        # Intersect the lists
+                        # Intersect the lists for other filters
                         merged_values = [v for v in existing_values if v in new_values] or new_values
                         query[key] = {'$in': merged_values}
                     else:
@@ -395,12 +502,72 @@ class InsightsService:
             logger.info(f"📋 Context query: {context_query}")
             logger.info(f"📋 Parsed query: {parsed_query}")
             
+            # CRITICAL: Check if Month_Name format might be wrong (e.g., "Nov" vs "November")
+            # If query has Month_Name but returns 0, try alternative formats
+            if query and 'Month_Name' in query and 'Year' in query:
+                month_filter = query['Month_Name'].get('$in', [])
+                year_filter = query['Year'].get('$in', [])
+                
+                # Check what month formats actually exist in database
+                year_query_for_months = {'Year': year_filter}
+                distinct_months = await self.db.business_data.distinct('Month_Name', year_query_for_months)
+                logger.info(f"📅 Available month formats in database for year {year_filter}: {distinct_months}")
+                
+                # If our months don't match, try to find the correct format
+                if month_filter:
+                    month_mapping_full_to_abbr = {
+                        'January': 'Jan', 'February': 'Feb', 'March': 'Mar', 'April': 'Apr',
+                        'May': 'May', 'June': 'Jun', 'July': 'Jul', 'August': 'Aug',
+                        'September': 'Sep', 'October': 'Oct', 'November': 'Nov', 'December': 'Dec'
+                    }
+                    
+                    # Try to match our months with database months
+                    corrected_months = []
+                    for our_month in month_filter:
+                        # Check if exact match exists
+                        if our_month in distinct_months:
+                            corrected_months.append(our_month)
+                        else:
+                            # Try abbreviation
+                            abbr = month_mapping_full_to_abbr.get(our_month)
+                            if abbr and abbr in distinct_months:
+                                corrected_months.append(abbr)
+                                logger.info(f"📅 Corrected month format: {our_month} -> {abbr}")
+                            else:
+                                # Try reverse (abbr to full)
+                                for db_month in distinct_months:
+                                    if our_month.lower() in db_month.lower() or db_month.lower() in our_month.lower():
+                                        corrected_months.append(db_month)
+                                        logger.info(f"📅 Corrected month format: {our_month} -> {db_month}")
+                    
+                    if corrected_months and set(corrected_months) != set(month_filter):
+                        logger.warning(f"⚠️ Month format mismatch! Original: {month_filter}, Corrected: {corrected_months}")
+                        query['Month_Name'] = {'$in': list(set(corrected_months))}
+                        logger.info(f"📅 Updated query with corrected months: {query['Month_Name']}")
+            
             # Verify query will return data
             if query:
                 test_count = await self.db.business_data.count_documents(query)
                 logger.info(f"📊 Documents matching final query: {test_count}")
+                logger.info(f"📊 Final query after corrections: {query}")
+                
                 if test_count == 0:
                     logger.warning(f"⚠️ WARNING: Final query returns 0 documents! Query: {query}")
+                    
+                    # Additional diagnostics
+                    if 'Month_Name' in query:
+                        month_filter = query['Month_Name']
+                        logger.warning(f"⚠️ Month_Name filter: {month_filter}")
+                        query_without_month = {k: v for k, v in query.items() if k != 'Month_Name'}
+                        count_without_month = await self.db.business_data.count_documents(query_without_month)
+                        logger.warning(f"⚠️ Documents without Month_Name filter: {count_without_month}")
+                    
+                    if 'Year' in query:
+                        year_filter = query['Year']
+                        logger.warning(f"⚠️ Year filter: {year_filter}")
+                        query_without_year = {k: v for k, v in query.items() if k != 'Year'}
+                        count_without_year = await self.db.business_data.count_documents(query_without_year)
+                        logger.warning(f"⚠️ Documents without Year filter: {count_without_year}")
             else:
                 test_count = await self.db.business_data.count_documents({})
                 logger.info(f"📊 Total documents in database (no filters): {test_count}")
@@ -457,12 +624,21 @@ class InsightsService:
             # Note: is_asking_for_all_businesses is already defined earlier (line 66)
             # This check is just for reference - the variable is already set above
             
-            is_asking_for_brands = any(phrase in user_msg_lower for phrase in [
-                'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
-                'brands by revenue', 'brands by profit', 'brands by', 'all brands',
-                'list brands', 'show brands', 'which brands', 'what brands', 'tell me brands',
-                'compare brand', 'compare brands', 'brand comparison', 'brands comparison'
-            ]) or "brand" in chart_title_lower or is_comparing_brand
+            is_asking_for_brands = (
+                any(phrase in user_msg_lower for phrase in [
+                    'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands', 'top 20 brands',
+                    'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+                    'list brands', 'show brands', 'which brands', 'what brands', 'tell me brands',
+                    'tell me about brands', 'tell me about brand', 'show me brands', 'show me brand',
+                    'show me the top', 'brand performance', 'brand rankings', 'brand revenue', 'brand profit',
+                    'compare brand', 'compare brands', 'brand comparison', 'brands comparison'
+                ]) or 
+                re.search(r'top\s+\d+\s+brand', user_msg_lower) or
+                re.search(r'show\s+me\s+(the\s+)?top\s+\d+\s+brand', user_msg_lower) or
+                re.search(r'tell\s+me\s+about\s+(all\s+)?brand', user_msg_lower) or
+                "brand" in chart_title_lower or 
+                is_comparing_brand
+            )
             
             # Remove Brand filter from main query when comparing brands (so pivot table shows all brands)
             if is_comparing_brand and 'Brand' in query:
@@ -503,10 +679,15 @@ class InsightsService:
                 logger.info(f"🔍 Data context query after removing Business filter: {data_context_query}")
             
             # Also remove Year filter from data_context_query if comparing across years
-            is_across_years = any(phrase in user_msg_lower for phrase in [
-                'across years', 'across all years', 'all years', 'year over year', 'yoy'
-            ])
-            if is_across_years and 'Year' in data_context_query:
+            # Note: is_across_years is already defined earlier, but check again here for data_context_query
+            is_across_years_data = (
+                any(phrase in user_msg_lower for phrase in [
+                    'across years', 'across all years', 'all years', 'year over year', 'yoy'
+                ]) or
+                re.search(r'compare.*across\s+years?', user_msg_lower) is not None or
+                is_across_years
+            )
+            if is_across_years_data and 'Year' in data_context_query:
                 logger.info("📅 Removing Year filter from data context query for cross-year comparison")
                 data_context_query = {k: v for k, v in data_context_query.items() if k != 'Year'}
             
@@ -751,8 +932,8 @@ class InsightsService:
             
             # Enhanced system context for comprehensive queries
             email_context = ""
-            if "email" in user_msg_lower or ("write" in user_msg_lower and "email" in user_msg_lower):
-                email_context = "CRITICAL: The user is asking for an email. Format your response as a professional business email with: (1) Clear subject line, (2) Professional greeting, (3) Executive summary of key findings, (4) Detailed insights with specific numbers, (5) Actionable recommendations, (6) Professional closing. Keep it concise (around 250 words if specified). "
+            if "email" in user_msg_lower or ("write" in user_msg_lower and "email" in user_msg_lower) or ("draft" in user_msg_lower and "email" in user_msg_lower):
+                email_context = "CRITICAL: The user is asking for an email. You MUST base the email ONLY on BUSINESS PERFORMANCE DATA (revenue, profit, units, margins, brands, businesses, categories, customers, channels) from the provided dataset. Do NOT include any world events, news, politics, or non-business information. Format your response as a professional business email with: (1) Clear subject line, (2) Professional greeting, (3) Executive summary of key business findings, (4) Detailed business insights with specific numbers, (5) Actionable business recommendations, (6) Professional closing. Keep it concise (around 250 words if specified). "
             
             comparison_context = ""
             if is_comparison:
@@ -772,9 +953,10 @@ class InsightsService:
                 ""
                 "ABSOLUTELY CRITICAL - DATA USAGE RESTRICTIONS: "
                 "You MUST ONLY use the business data provided in the 'Business Data' section. "
-                "You MUST NOT use any external knowledge, general world information, news, historical events, geopolitical information, wars, elections, or any information outside the provided business data. "
+                "You MUST NOT use any external knowledge, general world information, news, historical events, geopolitical information, wars, elections, natural disasters, economics, international relations, or any information outside the provided business data. "
+                "CRITICAL: If a user asks about topics NOT related to business data (e.g., global news, politics, wars, natural disasters, world events, economics, international relations), you MUST respond: 'I can only provide insights about business data (revenue, profit, units, margins, brands, businesses, categories, customers, channels). Please ask questions related to your business performance data.' "
                 "If the user asks about a time period (e.g., 'November 2025', 'Q1 2024'), you MUST ONLY reference business performance data from that period in the provided dataset. "
-                "If the user asks to 'draft an email' or 'write a summary' about a time period, you MUST base it ONLY on the business performance data provided (revenue, profit, units, margins, brands, categories, etc.), NOT on world events, news, or general knowledge. "
+                "If the user asks to 'draft an email' or 'write a summary' about a time period (e.g., 'draft an email telling everything which happened in November 2025'), you MUST interpret this as asking for a BUSINESS PERFORMANCE summary email for that period, NOT a summary of world events. Base it ONLY on the business performance data provided (revenue, profit, units, margins, brands, categories, etc.), NOT on world events, news, or general knowledge. "
                 ""
                 "CRITICAL - HANDLING QUESTIONS ABOUT UNAVAILABLE DATA: "
                 "If the user asks about data that is NOT directly available (e.g., 'operational expenses', 'OPEX', 'net profit', 'SG&A', 'marketing spend', 'cost of goods sold', 'COGS'), you should: "

@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.utils.helpers import safe_float, format_currency, format_units
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -196,17 +197,27 @@ async def get_comprehensive_data_context(
         if "brand" in user_msg_lower or is_comparison:
             # Use modified query without Brand filter when asking FOR brands
             brand_query = query.copy() if query else {}
-            is_asking_for_brands = any(phrase in user_msg_lower for phrase in [
-                'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
-                'brands by revenue', 'brands by profit', 'brands by', 'all brands',
-                'list brands', 'show brands', 'which brands', 'what brands'
-            ])
+            is_asking_for_brands = (
+                any(phrase in user_msg_lower for phrase in [
+                    'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands', 'top 20 brands',
+                    'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+                    'list brands', 'show brands', 'which brands', 'what brands',
+                    'tell me about brands', 'tell me about brand', 'show me brands', 'show me brand',
+                    'brand performance', 'brand rankings', 'brand revenue', 'brand profit'
+                ]) or 
+                re.search(r'top\s+\d+\s+brand', user_msg_lower)
+            )
             if is_asking_for_brands and 'Brand' in brand_query:
                 logger.info(f"🔍 Removing Brand filter from brand breakdown (user is asking FOR brands)")
                 brand_query = {k: v for k, v in brand_query.items() if k != 'Brand'}
             
             logger.info(f"🔍 Data context - Fetching brand breakdown with query: {brand_query}")
             brand_match_stage = {"$match": brand_query} if brand_query else {"$match": {}}
+            # Determine limit from query (e.g., "top 10" = 10, "top 15" = 15, default = 20)
+            import re
+            top_match = re.search(r'top\s+(\d+)', user_msg_lower)
+            brand_limit = int(top_match.group(1)) if top_match else 20
+            
             pipeline_brand = [
                 brand_match_stage,
                 {
@@ -219,9 +230,9 @@ async def get_comprehensive_data_context(
                 },
                 {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
                 {"$sort": {"Revenue": -1}},
-                {"$limit": 20}
+                {"$limit": brand_limit}
             ]
-            brand_results = await db.business_data.aggregate(pipeline_brand).to_list(20)
+            brand_results = await db.business_data.aggregate(pipeline_brand).to_list(brand_limit)
             logger.info(f"📊 Data context - Brand results count: {len(brand_results)}")
             if brand_results:
                 context_parts.append("\nBrand Performance:")
