@@ -48,4 +48,12 @@ class InsightsChatResponse(BaseModel):
         default_factory=dict,
         description="Additional data including pivot_table, recommendations, etc."
     )
+    needs_clarification: Optional[bool] = Field(
+        False,
+        description="Whether the question needs clarification"
+    )
+    suggested_questions: Optional[List[str]] = Field(
+        default_factory=list,
+        description="List of suggested clarified questions if needs_clarification is True"
+    )
 

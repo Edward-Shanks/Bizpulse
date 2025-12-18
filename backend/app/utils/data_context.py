@@ -237,8 +237,20 @@ async def get_comprehensive_data_context(
             else:
                 logger.warning(f"⚠️ Data context - No brand results found with query: {brand_query}")
         
-        # Business breakdown (if business mentioned or comparison)
-        if "business" in user_msg_lower or is_comparison:
+        # Business breakdown (if business mentioned, comparison, or asking for top/all businesses)
+        is_asking_for_businesses = (
+            "business" in user_msg_lower or 
+            is_comparison or 
+            "top" in user_msg_lower and "business" in user_msg_lower or
+            "all business" in user_msg_lower or
+            "all businesses" in user_msg_lower
+        )
+        if is_asking_for_businesses:
+            # Determine limit from query (e.g., "top 10" = 10, "top 15" = 15, default = 20)
+            import re
+            top_match = re.search(r'top\s+(\d+)', user_msg_lower)
+            business_limit = int(top_match.group(1)) if top_match else 20
+            
             pipeline_business = [
                 match_stage,
                 {
@@ -251,7 +263,7 @@ async def get_comprehensive_data_context(
                 },
                 {"$sort": {"Revenue": -1}}
             ]
-            business_results = await db.business_data.aggregate(pipeline_business).to_list(20)
+            business_results = await db.business_data.aggregate(pipeline_business).to_list(business_limit)
             if business_results:
                 context_parts.append("\nBusiness Performance:")
                 for item in business_results:

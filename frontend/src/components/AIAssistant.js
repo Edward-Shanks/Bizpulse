@@ -4,7 +4,7 @@ import { API, useAuth } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, X, Send, Sparkles } from 'lucide-react';
+import { Bot, X, Send, Sparkles, RotateCcw, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,6 +16,7 @@ const AIAssistant = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
+  const [isContextCleared, setIsContextCleared] = useState(false);
   const scrollRef = useRef(null);
   const sessionId = useRef(`session-${Date.now()}`);
 
@@ -55,7 +56,8 @@ const AIAssistant = () => {
 
     try {
       // Build conversation history from previous messages
-      const conversationHistory = messages.map(msg => ({
+      // If context was cleared, send empty history to ensure backend doesn't use old context
+      const conversationHistory = isContextCleared ? [] : messages.map(msg => ({
         role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content
       }));
@@ -72,9 +74,50 @@ const AIAssistant = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
 
+      // Check if question needs clarification
+      const needsClarification = response.data?.needs_clarification || false;
+      let suggestedQuestions = response.data?.suggested_questions || [];
+      
+      console.log('🔍 AIAssistant - Full API Response:', response.data);
+      console.log('🔍 AIAssistant - Clarification check:', { 
+        needsClarification, 
+        suggestedQuestionsCount: suggestedQuestions?.length || 0, 
+        suggestedQuestions,
+        suggestedQuestionsType: typeof suggestedQuestions,
+        isArray: Array.isArray(suggestedQuestions)
+      });
+      
+      // Ensure suggestedQuestions is always an array
+      if (!Array.isArray(suggestedQuestions)) {
+        if (suggestedQuestions && typeof suggestedQuestions === 'object') {
+          suggestedQuestions = Object.values(suggestedQuestions);
+        } else if (typeof suggestedQuestions === 'string') {
+          try {
+            const parsed = JSON.parse(suggestedQuestions);
+            suggestedQuestions = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            suggestedQuestions = [suggestedQuestions];
+          }
+        } else {
+          suggestedQuestions = [];
+        }
+      }
+      
       const fullResponse = response.data?.response || 'No response';
-      const aiMessage = { role: 'ai', content: fullResponse };
+      const aiMessage = { 
+        role: 'ai', 
+        content: fullResponse,
+        needs_clarification: needsClarification,
+        suggested_questions: suggestedQuestions
+      };
+      
+      console.log('🔍 AIAssistant - Adding message:', aiMessage);
       setMessages((prev) => [...prev, aiMessage]);
+      
+      // Reset context cleared flag after sending first message after clear
+      if (isContextCleared) {
+        setIsContextCleared(false);
+      }
       
       // Simulate streaming for better UX
       streamMessage(fullResponse, () => setStreamingMessage(''));
@@ -96,6 +139,19 @@ const AIAssistant = () => {
     'Show me top 10 brands by Revenue in 2025',
     'Compare brand Bonne Maman with other brands'
   ];
+
+  const handleClearContext = () => {
+    // Reset messages to empty array
+    setMessages([]);
+    // Create new session ID
+    sessionId.current = `session-${Date.now()}`;
+    // Clear streaming message
+    setStreamingMessage('');
+    // Set flag to ensure next message sends empty conversation history
+    setIsContextCleared(true);
+    // Show confirmation toast
+    toast.success('Previous context cleared. Starting fresh conversation.');
+  };
 
   return (
     <>
@@ -149,12 +205,22 @@ const AIAssistant = () => {
                 <p className="text-xs text-white/80">Business Intelligence Assistant</p>
               </div>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-white hover:bg-white/20 rounded-lg p-2 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleClearContext}
+                className="text-white hover:bg-white/20 rounded-lg p-2 transition flex items-center gap-2"
+                title="Clear Previous Context"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span className="text-sm hidden sm:inline">Clear Context</span>
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-white hover:bg-white/20 rounded-lg p-2 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
 
           {/* Messages */}
@@ -196,6 +262,34 @@ const AIAssistant = () => {
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {msg.content}
                       </ReactMarkdown>
+                      
+                      {/* Suggested Questions for Clarification */}
+                      {msg.needs_clarification && msg.suggested_questions && Array.isArray(msg.suggested_questions) && msg.suggested_questions.length > 0 && (
+                        <div className="mt-4 space-y-2 pt-3 border-t border-gray-200">
+                          <p className="text-xs font-semibold text-gray-600 mb-2">Did you mean:</p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {msg.suggested_questions.map((suggestedQ, sqIdx) => (
+                              <button
+                                key={sqIdx}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (suggestedQ && typeof suggestedQ === 'string') {
+                                    handleSendMessage(suggestedQ);
+                                  }
+                                }}
+                                className="text-left px-4 py-3 rounded-lg text-sm transition-all hover:shadow-md border-2 border-blue-200 hover:border-blue-400 bg-white hover:bg-blue-50 w-full"
+                                style={{ color: '#1e40af' }}
+                              >
+                                <div className="flex items-start gap-2">
+                                  <ArrowRight className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                  <span className="flex-1 break-words">{suggestedQ}</span>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

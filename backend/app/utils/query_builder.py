@@ -6,6 +6,7 @@ from typing import Dict, Any, List, Optional
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.utils.helpers import parse_list
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -325,33 +326,68 @@ async def parse_query_from_natural_language(
             else:
                 query['Month_Name'] = {'$in': q_months}
     
+    # Skip business extraction if comparing businesses or asking for all businesses
+    # Also check for "with other business in the group" which is a common phrasing
+    is_comparing_business = (
+        any(phrase in message_lower for phrase in [
+            'compare business', 'compare businesses', 'business vs', 'businesses vs', 'business versus', 'businesses versus',
+            'compare x with', 'compare x to', 'compare x against', 'x compared to', 'x compared with',
+            'x vs other', 'x versus other', 'x against other', 'x and other businesses', 'x with other businesses',
+            'with other businesses', 'versus other businesses', 'against other businesses', 'to other businesses',
+            'with other business', 'versus other business', 'against other business', 'to other business',
+            'compared to other', 'compared with other', 'in the group', 'with other business in the group',
+            'with other businesses in the group', 'relative to other businesses', 'among other businesses', 
+            'alongside other businesses', 'other business in the group', 'other businesses in the group'
+        ]) and ('business' in message_lower or 'businesses' in message_lower)
+    ) or 'with other business' in message_lower or 'with other businesses' in message_lower
+    
+    # Detect "all business" or "top X business" queries - these should show all businesses
+    is_asking_for_all_businesses = (
+        any(phrase in message_lower for phrase in [
+            'all business', 'all businesses', 'every business', 'every businesses',
+            'show all business', 'show all businesses', 'list all business', 'list all businesses',
+            'all business in', 'all businesses in', 'all business data', 'all businesses data',
+            'top business', 'top businesses', 'top 10 business', 'top 10 businesses', 'top 15 business', 'top 15 businesses',
+            'top 5 business', 'top 5 businesses', 'top 20 business', 'top 20 businesses',
+            'best business', 'best businesses', 'leading business', 'leading businesses',
+            'top business by', 'top businesses by', 'rank business', 'rank businesses',
+            'business ranking', 'businesses ranking', 'top performing business', 'top performing businesses'
+        ]) or 
+        re.search(r'top\s+\d+\s+business', message_lower) or 
+        re.search(r'top\s+\d+\s+businesses', message_lower)
+    )
+    
     # Extract business (e.g., "business food", "for business food", "business: food")
-    business_patterns = [
-        r'business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
-        r'for\s+business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
-        r'business:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
-        r'business\s+([a-zA-Z\s,&]+?)(?:\s+channel|\s+customer|\s+brand|\s+category|$)',
-    ]
-    for pattern in business_patterns:
-        matches = re.findall(pattern, message_lower, re.IGNORECASE)
-        if matches:
-            business_name = matches[0].strip()
-            # Remove trailing words that might be part of next filter
-            business_name = re.sub(r'\s+(channel|customer|brand|category).*$', '', business_name, flags=re.IGNORECASE).strip()
-            # Try to match with database businesses
-            matched = False
-            for db_business in all_businesses:
-                if db_business:
-                    db_business_lower = str(db_business).lower()
-                    business_name_lower = business_name.lower()
-                    # Check if business name matches (exact or contains)
-                    if business_name_lower == db_business_lower or business_name_lower in db_business_lower or db_business_lower in business_name_lower:
-                        query = await apply_business_filter(query, str(db_business), db)
-                        matched = True
-                        logger.info(f"✅ Matched business: '{business_name}' -> '{db_business}'")
-                        break
-            if matched:
-                break
+    # But skip if comparing businesses or asking for all businesses (we want all businesses)
+    if not is_comparing_business and not is_asking_for_all_businesses:
+        business_patterns = [
+            r'business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
+            r'for\s+business\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
+            r'business:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|channel|customer|brand|category)',
+            r'business\s+([a-zA-Z\s,&]+?)(?:\s+channel|\s+customer|\s+brand|\s+category|$)',
+        ]
+        for pattern in business_patterns:
+            matches = re.findall(pattern, message_lower, re.IGNORECASE)
+            if matches:
+                business_name = matches[0].strip()
+                # Remove trailing words that might be part of next filter
+                business_name = re.sub(r'\s+(channel|customer|brand|category).*$', '', business_name, flags=re.IGNORECASE).strip()
+                # Try to match with database businesses
+                matched = False
+                for db_business in all_businesses:
+                    if db_business:
+                        db_business_lower = str(db_business).lower()
+                        business_name_lower = business_name.lower()
+                        # Check if business name matches (exact or contains)
+                        if business_name_lower == db_business_lower or business_name_lower in db_business_lower or db_business_lower in business_name_lower:
+                            query = await apply_business_filter(query, str(db_business), db)
+                            matched = True
+                            logger.info(f"✅ Matched business: '{business_name}' -> '{db_business}'")
+                            break
+                if matched:
+                    break
+    else:
+        logger.info("ℹ️ Skipping business extraction - user is comparing businesses, not filtering BY business")
     
     # Extract channel (e.g., "channel Convenience", "channel: Convenience")
     channel_patterns = [
@@ -418,13 +454,22 @@ async def parse_query_from_natural_language(
     ]
     
     # Skip brand extraction if the message is asking FOR brands (not filtering BY brand)
+    # Also skip if comparing brands - we want to show all brands for comparison
     is_asking_for_brands = any(phrase in message_lower for phrase in [
         'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
         'brands by revenue', 'brands by profit', 'brands by', 'all brands',
         'list brands', 'show brands', 'which brands', 'what brands'
     ])
     
-    if not is_asking_for_brands:
+    is_comparing_brand = any(phrase in message_lower for phrase in [
+        'compare brand', 'compare brands', 'brand vs', 'brands vs', 'brand versus', 'brands versus',
+        'compare x with', 'compare x to', 'compare x against', 'x compared to', 'x compared with',
+        'x vs other', 'x versus other', 'x against other', 'x and other brands', 'x with other brands',
+        'compared to other', 'compared with other', 'vs other brands', 'versus other brands',
+        'with other brands', 'against other brands', 'to other brands', 'relative to other brands'
+    ]) and ('brand' in message_lower or 'brands' in message_lower)
+    
+    if not is_asking_for_brands and not is_comparing_brand:
         for pattern in brand_patterns[1:]:  # Skip the first pattern (negative match)
             matches = re.findall(pattern, message_lower, re.IGNORECASE)
             if matches:

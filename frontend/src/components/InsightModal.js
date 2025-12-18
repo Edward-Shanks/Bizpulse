@@ -4,7 +4,7 @@ import { useAuth, API } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { X, Send, Sparkles, TrendingUp, AlertCircle, Lightbulb, ArrowRight, CheckCircle, AlertTriangle } from 'lucide-react';
+import { X, Send, Sparkles, TrendingUp, AlertCircle, Lightbulb, ArrowRight, CheckCircle, AlertTriangle, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import ChartComponent from '@/components/ChartComponent';
 import ReactMarkdown from 'react-markdown';
@@ -27,7 +27,8 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   const [streamingMessage, setStreamingMessage] = useState('');
   const [dynamicRecommendations, setDynamicRecommendations] = useState([]);
   const [dynamicFollowUps, setDynamicFollowUps] = useState([]);
-  const sessionId = `insight-${Date.now()}`;
+  const [sessionId, setSessionId] = useState(`insight-${Date.now()}`);
+  const [isContextCleared, setIsContextCleared] = useState(false);
 
   if (!isOpen) return null;
 
@@ -131,21 +132,30 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   };
 
   const handleSendMessage = async (messageText = null) => {
-    const msgToSend = messageText || input.trim();
-    if (!msgToSend) return;
+    // Ensure messageText is a string, not an event object
+    let msgToSend;
+    if (messageText && typeof messageText === 'string') {
+      msgToSend = messageText;
+    } else {
+      msgToSend = input.trim();
+    }
+    if (!msgToSend || typeof msgToSend !== 'string') return;
 
     // CRITICAL: Clear lastPivot when sending a new message to avoid stale data
     setLastPivot([]);
     setPivotKey(prev => prev + 1); // Increment key to force re-render
     
-    const userMessage = { role: 'user', content: msgToSend, pivot_table: [] };
+    // Ensure user message content is always a string
+    const safeUserContent = typeof msgToSend === 'string' ? msgToSend : String(msgToSend || '');
+    const userMessage = { role: 'user', content: safeUserContent, pivot_table: [] };
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
 
     try {
       // Build conversation history from previous messages
-      const conversationHistory = messages.slice(1).map(msg => ({
+      // If context was cleared, send empty history to ensure backend doesn't use old context
+      const conversationHistory = isContextCleared ? [] : messages.slice(1).map(msg => ({
         role: msg.role === 'user' ? 'user' : 'assistant',
         content: msg.content
       }));
@@ -154,10 +164,19 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         message: msgToSend,
         chart_title: chartTitle,
         context: {
-          monthlyData: context?.monthlyData || [],
+          monthlyData: context?.monthlyData || context?.monthlyTrend || [],
           selectedYears: context?.selectedYears || [],
           selectedMonths: context?.selectedMonths || [],
-          selectedBusinesses: context?.selectedBusinesses || []
+          selectedBusinesses: context?.selectedBusinesses || [],
+          selectedChannels: context?.selectedChannels || [],
+          yearlyData: context?.yearlyData || [],
+          businessData: context?.businessData || [],
+          channelData: context?.channelData || [],
+          monthlyTrend: context?.monthlyTrend || [],
+          totalRevenue: context?.totalRevenue,
+          totalUnits: context?.totalUnits,
+          totalProfit: context?.totalProfit,
+          avgPrice: context?.avgPrice
         },
         session_id: sessionId,
         conversation_history: conversationHistory
@@ -187,7 +206,69 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      const fullResponse = response.data?.response || 'No response';
+      // Check if question needs clarification
+      const needsClarification = response.data?.needs_clarification || false;
+      let suggestedQuestions = response.data?.suggested_questions || [];
+      
+      console.log('🔍 Full API Response:', response.data);
+      console.log('🔍 Clarification check:', { 
+        needsClarification, 
+        suggestedQuestionsCount: suggestedQuestions?.length || 0, 
+        suggestedQuestions,
+        suggestedQuestionsType: typeof suggestedQuestions,
+        isArray: Array.isArray(suggestedQuestions)
+      });
+      
+      // Ensure suggestedQuestions is always an array
+      if (!Array.isArray(suggestedQuestions)) {
+        if (suggestedQuestions && typeof suggestedQuestions === 'object') {
+          // If it's an object, try to convert to array
+          suggestedQuestions = Object.values(suggestedQuestions);
+        } else if (typeof suggestedQuestions === 'string') {
+          // If it's a string, try to parse it
+          try {
+            const parsed = JSON.parse(suggestedQuestions);
+            suggestedQuestions = Array.isArray(parsed) ? parsed : [];
+          } catch {
+            suggestedQuestions = [suggestedQuestions];
+          }
+        } else {
+          suggestedQuestions = [];
+        }
+      }
+      
+      if (needsClarification) {
+        // Question needs clarification - show suggested questions
+        setLoading(false);
+        const clarificationResponse = response.data?.response || 'I want to make sure I understand your question correctly. Could you please select one of these clarified versions, or rewrite your question?';
+        const clarificationMessage = {
+          role: 'ai',
+          content: clarificationResponse,
+          needs_clarification: true,
+          suggested_questions: suggestedQuestions, // Now guaranteed to be an array
+          messageId: Date.now()
+        };
+        console.log('🔍 Adding clarification message:', clarificationMessage);
+        console.log('🔍 Suggested questions array:', suggestedQuestions);
+        setMessages((prev) => {
+          const newMessages = [...prev, clarificationMessage];
+          console.log('🔍 Updated messages array length:', newMessages.length);
+          console.log('🔍 Last message:', newMessages[newMessages.length - 1]);
+          return newMessages;
+        });
+        return; // Don't process further, just show suggestions
+      }
+      
+      // Ensure response is always a string
+      let fullResponse = response.data?.response || 'No response';
+      if (typeof fullResponse !== 'string') {
+        // If response is not a string, try to convert it
+        if (fullResponse && typeof fullResponse === 'object') {
+          fullResponse = JSON.stringify(fullResponse);
+        } else {
+          fullResponse = String(fullResponse || 'No response');
+        }
+      }
       const pivot = response?.data?.data?.pivot_table || [];
       const pivotArray = Array.isArray(pivot) ? pivot : [];
       
@@ -225,11 +306,17 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       
       // Start streaming the message word by word
       setLoading(false);
+      // Reset context cleared flag after sending first message after clear
+      if (isContextCleared) {
+        setIsContextCleared(false);
+      }
       streamMessage(fullResponse, () => {
         // When streaming completes, add the full message to chat with pivot data
+        // Ensure content is always a string
+        const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
         const aiMessage = { 
           role: 'ai', 
-          content: fullResponse,
+          content: safeContent,
           pivot_table: pivotArray, // Store pivot data with this message
           messageId: Date.now() // Unique ID for this message to force re-render
         };
@@ -243,28 +330,59 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       console.error('Error details:', error.response?.data || error.message);
       toast.error('AI Assistant is unavailable');
       setLoading(false);
+      // Ensure error message content is always a string
+      let errorContent = error.response?.data?.detail || error.message || 'Sorry, I am currently unavailable. Please try again later.';
+      if (typeof errorContent !== 'string') {
+        errorContent = String(errorContent || 'Sorry, I am currently unavailable. Please try again later.');
+      }
       const errorMessage = {
         role: 'ai',
-        content: error.response?.data?.detail || error.message || 'Sorry, I am currently unavailable. Please try again later.'
+        content: errorContent
       };
       setMessages((prev) => [...prev, errorMessage]);
     }
   };
 
   const handlePromptClick = (prompt) => {
-    handleSendMessage(prompt);
+    if (typeof prompt === 'string') {
+      handleSendMessage(prompt);
+    }
+  };
+
+  const handleClearContext = () => {
+    // Reset messages to initial state
+    setMessages([
+      {
+        role: 'ai',
+        content: `I'm analyzing ${chartTitle}. What would you like to know about this data?`,
+        pivot_table: []
+      }
+    ]);
+    // Clear pivot data
+    setLastPivot([]);
+    setPivotKey(0);
+    // Clear dynamic recommendations and follow-ups
+    setDynamicRecommendations([]);
+    setDynamicFollowUps([]);
+    // Generate new session ID to ensure fresh conversation
+    setSessionId(`insight-${Date.now()}`);
+    // Set flag to ensure next message sends empty conversation history
+    setIsContextCleared(true);
+    // Show confirmation toast
+    toast.success('Previous context cleared. Starting fresh conversation.');
   };
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-center justify-center p-4" 
-      style={{ background: 'rgba(0, 0, 0, 0.5)' }} 
+      className="fixed inset-0 flex items-center justify-center p-4" 
+      style={{ background: 'rgba(0, 0, 0, 0.5)', zIndex: 9999 }} 
       onClick={onClose}
     >
       <div
         className="w-full max-w-6xl bg-white rounded-2xl shadow-2xl flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
         data-testid="insight-modal"
+        style={{ zIndex: 10000 }}
       >
         {/* Header */}
         <div
@@ -277,12 +395,22 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
             </h3>
             <p className="text-sm text-blue-100">AI-powered recommendations and chat analysis</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white hover:bg-white/20 rounded-lg p-2 transition"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleClearContext}
+              className="text-white hover:bg-white/20 rounded-lg p-2 transition flex items-center gap-2"
+              title="Clear Previous Context"
+            >
+              <RotateCcw className="w-5 h-5" />
+              <span className="text-sm hidden sm:inline">Clear Context</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="text-white hover:bg-white/20 rounded-lg p-2 transition"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
         </div>
 
         {/* Two Column Layout */}
@@ -325,7 +453,13 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                               borderColor: rec.color.border,
                               color: rec.color.text
                             }}
-                            onClick={() => handleSendMessage(rec.action)}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (rec.action && typeof rec.action === 'string') {
+                                handleSendMessage(rec.action);
+                              }
+                            }}
                           >
                             {rec.action}
                           </Button>
@@ -340,34 +474,114 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
 
           {/* Right Column - Chat Analysis */}
           <div className="flex-1 flex flex-col bg-white">
-            <div className="p-5">
+            <div className="p-5 border-b">
               <h3 className="text-lg font-bold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
-                Chat Analysis
+                VectorDeep AI - Business Intelligence Assistant
               </h3>
+              <p className="text-xs text-gray-600">Ask questions about your data</p>
             </div>
 
             {/* Chat Messages */}
             <ScrollArea className="flex-1 px-5">
-              {messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`mb-4 ${msg.role === 'user' ? 'flex justify-end' : ''}`}
-                >
-                  {msg.role === 'ai' && (
-                    <div className="bg-gray-100 rounded-lg p-4 border border-gray-200">
-                      <div className="text-sm text-gray-800 mb-3 prose prose-sm max-w-none">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {msg.content}
-                        </ReactMarkdown>
-                      </div>
+              {messages.map((msg, idx) => {
+                // Ensure content is a string, not an event object or any other type
+                let content = '';
+                try {
+                  if (typeof msg.content === 'string') {
+                    content = msg.content;
+                  } else if (msg.content && typeof msg.content === 'object') {
+                    // If it's an object (like an event), don't render it
+                    console.error('Invalid content type in message:', typeof msg.content, msg.content);
+                    content = '[Invalid message content - please refresh the page]';
+                  } else {
+                    content = String(msg.content || '');
+                  }
+                } catch (e) {
+                  console.error('Error processing message content:', e);
+                  content = '[Error processing message]';
+                }
+                
+                // Debug: Log message object for clarification messages
+                if (msg.needs_clarification) {
+                  console.log('🔍 Rendering clarification message:', {
+                    idx,
+                    needs_clarification: msg.needs_clarification,
+                    suggested_questions: msg.suggested_questions,
+                    suggested_questions_type: typeof msg.suggested_questions,
+                    is_array: Array.isArray(msg.suggested_questions),
+                    length: msg.suggested_questions?.length,
+                    full_message: msg
+                  });
+                }
+                
+                return (
+                  <div
+                    key={idx}
+                    className={`mb-4 ${msg.role === 'user' ? 'flex justify-end' : ''}`}
+                  >
+                    {msg.role === 'ai' && (
+                      <div className="bg-gray-100 rounded-lg p-4 border border-gray-200">
+                        <div className="text-sm text-gray-800 mb-3 prose prose-sm max-w-none">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {content}
+                          </ReactMarkdown>
+                        </div>
+                      
+                      {/* Suggested Questions for Clarification */}
+                      {(() => {
+                        const hasClarification = msg.needs_clarification === true;
+                        const hasSuggestions = msg.suggested_questions && Array.isArray(msg.suggested_questions) && msg.suggested_questions.length > 0;
+                        console.log(`🔍 Message ${idx} clarification check:`, {
+                          hasClarification,
+                          hasSuggestions,
+                          needs_clarification: msg.needs_clarification,
+                          suggested_questions: msg.suggested_questions,
+                          suggested_questions_length: msg.suggested_questions?.length
+                        });
+                        return hasClarification && hasSuggestions;
+                      })() && (
+                        <div className="mt-4 space-y-2">
+                          <p className="text-xs font-semibold text-gray-600 mb-2">Did you mean:</p>
+                          <div className="grid grid-cols-1 gap-2">
+                            {msg.suggested_questions.map((suggestedQ, sqIdx) => {
+                              console.log('🔍 Rendering suggestion:', suggestedQ);
+                              return (
+                                <button
+                                  key={sqIdx}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    if (suggestedQ && typeof suggestedQ === 'string') {
+                                      handleSendMessage(suggestedQ);
+                                    }
+                                  }}
+                                  className="text-left px-4 py-3 rounded-lg text-sm transition-all hover:shadow-md border-2 border-blue-200 hover:border-blue-400 bg-white hover:bg-blue-50"
+                                  style={{ color: '#1e40af' }}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <ArrowRight className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    <span className="flex-1">{suggestedQ}</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                       
                       {/* Suggested Prompts */}
-                      {idx === 0 && (
+                      {idx === 0 && !msg.needs_clarification && (
                         <div className="grid grid-cols-1 gap-2">
                           {suggestedPrompts.map((prompt, pidx) => (
                             <button
                               key={pidx}
-                              onClick={() => handlePromptClick(prompt)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (prompt && typeof prompt === 'string') {
+                                  handlePromptClick(prompt);
+                                }
+                              }}
                               className="text-left px-3 py-2 rounded text-sm transition hover:bg-amber-100"
                               style={{ background: '#fef3c7', color: '#92400e' }}
                             >
@@ -387,7 +601,13 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                             {followUpPrompts.map((prompt, pidx) => (
                               <button
                                 key={pidx}
-                                onClick={() => handlePromptClick(prompt)}
+                                onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (prompt && typeof prompt === 'string') {
+                                  handlePromptClick(prompt);
+                                }
+                              }}
                                 className="text-left px-3 py-2 rounded text-xs transition hover:bg-amber-200 hover:shadow-sm cursor-pointer"
                                 style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fbbf24' }}
                               >
@@ -400,13 +620,14 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                     </div>
                   )}
                   
-                  {msg.role === 'user' && (
-                    <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg px-4 py-3 max-w-[80%]">
-                      <p className="text-sm">{msg.content}</p>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    {msg.role === 'user' && (
+                      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg px-4 py-3 max-w-[80%]">
+                        <p className="text-sm">{typeof content === 'string' ? content : String(content || '')}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
               {/* Visualization from AI data - Show only for the most recent AI message */}
               {/* CRITICAL: Use pivotKey AND pivot data hash to force re-render */}
@@ -441,7 +662,7 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
               )}
 
               {/* Streaming message */}
-              {streamingMessage && (
+              {streamingMessage && typeof streamingMessage === 'string' && (
                 <div className="mb-4">
                   <div className="bg-gray-100 rounded-lg p-4 border border-gray-200">
                     <div className="text-sm text-gray-800 prose prose-sm max-w-none">
@@ -461,14 +682,23 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !loading && handleSendMessage()}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !loading) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
                   placeholder="Ask about this chart..."
                   disabled={loading}
                   className="flex-1"
                   data-testid="insight-chat-input"
                 />
                 <Button
-                  onClick={() => handleSendMessage()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSendMessage();
+                  }}
                   disabled={loading || !input.trim()}
                   className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white"
                   data-testid="insight-send-button"
