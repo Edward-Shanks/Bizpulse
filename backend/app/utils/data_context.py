@@ -188,9 +188,25 @@ async def get_comprehensive_data_context(
             # 1. Present in the query as filters, AND
             # 2. Mentioned in the user message (indicating user wants breakdown by that dimension)
             # This enables questions like:
-            # - "Compare Q1 for Food and KOKA brand" → Break down by Year + Brand
-            # - "Compare Q1 for Food, KOKA brand, and Grocery channel" → Break down by Year + Brand + Channel
-            # - "Compare Q1 for Food in 2023 and 2024" → Break down by Year only
+            # - "Compare Q1 for Food and KOKA brand" → Break down by Year + Business + Brand
+            # - "Compare Q1 for Food, KOKA brand, and Grocery channel" → Break down by Year + Business + Brand + Channel
+            # - "Compare Q1 for Food in 2023 and 2024" → Break down by Year + Business
+            # - "Compare Q1 Gross Sales: Food Channel, Grocery Channel, Baking Category (2023 vs 2024)" → Break down by Year + Business + Channel + Category
+            
+            # Check for Business dimension
+            # CRITICAL: If Business filter exists in query AND it's a comparison query, include Business in breakdown
+            # This handles questions like "Compare Q1 for Food in 2023 and 2024" or "Q1 Gross Sales Comparison: Food Channel, Grocery Channel, Baking Category"
+            if 'Business' in query:
+                is_asking_for_businesses_list = any(phrase in user_msg_lower for phrase in [
+                    'top businesses', 'all businesses', 'list businesses', 'show businesses', 'which businesses', 'what businesses',
+                    'top business', 'all business', 'list business', 'show business', 'compare businesses', 'compare business'
+                ])
+                # For comparison queries, if Business filter exists and user is NOT asking for all businesses, include Business in breakdown
+                # This ensures "Compare Q1 for Food in 2023 and 2024" breaks down by Year + Business
+                if is_comparison_query and not is_asking_for_businesses_list:
+                    requested_dimensions.append("$Business")
+                    dimension_labels.append("Business")
+                    logger.info(f"📊 Multi-dimensional breakdown: Added Business dimension (filter: {query.get('Business')}) for comparison query")
             
             # Check for Brand dimension
             # CRITICAL: If Brand filter exists in query, include it in breakdown (user wants brand-level comparison)
