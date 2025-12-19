@@ -6412,15 +6412,76 @@ async def get_comprehensive_data_context(
                     context_parts.append(f"  Margin: {margin:.2f}%")
         
         # Quarterly breakdown
-        if is_quarterly or "quarter" in user_msg_lower or "q1" in user_msg_lower or "q2" in user_msg_lower:
+        # CRITICAL FIX: Use abbreviated month names (Jan, Feb, Mar) to match database format
+        if is_quarterly or "quarter" in user_msg_lower or "q1" in user_msg_lower or "q2" in user_msg_lower or "q3" in user_msg_lower or "q4" in user_msg_lower:
             quarter_months = {
-                'Q1': ['January', 'February', 'March'],
-                'Q2': ['April', 'May', 'June'],
-                'Q3': ['July', 'August', 'September'],
-                'Q4': ['October', 'November', 'December']
+                'Q1': ['Jan', 'Feb', 'Mar'],
+                'Q2': ['Apr', 'May', 'Jun'],
+                'Q3': ['Jul', 'Aug', 'Sep'],
+                'Q4': ['Oct', 'Nov', 'Dec']
             }
             
-            for quarter, months in quarter_months.items():
+            # CRITICAL: Detect which quarters are requested
+            requested_quarters = []
+            if "q1" in user_msg_lower or "quarter 1" in user_msg_lower: requested_quarters.append('Q1')
+            if "q2" in user_msg_lower or "quarter 2" in user_msg_lower: requested_quarters.append('Q2')
+            if "q3" in user_msg_lower or "quarter 3" in user_msg_lower: requested_quarters.append('Q3')
+            if "q4" in user_msg_lower or "quarter 4" in user_msg_lower: requested_quarters.append('Q4')
+            if not requested_quarters: requested_quarters = ['Q1', 'Q2', 'Q3', 'Q4']
+            
+            # CRITICAL FIX: For comparison queries, show quarter breakdown by year (e.g., Q1 2023 vs Q1 2024)
+            is_comparison_query = (
+                is_comparison or 
+                "compare" in user_msg_lower or 
+                "across years" in user_msg_lower or
+                (query.get('Year') and isinstance(query.get('Year', {}).get('$in'), list) and len(query.get('Year', {}).get('$in', [])) > 1)
+            )
+            
+            # CRITICAL: Detect which dimensions are requested in the query for multi-dimensional breakdowns
+            requested_dimensions = []
+            dimension_labels = []
+            
+            # Check for Brand dimension
+            if 'Brand' in query:
+                is_asking_for_brands_list = any(phrase in user_msg_lower for phrase in [
+                    'top brands', 'all brands', 'list brands', 'show brands', 'which brands', 'what brands'
+                ])
+                is_filtering_by_brand = (
+                    re.search(r'and\s+[A-Z][a-zA-Z\s]+\s+brand', user_msg_lower) or
+                    re.search(r'business\s+[^,]+\s+and\s+[A-Z][a-zA-Z\s]+\s+brand', user_msg_lower) or
+                    ('brand' in user_msg_lower and 'and' in user_msg_lower and not any(phrase in user_msg_lower for phrase in ['other brands', 'other brand', 'vs other', 'versus other']))
+                )
+                if not is_asking_for_brands_list and (is_filtering_by_brand or "brand" in user_msg_lower or query.get('Brand')):
+                    requested_dimensions.append("$Brand")
+                    dimension_labels.append("Brand")
+                    logger.info(f"📊 Multi-dimensional breakdown: Added Brand dimension (filter: {query.get('Brand')})")
+            
+            # Check for Channel dimension
+            if 'Channel' in query:
+                is_asking_for_channels_list = any(phrase in user_msg_lower for phrase in [
+                    'top channels', 'all channels', 'list channels', 'show channels'
+                ])
+                is_filtering_by_channel = (
+                    re.search(r'and\s+[a-z][a-zA-Z\s]+\s+channel', user_msg_lower) or
+                    re.search(r'and\s+channel\s+[a-z][a-zA-Z\s]+', user_msg_lower) or
+                    re.search(r'business\s+[^,]+\s+and\s+[a-z][a-zA-Z\s]+\s+channel', user_msg_lower) or
+                    re.search(r'business\s+[^,]+\s+and\s+channel\s+[a-z][a-zA-Z\s]+', user_msg_lower) or
+                    ('channel' in user_msg_lower and 'and' in user_msg_lower)
+                )
+                if not is_asking_for_channels_list and (is_filtering_by_channel or "channel" in user_msg_lower or query.get('Channel')):
+                    requested_dimensions.append("$Channel")
+                    dimension_labels.append("Channel")
+                    logger.info(f"📊 Multi-dimensional breakdown: Added Channel dimension (filter: {query.get('Channel')})")
+            
+            # Always include Year for comparison queries
+            if is_comparison_query:
+                if "$Year" not in requested_dimensions:
+                    requested_dimensions.insert(0, "$Year")
+                    dimension_labels.insert(0, "Year")
+                logger.info(f"📊 Multi-dimensional breakdown: Dimensions detected: {dimension_labels}")
+            
+            for quarter in requested_quarters:
+                months = quarter_months[quarter]
                 # Merge quarter months with existing month filter if present
                 quarter_query = query.copy()
                 if 'Month_Name' in query:
@@ -6437,29 +6498,126 @@ async def get_comprehensive_data_context(
                 else:
                     quarter_query['Month_Name'] = {'$in': months}
                 quarter_match = {"$match": quarter_query}
-                pipeline_quarter = [
-                    quarter_match,
-                    {
-                        "$group": {
-                            "_id": None,
-                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                
+                # CRITICAL: For comparison queries with multiple dimensions, create multi-dimensional breakdown
+                if is_comparison_query and len(requested_dimensions) > 1:
+                    # Multi-dimensional grouping (e.g., Year + Brand, or Year + Brand + Channel)
+                    group_id = {}
+                    for dim in requested_dimensions:
+                        field_name = dim.replace("$", "")
+                        group_id[field_name] = f"${field_name}"
+                    
+                    pipeline_quarter = [
+                        quarter_match,
+                        {
+                            "$group": {
+                                "_id": group_id,
+                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                            }
                         }
-                    }
-                ]
-                quarter_result = await db.business_data.aggregate(pipeline_quarter).to_list(1)
-                if quarter_result and quarter_result[0]:
-                    q_data = quarter_result[0]
-                    revenue = safe_float(q_data.get('Revenue', 0))
-                    profit = safe_float(q_data.get('Gross_Profit', 0))
-                    if revenue > 0:
-                        margin = (profit / revenue) * 100
-                        context_parts.append(f"\n{quarter} Performance:")
-                        context_parts.append(f"  Revenue: {format_currency(revenue)}")
-                        context_parts.append(f"  Gross Profit: {format_currency(profit)}")
-                        context_parts.append(f"  Margin: {margin:.2f}%")
-                        context_parts.append(f"  Cases: {format_units(safe_float(q_data.get('Units', 0)))}")
+                    ]
+                    # Build sort stage - sort by Year first (if present), then other dimensions
+                    sort_dict = {}
+                    if "$Year" in requested_dimensions:
+                        sort_dict["_id.Year"] = 1
+                    for dim in requested_dimensions:
+                        if dim != "$Year":
+                            field_name = dim.replace("$", "")
+                            sort_dict[f"_id.{field_name}"] = 1
+                    if sort_dict:
+                        pipeline_quarter.append({"$sort": sort_dict})
+                    quarter_results = await db.business_data.aggregate(pipeline_quarter).to_list(100)
+                    if quarter_results:
+                        dim_label_str = " by " + " and ".join(dimension_labels)
+                        context_parts.append(f"\n{quarter} Performance{dim_label_str} ({', '.join(months)}):")
+                        for q_item in quarter_results:
+                            item_id = q_item.get("_id", {})
+                            # Build label from all dimensions
+                            label_parts = []
+                            for dim_label in dimension_labels:
+                                dim_value = item_id.get(dim_label, "Unknown")
+                                label_parts.append(f"{dim_label}: {dim_value}")
+                            label = ", ".join(label_parts)
+                            
+                            revenue = safe_float(q_item.get("Revenue", 0))
+                            profit = safe_float(q_item.get("Gross_Profit", 0))
+                            gross_sales = safe_float(q_item.get("Gross_Sales", revenue))
+                            units = safe_float(q_item.get("Units", 0))
+                            if revenue > 0:
+                                margin = (profit / revenue) * 100
+                                context_parts.append(f"  {label}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
+                            else:
+                                context_parts.append(f"  {label}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
+                        if quarter == 'Q1' and ("q1" in user_msg_lower or "quarter 1" in user_msg_lower):
+                            context_parts.append(f"  ✅ Confirmed: Q1 data broken down by {', '.join(dimension_labels)} for comparison.")
+                elif is_comparison_query:
+                    # Single dimension: Year only
+                    pipeline_quarter = [
+                        quarter_match,
+                        {
+                            "$group": {
+                                "_id": "$Year",  # Group by Year for comparison
+                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                                # CRITICAL: Include Gross_Sales (default metric)
+                                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                            }
+                        },
+                        {"$sort": {"_id": 1}}  # Sort by year
+                    ]
+                    quarter_results = await db.business_data.aggregate(pipeline_quarter).to_list(10)
+                    if quarter_results:
+                        context_parts.append(f"\n{quarter} Performance by Year ({', '.join(months)}):")
+                        for q_item in quarter_results:
+                            year = int(q_item.get("_id", 0))
+                            revenue = safe_float(q_item.get("Revenue", 0))
+                            profit = safe_float(q_item.get("Gross_Profit", 0))
+                            gross_sales = safe_float(q_item.get("Gross_Sales", revenue))  # Fallback to revenue
+                            units = safe_float(q_item.get("Units", 0))
+                            if revenue > 0:
+                                margin = (profit / revenue) * 100
+                                context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
+                            else:
+                                context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
+                        # CRITICAL: Add confirmation that Q1 data exists
+                        if quarter == 'Q1' and ("q1" in user_msg_lower or "quarter 1" in user_msg_lower):
+                            context_parts.append(f"  ✅ Confirmed: Q1 data (January-March) broken down by year for comparison.")
+                else:
+                    # For non-comparison queries, show overall totals
+                    pipeline_quarter = [
+                        quarter_match,
+                        {
+                            "$group": {
+                                "_id": None,
+                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                                # CRITICAL: Include Gross_Sales (default metric)
+                                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                            }
+                        }
+                    ]
+                    quarter_result = await db.business_data.aggregate(pipeline_quarter).to_list(1)
+                    if quarter_result and quarter_result[0]:
+                        q_data = quarter_result[0]
+                        revenue = safe_float(q_data.get("Revenue", 0))
+                        profit = safe_float(q_data.get("Gross_Profit", 0))
+                        gross_sales = safe_float(q_data.get("Gross_Sales", revenue))  # Fallback to revenue
+                        if revenue > 0:
+                            margin = (profit / revenue) * 100
+                            context_parts.append(f"\n{quarter} Performance ({', '.join(months)}):")
+                            context_parts.append(f"  Revenue: {format_currency(revenue)}")
+                            context_parts.append(f"  Gross Sales: {format_currency(gross_sales)}")  # CRITICAL: Include Gross Sales
+                            context_parts.append(f"  Gross Profit: {format_currency(profit)}")
+                            context_parts.append(f"  Margin: {margin:.2f}%")
+                            context_parts.append(f"  Cases: {format_units(safe_float(q_data.get('Units', 0)))}")
+                            # CRITICAL: Add confirmation that Q1 data exists
+                            if quarter == 'Q1' and ("q1" in user_msg_lower or "quarter 1" in user_msg_lower):
+                                context_parts.append(f"  ✅ Confirmed: Q1 data (January-March) exists and has been aggregated above.")
         
         # Monthly breakdown
         if is_monthly or "monthly" in user_msg_lower or "by month" in user_msg_lower:
@@ -6705,30 +6863,31 @@ async def insights_chat(
         requested_years = [int(y) for y in years_in_message if 2000 <= int(y) <= 2100]
         
         # Extract months from user message if mentioned (e.g., "January", "Jan", "March", "Mar")
-        month_mapping = {
-            'january': 'January', 'jan': 'January',
-            'february': 'February', 'feb': 'February',
-            'march': 'March', 'mar': 'March',
-            'april': 'April', 'apr': 'April',
+        # CRITICAL FIX: Database uses abbreviated month names (Jan, Feb, Mar), so convert to abbreviated format
+        month_abbr_map = {
+            'january': 'Jan', 'jan': 'Jan',
+            'february': 'Feb', 'feb': 'Feb',
+            'march': 'Mar', 'mar': 'Mar',
+            'april': 'Apr', 'apr': 'Apr',
             'may': 'May',
-            'june': 'June', 'jun': 'June',
-            'july': 'July', 'jul': 'July',
-            'august': 'August', 'aug': 'August',
-            'september': 'September', 'sep': 'September', 'sept': 'September',
-            'october': 'October', 'oct': 'October',
-            'november': 'November', 'nov': 'November',
-            'december': 'December', 'dec': 'December'
+            'june': 'Jun', 'jun': 'Jun',
+            'july': 'Jul', 'jul': 'Jul',
+            'august': 'Aug', 'aug': 'Aug',
+            'september': 'Sep', 'sep': 'Sep', 'sept': 'Sep',
+            'october': 'Oct', 'oct': 'Oct',
+            'november': 'Nov', 'nov': 'Nov',
+            'december': 'Dec', 'dec': 'Dec'
         }
         user_msg_lower_for_months = user_message.lower()
         requested_months = []
-        for month_key, month_full in month_mapping.items():
+        for month_key, month_abbr in month_abbr_map.items():
             # Match whole words only to avoid false positives (e.g., "march" in "marching")
             # Since user_msg_lower_for_months is already lowercase, we don't need IGNORECASE flag
             pattern = r'\b' + re.escape(month_key) + r'\b'
             if re.search(pattern, user_msg_lower_for_months):
-                if month_full not in requested_months:
-                    requested_months.append(month_full)
-        logger.info(f"📅 Extracted months from message: {requested_months if requested_months else 'None'}")
+                if month_abbr not in requested_months:
+                    requested_months.append(month_abbr)
+        logger.info(f"📅 Extracted months from message (converted to abbreviated format): {requested_months if requested_months else 'None'}")
         
         # Build MongoDB query from context
         context_query = await build_mongodb_query_from_context(request.context or {})
@@ -6810,21 +6969,87 @@ async def insights_chat(
         user_msg_lower = user_message.lower()
         chart_title_lower = (request.chart_title or "").lower()
         
-        # CRITICAL FIX: If asking FOR brands (not filtering BY brand), remove Brand filter from query
-        # This ensures data context shows all brands, not just one
-        is_asking_for_brands = any(phrase in user_msg_lower for phrase in [
-            'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
-            'brands by revenue', 'brands by profit', 'brands by', 'all brands',
-            'list brands', 'show brands', 'which brands', 'what brands', 'tell me brands'
-        ]) or "brand" in chart_title_lower
+        # CRITICAL FIX: Enhanced filter preservation logic (same as new architecture)
+        # Distinguish between "filtering BY specific brand/channel" vs "comparing brands/channels"
         
-        # Use a modified query for data context that excludes Brand filter when asking FOR brands
+        # Detect brand comparisons
+        is_comparing_brand = any(phrase in user_msg_lower for phrase in [
+            'compare brand', 'compare brands', 'brand vs', 'brands vs', 'brand versus', 'brands versus',
+            'vs other brands', 'versus other brands', 'against other brands', 'to other brands',
+            'with other brands', 'compared to other brands', 'compared with other brands',
+            'relative to other brands', 'among other brands', 'alongside other brands',
+            'how does', 'how do', 'how is', 'how are'
+        ]) and ('brand' in user_msg_lower or 'brands' in user_msg_lower)
+        
+        # Detect if filtering BY specific brand (not comparing brands)
+        is_filtering_by_specific_brand = (
+            'Brand' in query and
+            not is_comparing_brand and
+            (
+                re.search(r'and\s+[A-Z][a-zA-Z\s]+\s+brand', user_msg_lower) or  # "and KOKA brand"
+                re.search(r'business\s+[^,]+\s+and\s+[A-Z][a-zA-Z\s]+\s+brand', user_msg_lower) or  # "business Food and KOKA brand"
+                ('brand' in user_msg_lower and 'and' in user_msg_lower and not any(phrase in user_msg_lower for phrase in ['other brands', 'other brand', 'vs other', 'versus other']))
+            )
+        )
+        
+        # Detect business comparisons
+        is_comparing_business = (
+            any(phrase in user_msg_lower for phrase in [
+                'compare business', 'compare businesses', 'business vs', 'businesses vs', 'business versus', 'businesses versus',
+                'with other businesses', 'versus other businesses', 'against other businesses', 'to other businesses',
+                'with other business', 'versus other business', 'against other business', 'to other business',
+                'compared to other', 'compared with other', 'in the group', 'with other business in the group',
+                'with other businesses in the group', 'relative to other businesses', 'among other businesses', 
+                'alongside other businesses', 'other business in the group', 'other businesses in the group'
+            ]) and ('business' in user_msg_lower or 'businesses' in user_msg_lower)
+        ) or 'with other business' in user_msg_lower or 'with other businesses' in user_msg_lower
+        
+        # Detect if asking FOR brands (listing all brands)
+        is_asking_for_brands = (
+            any(phrase in user_msg_lower for phrase in [
+                'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands', 'top 20 brands',
+                'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+                'list brands', 'show brands', 'which brands', 'what brands', 'tell me brands',
+                'tell me about brands', 'tell me about brand', 'show me brands', 'show me brand',
+                'show me the top', 'brand performance', 'brand rankings', 'brand revenue', 'brand profit',
+                'compare brand', 'compare brands', 'brand comparison', 'brands comparison'
+            ]) or 
+            re.search(r'top\s+\d+\s+brand', user_msg_lower) or
+            re.search(r'show\s+me\s+(the\s+)?top\s+\d+\s+brand', user_msg_lower) or
+            re.search(r'tell\s+me\s+about\s+(all\s+)?brand', user_msg_lower) or
+            "brand" in chart_title_lower or 
+            is_comparing_brand
+        )
+        
+        # Detect if filtering BY specific channel
+        is_filtering_by_specific_channel = (
+            'Channel' in query and
+            (
+                re.search(r'and\s+[a-z][a-zA-Z\s]+\s+channel', user_msg_lower) or  # "and grocery channel"
+                re.search(r'and\s+channel\s+[a-z][a-zA-Z\s]+', user_msg_lower) or  # "and channel grocery"
+                re.search(r'business\s+[^,]+\s+and\s+[a-z][a-zA-Z\s]+\s+channel', user_msg_lower) or  # "business Food and grocery channel"
+                re.search(r'business\s+[^,]+\s+and\s+channel\s+[a-z][a-zA-Z\s]+', user_msg_lower) or  # "business Food and channel grocery"
+                ('channel' in user_msg_lower and 'and' in user_msg_lower and not any(phrase in user_msg_lower for phrase in ['other channels', 'other channel', 'vs other', 'versus other']))
+            )
+        )
+        
+        # Use a modified query for data context
+        # CRITICAL: Only remove Brand filter if user is asking FOR brands (listing all brands) or comparing brands
+        # BUT: Keep Brand filter if user is filtering BY a specific brand (e.g., "Compare Q1 for Food and KOKA brand")
         data_context_query = query.copy() if query else {}
-        if is_asking_for_brands and 'Brand' in data_context_query:
-            logger.info(f"🔍 Removing Brand filter from data context query (user is asking FOR brands)")
-            logger.info(f"🔍 Original query had Brand filter: {data_context_query.get('Brand')}")
+        if (is_asking_for_brands or (is_comparing_brand and not is_filtering_by_specific_brand)) and 'Brand' in data_context_query:
+            logger.info(f"🔍 Removing Brand filter from data context query (user is asking FOR brands or comparing brands)")
+            logger.info(f"🔍 Original data context query had Brand filter: {data_context_query.get('Brand')}")
+            logger.info(f"🔍 is_asking_for_brands: {is_asking_for_brands}, is_comparing_brand: {is_comparing_brand}, is_filtering_by_specific_brand: {is_filtering_by_specific_brand}")
             data_context_query = {k: v for k, v in data_context_query.items() if k != 'Brand'}
             logger.info(f"🔍 Data context query after removing Brand filter: {data_context_query}")
+        elif is_filtering_by_specific_brand:
+            logger.info(f"🔍 Keeping Brand filter in data context query (user is filtering BY specific brand: {query.get('Brand')})")
+        
+        # Remove Business filter when comparing businesses
+        if is_comparing_business and 'Business' in data_context_query:
+            logger.info(f"🔍 Removing Business filter from data context query (user is comparing businesses)")
+            data_context_query = {k: v for k, v in data_context_query.items() if k != 'Business'}
         
         # Determine analysis type
         is_comparison = any(word in user_msg_lower for word in ['compare', 'comparison', 'vs', 'versus', 'against'])
@@ -6833,6 +7058,14 @@ async def insights_chat(
         is_yearly = any(word in user_msg_lower for word in ['yearly', 'year', 'yoy', 'year over year'])
         is_metrics = any(word in user_msg_lower for word in ['metrics', 'details', 'show me', 'tell me'])
         
+        # CRITICAL: Set is_comparison to True when comparing brands or businesses
+        # This ensures brand/business breakdowns are shown in data context
+        is_comparison_for_context = (
+            is_comparison or 
+            is_comparing_brand or
+            is_comparing_business
+        )
+        
         # Get comprehensive data context using the modified query
         # IMPORTANT: Use the modified query (without Brand filter) for data context when asking FOR brands
         logger.info(f"🔍 Query being passed to data context: {data_context_query}")
@@ -6840,7 +7073,7 @@ async def insights_chat(
             data_context = await get_comprehensive_data_context(
                 data_context_query,  # Use modified query without Brand filter when asking FOR brands
                 user_message,
-                is_comparison=is_comparison,
+                is_comparison=is_comparison_for_context,
                 is_quarterly=is_quarterly,
                 is_monthly=is_monthly,
                 is_yearly=is_yearly,

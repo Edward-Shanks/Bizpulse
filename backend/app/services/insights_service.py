@@ -325,11 +325,12 @@ class InsightsService:
             logger.info(f"🔍 STEP 2: Extracting structured intent from question: '{user_message}'")
             
             # Define quarter-to-months mapping (CODE, not LLM - as per ChatGPT recommendation)
+            # CRITICAL FIX: Use abbreviated month names (Jan, Feb, Mar) to match database format
             QUARTER_TO_MONTHS = {
-                'q1': ['January', 'February', 'March'],
-                'q2': ['April', 'May', 'June'],
-                'q3': ['July', 'August', 'September'],
-                'q4': ['October', 'November', 'December']
+                'q1': ['Jan', 'Feb', 'Mar'],
+                'q2': ['Apr', 'May', 'Jun'],
+                'q3': ['Jul', 'Aug', 'Sep'],
+                'q4': ['Oct', 'Nov', 'Dec']
             }
             
             # Extract structured intent
@@ -406,33 +407,30 @@ class InsightsService:
                 years_in_message = []  # Don't extract years if comparing across years
             
             # Extract months from user message if mentioned (e.g., "January", "Jan", "March", "Mar")
-            # CRITICAL: Database stores months as full names (January, February, etc.) AND abbreviations (Jan, Feb, etc.)
-            # We need to check both formats to ensure we match the data
-            month_mapping = {
-                'january': ['January', 'Jan'], 'jan': ['January', 'Jan'],
-                'february': ['February', 'Feb'], 'feb': ['February', 'Feb'],
-                'march': ['March', 'Mar'], 'mar': ['March', 'Mar'],
-                'april': ['April', 'Apr'], 'apr': ['April', 'Apr'],
-                'may': ['May'],
-                'june': ['June', 'Jun'], 'jun': ['June', 'Jun'],
-                'july': ['July', 'Jul'], 'jul': ['July', 'Jul'],
-                'august': ['August', 'Aug'], 'aug': ['August', 'Aug'],
-                'september': ['September', 'Sep', 'Sept'], 'sep': ['September', 'Sep', 'Sept'], 'sept': ['September', 'Sep', 'Sept'],
-                'october': ['October', 'Oct'], 'oct': ['October', 'Oct'],
-                'november': ['November', 'Nov'], 'nov': ['November', 'Nov'],
-                'december': ['December', 'Dec'], 'dec': ['December', 'Dec']
+            # CRITICAL FIX: Database uses abbreviated month names (Jan, Feb, Mar), so convert to abbreviated format
+            month_abbr_map = {
+                'january': 'Jan', 'jan': 'Jan',
+                'february': 'Feb', 'feb': 'Feb',
+                'march': 'Mar', 'mar': 'Mar',
+                'april': 'Apr', 'apr': 'Apr',
+                'may': 'May',
+                'june': 'Jun', 'jun': 'Jun',
+                'july': 'Jul', 'jul': 'Jul',
+                'august': 'Aug', 'aug': 'Aug',
+                'september': 'Sep', 'sep': 'Sep', 'sept': 'Sep',
+                'october': 'Oct', 'oct': 'Oct',
+                'november': 'Nov', 'nov': 'Nov',
+                'december': 'Dec', 'dec': 'Dec'
             }
             user_msg_lower_for_months = user_message.lower()
             requested_months = []
-            for month_key, month_variants in month_mapping.items():
+            for month_key, month_abbr in month_abbr_map.items():
                 # Match whole words only to avoid false positives (e.g., "march" in "marching")
                 pattern = r'\b' + re.escape(month_key) + r'\b'
                 if re.search(pattern, user_msg_lower_for_months):
-                    # Add all possible month formats to ensure we match database
-                    for month_variant in month_variants:
-                        if month_variant not in requested_months:
-                            requested_months.append(month_variant)
-            logger.info(f"📅 Extracted months from message (with all variants): {requested_months if requested_months else 'None'}")
+                    if month_abbr not in requested_months:
+                        requested_months.append(month_abbr)
+            logger.info(f"📅 Extracted months from message (converted to abbreviated format): {requested_months if requested_months else 'None'}")
             
             # CRITICAL: Detect "all business" queries BEFORE building queries
             # This ensures we don't add Business filter from context when user wants all businesses
@@ -814,11 +812,12 @@ class InsightsService:
             is_metrics = any(word in user_msg_lower for word in ['metrics', 'details', 'show me', 'tell me'])
             
             # CRITICAL FIX: Convert Q1, Q2, Q3, Q4 to actual months
+            # CRITICAL FIX: Use abbreviated month names (Jan, Feb, Mar) to match database format
             quarter_to_months = {
-                'q1': ['January', 'February', 'March'],
-                'q2': ['April', 'May', 'June'],
-                'q3': ['July', 'August', 'September'],
-                'q4': ['October', 'November', 'December']
+                'q1': ['Jan', 'Feb', 'Mar'],
+                'q2': ['Apr', 'May', 'Jun'],
+                'q3': ['Jul', 'Aug', 'Sep'],
+                'q4': ['Oct', 'Nov', 'Dec']
             }
             
             # Extract quarter from message (e.g., "Q1", "q1", "quarter 1")
