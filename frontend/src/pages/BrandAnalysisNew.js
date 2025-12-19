@@ -762,17 +762,20 @@ const BrandAnalysis = () => {
             renderChart={({ brandData: chartBrandData }) => {
               // Sort by Revenue descending (largest first), then take top 15
               const topBrands = [...chartBrandData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 15);
+              const brandLabels = topBrands.map(item => item.Brand || 'Unknown');
+              const brandRevenues = topBrands.map(item => item.Revenue || 0);
+              
               return (
                 <div className="h-96">
                   {topBrands.length > 0 ? (
                     <ChartComponent
                       type="bar"
                       data={{
-                        labels: topBrands.map(item => item.Brand || 'Unknown'),
+                        labels: brandLabels,
                         datasets: [
                           {
                             label: 'Revenue',
-                            data: topBrands.map(item => item.Revenue || 0),
+                            data: brandRevenues,
                             backgroundColor: colorsWithOpacity,
                             borderRadius: 6,
                           },
@@ -784,7 +787,7 @@ const BrandAnalysis = () => {
                         maintainAspectRatio: false,
                         interaction: {
                           intersect: false,
-                          mode: 'index',
+                          mode: 'nearest',
                         },
                         plugins: {
                           legend: { display: false },
@@ -792,9 +795,35 @@ const BrandAnalysis = () => {
                             enabled: true,
                             displayColors: true,
                             intersect: false,
-                            mode: 'index',
+                            mode: 'nearest',
+                            filter: null, // Don't filter tooltip items
                             callbacks: {
+                              title: (tooltipItems) => {
+                                // For horizontal bar charts, get label using dataIndex
+                                if (tooltipItems && tooltipItems.length > 0) {
+                                  const item = tooltipItems[0];
+                                  const dataIndex = item.dataIndex;
+                                  
+                                  // Primary method: Get from chart's data labels (most reliable)
+                                  if (item.chart && item.chart.data && item.chart.data.labels) {
+                                    const chartLabel = item.chart.data.labels[dataIndex];
+                                    if (chartLabel) {
+                                      return String(chartLabel);
+                                    }
+                                  }
+                                  
+                                  // Fallback: Get from stored brandLabels array
+                                  if (dataIndex !== undefined && dataIndex >= 0 && brandLabels && brandLabels[dataIndex]) {
+                                    return String(brandLabels[dataIndex]);
+                                  }
+                                  
+                                  // Last fallback: Try item properties
+                                  return String(item.label || item.yLabel || 'Unknown');
+                                }
+                                return 'Unknown';
+                              },
                               label: (context) => {
+                                // For horizontal bars, value is on x-axis
                                 const value = context.parsed.x || 0;
                                 // Always show value, even if very small
                                 return `Revenue: ${formatNumber(value)}`;
@@ -928,6 +957,11 @@ const BrandAnalysis = () => {
                             enabled: true,
                             displayColors: true,
                             callbacks: {
+                              title: (context) => {
+                                // Show the brand name from the label
+                                const label = context[0]?.label || '';
+                                return label || 'Unknown';
+                              },
                               label: (context) => {
                                 const value = context.parsed.y || 0;
                                 // Always show value, even if very small
@@ -1005,6 +1039,11 @@ const BrandAnalysis = () => {
                             enabled: true,
                             displayColors: true,
                             callbacks: {
+                              title: (context) => {
+                                // Show the brand name from the label
+                                const label = context[0]?.label || '';
+                                return label || 'Unknown';
+                              },
                               label: (context) => {
                                 const label = context.dataset.label || '';
                                 const value = context.parsed.y || 0;

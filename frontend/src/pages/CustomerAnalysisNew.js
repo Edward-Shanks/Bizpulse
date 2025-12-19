@@ -783,6 +783,11 @@ const CustomerAnalysis = () => {
                           intersect: false,
                           mode: 'index',
                           callbacks: {
+                            title: (context) => {
+                              // Show the channel name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const value = context.parsed.y || 0;
                               // Always show value, even if very small
@@ -907,6 +912,11 @@ const CustomerAnalysis = () => {
                           enabled: true,
                           displayColors: true,
                           callbacks: {
+                            title: (context) => {
+                              // Show the channel name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const value = context.parsed.y || 0;
                               // Always show value, even if very small

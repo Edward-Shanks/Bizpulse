@@ -739,13 +739,14 @@ const CategoryAnalysis = () => {
             renderChart={({ categoryData: chartCategoryData }) => {
               // Sort by Revenue descending (largest first)
               const sortedCategoryData = [...chartCategoryData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0));
+              const categoryLabels = sortedCategoryData.map(item => item.Category || 'Unknown');
               return (
               <div className="h-96">
                 {sortedCategoryData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: sortedCategoryData.map(item => item.Category || 'Unknown'),
+                      labels: categoryLabels,
                       datasets: [{
                         label: 'Revenue',
                         data: sortedCategoryData.map(item => item.Revenue || 0),
@@ -759,7 +760,7 @@ const CategoryAnalysis = () => {
                       maintainAspectRatio: false,
                       interaction: {
                         intersect: false,
-                        mode: 'index',
+                        mode: 'nearest',
                       },
                       plugins: {
                         legend: { display: false },
@@ -767,8 +768,33 @@ const CategoryAnalysis = () => {
                           enabled: true,
                           displayColors: true,
                           intersect: false,
-                          mode: 'index',
+                          mode: 'nearest',
+                          filter: null, // Don't filter tooltip items
                           callbacks: {
+                            title: (tooltipItems) => {
+                              // For horizontal bar charts, get label using dataIndex
+                              if (tooltipItems && tooltipItems.length > 0) {
+                                const item = tooltipItems[0];
+                                const dataIndex = item.dataIndex;
+                                
+                                // Primary method: Get from chart's data labels (most reliable)
+                                if (item.chart && item.chart.data && item.chart.data.labels) {
+                                  const chartLabel = item.chart.data.labels[dataIndex];
+                                  if (chartLabel) {
+                                    return String(chartLabel);
+                                  }
+                                }
+                                
+                                // Fallback: Get from stored categoryLabels array
+                                if (dataIndex !== undefined && dataIndex >= 0 && categoryLabels && categoryLabels[dataIndex]) {
+                                  return String(categoryLabels[dataIndex]);
+                                }
+                                
+                                // Last fallback: Try item properties
+                                return String(item.label || item.yLabel || 'Unknown');
+                              }
+                              return 'Unknown';
+                            },
                             label: (context) => {
                               const value = context.parsed.x || 0;
                               // Always show value, even if very small
@@ -879,28 +905,33 @@ const CategoryAnalysis = () => {
                         maintainAspectRatio: false,
                         plugins: {
                           legend: { display: false },
-                          tooltip: {
-                            enabled: true,
-                            displayColors: true,
-                            callbacks: {
-                              label: (context) => {
-                                const value = context.parsed.y || 0;
-                                // Always show value, even if very small
-                                return `Profit: ${formatNumber(value)}`;
-                              },
-                              afterLabel: (context) => {
-                                const value = context.parsed.y || 0;
-                                // Show exact value for very small numbers
-                                if (value > 0 && value < 1) {
-                                  return `Exact: €${value.toFixed(4)}`;
-                                }
-                                return '';
-                              },
+                        tooltip: {
+                          enabled: true,
+                          displayColors: true,
+                          callbacks: {
+                            title: (context) => {
+                              // Show the category name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
                             },
-                            padding: 8,
-                            titleFont: { size: 12, weight: 'bold' },
-                            bodyFont: { size: 11 },
-                          }
+                            label: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Always show value, even if very small
+                              return `Profit: ${formatNumber(value)}`;
+                            },
+                            afterLabel: (context) => {
+                              const value = context.parsed.y || 0;
+                              // Show exact value for very small numbers
+                              if (value > 0 && value < 1) {
+                                return `Exact: €${value.toFixed(4)}`;
+                              }
+                              return '';
+                            },
+                          },
+                          padding: 8,
+                          titleFont: { size: 12, weight: 'bold' },
+                          bodyFont: { size: 11 },
+                        }
                         },
                         scales: {
                           y: {
@@ -952,6 +983,11 @@ const CategoryAnalysis = () => {
                             enabled: true,
                             displayColors: true,
                             callbacks: {
+                              title: (context) => {
+                                // Show the sub-category name from the label
+                                const label = context[0]?.label || '';
+                                return label || 'Unknown';
+                              },
                               label: (context) => {
                                 const value = context.parsed.y || 0;
                                 // Always show value, even if very small

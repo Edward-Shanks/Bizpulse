@@ -948,6 +948,11 @@ const Dashboard = () => {
                         enabled: true,
                         displayColors: true,
                         callbacks: {
+                          title: (context) => {
+                            // Show the business name from the label
+                            const label = context[0]?.label || '';
+                            return label || 'Unknown';
+                          },
                           label: (context) => {
                             const value = context.parsed.y || 0;
                             // Always show value, even if very small
@@ -1021,6 +1026,11 @@ const Dashboard = () => {
                           enabled: true,
                           displayColors: true,
                           callbacks: {
+                            title: (context) => {
+                              // Show the business name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const label = context.dataset.label || '';
                               const value = context.parsed.y || 0;
@@ -1087,6 +1097,11 @@ const Dashboard = () => {
                           enabled: true,
                           displayColors: true,
                           callbacks: {
+                            title: (context) => {
+                              // Show the business name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const value = context.parsed.y || 0;
                               // Always show value, even if very small
@@ -1163,6 +1178,11 @@ const Dashboard = () => {
                           intersect: false,
                           mode: 'index',
                           callbacks: {
+                            title: (context) => {
+                              // Show the business name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const value = context.parsed.y || 0;
                               // Always show value, even if very small
@@ -1235,6 +1255,11 @@ const Dashboard = () => {
                           intersect: false,
                           mode: 'index',
                           callbacks: {
+                            title: (context) => {
+                              // Show the business name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const value = context.parsed.y || 0;
                               // Always show value, even if very small
@@ -1429,6 +1454,11 @@ const Dashboard = () => {
                           enabled: true,
                           displayColors: true,
                           callbacks: {
+                            title: (context) => {
+                              // Show the business name from the label
+                              const label = context[0]?.label || '';
+                              return label || 'Unknown';
+                            },
                             label: (context) => {
                               const label = context.dataset.label || '';
                               const value = context.parsed.y || 0;
