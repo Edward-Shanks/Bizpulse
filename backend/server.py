@@ -5692,37 +5692,45 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
         query['Year'] = {'$in': [int(y) for y in years if 2000 <= int(y) <= 2100]}
     
     # Extract months (e.g., "January", "jan", "Q1", "quarter 1")
+    # CRITICAL FIX: Database uses abbreviated month names (Jan, Feb, Mar), so convert full names to abbreviated format
     month_names = ['january', 'february', 'march', 'april', 'may', 'june',
                    'july', 'august', 'september', 'october', 'november', 'december']
-    month_abbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    month_abbr_map = {
+        'january': 'Jan', 'february': 'Feb', 'march': 'Mar', 'april': 'Apr', 'may': 'May', 'june': 'Jun',
+        'july': 'Jul', 'august': 'Aug', 'september': 'Sep', 'october': 'Oct', 'november': 'Nov', 'december': 'Dec'
+    }
     found_months = []
     for i, month in enumerate(month_names):
-        if month in message_lower:
-            found_months.append(month_names[i].capitalize())
-    for i, abbr in enumerate(month_abbr):
-        if f' {abbr} ' in message_lower or message_lower.startswith(abbr) or message_lower.endswith(abbr):
-            found_months.append(month_names[i].capitalize())
+        pattern = r'\b' + re.escape(month) + r'\b'
+        if re.search(pattern, message_lower):
+            found_months.append(month_abbr_map[month])
+    for abbr_key, abbr_val in month_abbr_map.items():
+        pattern = r'\b' + re.escape(abbr_val.lower()) + r'\b'
+        if re.search(pattern, message_lower):
+            if abbr_val not in found_months:
+                found_months.append(abbr_val)
     if found_months:
         query['Month_Name'] = {'$in': found_months}
+        logger.info(f"📅 Extracted months from query builder: {found_months} (converted to abbreviated format)")
     
     # Extract quarters (Q1, Q2, Q3, Q4)
+    # CRITICAL FIX: Use abbreviated month names (Jan, Feb, Mar) to match database format
     quarter_pattern = r'\bq([1-4])\b'
     quarters = re.findall(quarter_pattern, message_lower)
     if quarters:
-        quarter_months = {
-            '1': ['January', 'February', 'March'],
-            '2': ['April', 'May', 'June'],
-            '3': ['July', 'August', 'September'],
-            '4': ['October', 'November', 'December']
+        quarter_months_map = {
+            '1': ['Jan', 'Feb', 'Mar'],
+            '2': ['Apr', 'May', 'Jun'],
+            '3': ['Jul', 'Aug', 'Sep'],
+            '4': ['Oct', 'Nov', 'Dec']
         }
         q_months = []
         for q in quarters:
-            q_months.extend(quarter_months.get(q, []))
+            q_months.extend(quarter_months_map.get(q, []))
         if q_months:
             if 'Month_Name' in query:
-                # Intersect with existing months
                 existing_months = query['Month_Name'].get('$in', [])
-                query['Month_Name'] = {'$in': [m for m in existing_months if m in q_months] or q_months}
+                query['Month_Name'] = {'$in': list(set(existing_months + q_months))}  # Union of months
             else:
                 query['Month_Name'] = {'$in': q_months}
     
@@ -5755,17 +5763,31 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
             if matched:
                 break
     
-    # Extract channel (e.g., "channel Convenience", "channel: Convenience")
+    # Extract channel (e.g., "channel Convenience", "channel: Convenience", "Food and grocery channel", "Food and channel grocery")
+    # CRITICAL: Support patterns like "and grocery channel" AND "and channel grocery" (similar to brand extraction)
     channel_patterns = [
         r'channel\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|customer|brand|category)',
         r'channel:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|customer|brand|category)',
+        # CRITICAL: Match "and X channel" pattern (e.g., "Food and grocery channel")
+        r'and\s+([a-z][a-zA-Z\s]+?)\s+channel(?:\s|$|,|\.|\?|in|for|across)',
+        # CRITICAL: Match "and channel X" pattern (e.g., "Food and channel grocery")
+        r'and\s+channel\s+([a-z][a-zA-Z\s]+?)(?:\s|$|,|\.|\?|in|for|across)',
+        # Match "X channel" after business name (e.g., "business Food and grocery channel")
+        r'(?:business|for|of)\s+[^,]+\s+and\s+([a-z][a-zA-Z\s]+?)\s+channel',
+        # Match "channel X" after business name (e.g., "business Food and channel grocery")
+        r'(?:business|for|of)\s+[^,]+\s+and\s+channel\s+([a-z][a-zA-Z\s]+?)(?:\s|$|,|\.|\?|in|for|across)',
     ]
     for pattern in channel_patterns:
         matches = re.findall(pattern, message_lower, re.IGNORECASE)
         if matches:
             channel_name = matches[0].strip()
             # Remove trailing words that might be part of next filter
-            channel_name = re.sub(r'\s+(customer|brand|category).*$', '', channel_name, flags=re.IGNORECASE).strip()
+            channel_name = re.sub(r'\s+(customer|brand|category|in|for|across).*$', '', channel_name, flags=re.IGNORECASE).strip()
+            # Skip if it's a common phrase
+            if channel_name.lower() in ['and', 'or', 'the', 'a', 'an']:
+                continue
+            # Try exact/contains matching first
+            matched = False
             for db_channel in all_channels:
                 if db_channel:
                     db_channel_lower = str(db_channel).lower()
@@ -5780,8 +5802,41 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
                         else:
                             query['Channel'] = {'$in': [str(db_channel)]}
                         logger.info(f"✅ Matched channel: '{channel_name}' -> '{db_channel}'")
+                        matched = True
                         break
-            break
+            if matched:
+                break
+            # If no exact match, try fuzzy matching
+            if not matched:
+                try:
+                    from difflib import SequenceMatcher
+                    channel_name_lower = channel_name.lower()
+                    best_match = None
+                    best_score = 0
+                    for db_channel in all_channels:
+                        if db_channel:
+                            db_channel_lower = str(db_channel).lower()
+                            similarity = SequenceMatcher(None, channel_name_lower, db_channel_lower).ratio()
+                            if channel_name_lower in db_channel_lower or db_channel_lower in channel_name_lower:
+                                similarity = max(similarity, 0.7)  # Boost partial matches
+                            if similarity > best_score:
+                                best_score = similarity
+                                best_match = db_channel
+                    if best_match and best_score >= 0.6:
+                        if 'Channel' in query:
+                            if isinstance(query['Channel'], dict) and '$in' in query['Channel']:
+                                if str(best_match) not in query['Channel']['$in']:
+                                    query['Channel']['$in'].append(str(best_match))
+                            else:
+                                query['Channel'] = {'$in': [str(best_match)]}
+                        else:
+                            query['Channel'] = {'$in': [str(best_match)]}
+                        logger.info(f"✅ Fuzzy matched channel: '{channel_name}' -> '{best_match}' (similarity: {best_score:.2f})")
+                        matched = True
+                except ImportError:
+                    logger.warning("⚠️ difflib not available, skipping fuzzy matching for channels")
+            if matched:
+                break
     
     # Extract customer (e.g., "customer bwg", "customer: bwg")
     customer_patterns = [
@@ -5811,23 +5866,44 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
                         break
             break
     
-    # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman")
+    # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman", "Food and KOKA brand")
     # CRITICAL FIX: Don't match "brands by Revenue" or "top brands" - these are asking FOR brands, not filtering BY brand
-    # Only match if it's clearly a brand name filter (e.g., "brand Koka", "brands: Bonne Maman and Chivers")
+    # BUT: Match patterns like "Food and KOKA brand" where user is filtering BY a specific brand
     brand_patterns = [
         r'brands?\s+(?:is|are|of|for|by|top|all|the)\s+',  # Skip patterns like "brands by Revenue", "top brands", etc.
         r'brands?\s+([a-zA-Z][^,\.\?]+?)(?:\s+(?:and|or|,)\s+[a-zA-Z]|\s*$|\s*[,\?\.]|\s+category|\s+customer|\s+channel)',  # Match actual brand names
         r'brands?:\s*([a-zA-Z][^,\.\?]+?)(?:\s+(?:and|or|,)\s+[a-zA-Z]|\s*$|\s*[,\?\.]|\s+category|\s+customer|\s+channel)',
+        # CRITICAL: Match "and X brand" pattern (e.g., "Food and KOKA brand")
+        r'and\s+([A-Z][a-zA-Z\s]+?)\s+brand(?:\s|$|,|\.|\?|in|for|across)',
+        # Match "X brand" after business name (e.g., "business Food and KOKA brand")
+        r'(?:business|for|of)\s+[^,]+\s+and\s+([A-Z][a-zA-Z\s]+?)\s+brand',
     ]
     
     # Skip brand extraction if the message is asking FOR brands (not filtering BY brand)
-    is_asking_for_brands = any(phrase in message_lower for phrase in [
-        'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands',
-        'brands by revenue', 'brands by profit', 'brands by', 'all brands',
-        'list brands', 'show brands', 'which brands', 'what brands'
-    ])
+    # Also skip if comparing brands - we want to show all brands for comparison
+    is_asking_for_brands = (
+        any(phrase in message_lower for phrase in [
+            'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands', 'top 20 brands',
+            'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+            'list brands', 'show brands', 'which brands', 'what brands',
+            'tell me about brands', 'tell me about brand', 'show me brands', 'show me brand',
+            'show me the top', 'tell me about all brands', 'brand performance', 'brand rankings',
+            'brand revenue', 'brand profit', 'compare brand', 'compare brands'
+        ]) or 
+        re.search(r'top\s+\d+\s+brand', message_lower) or
+        re.search(r'show\s+me\s+(the\s+)?top\s+\d+\s+brand', message_lower) or
+        re.search(r'tell\s+me\s+about\s+(all\s+)?brand', message_lower)
+    )
     
-    if not is_asking_for_brands:
+    is_comparing_brand = any(phrase in message_lower for phrase in [
+        'compare brand', 'compare brands', 'brand vs', 'brands vs', 'brand versus', 'brands versus',
+        'compare x with', 'compare x to', 'compare x against', 'x compared to', 'x compared with',
+        'x vs other', 'x versus other', 'x against other', 'x and other brands', 'x with other brands',
+        'compared to other', 'compared with other', 'vs other brands', 'versus other brands',
+        'with other brands', 'against other brands', 'to other brands', 'relative to other brands'
+    ]) and ('brand' in message_lower or 'brands' in message_lower)
+    
+    if not is_asking_for_brands and not is_comparing_brand:
         for pattern in brand_patterns[1:]:  # Skip the first pattern (negative match)
             matches = re.findall(pattern, message_lower, re.IGNORECASE)
             if matches:
@@ -5837,6 +5913,8 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
                 # Skip if it's a common phrase like "by revenue", "by profit", etc.
                 if brand_name.lower() in ['by revenue', 'by profit', 'by', 'revenue', 'profit', 'top', 'all']:
                     continue
+                # Try exact/contains matching first
+                matched = False
                 for db_brand in all_brands:
                     if db_brand:
                         db_brand_lower = str(db_brand).lower()
@@ -5851,8 +5929,41 @@ async def parse_query_from_natural_language(message: str, db) -> Dict[str, Any]:
                             else:
                                 query['Brand'] = {'$in': [str(db_brand)]}
                             logger.info(f"✅ Matched brand: '{brand_name}' -> '{db_brand}'")
+                            matched = True
                             break
-                break
+                if matched:
+                    break
+                # If no exact match, try fuzzy matching
+                if not matched:
+                    try:
+                        from difflib import SequenceMatcher
+                        brand_name_lower = brand_name.lower()
+                        best_match = None
+                        best_score = 0
+                        for db_brand in all_brands:
+                            if db_brand:
+                                db_brand_lower = str(db_brand).lower()
+                                similarity = SequenceMatcher(None, brand_name_lower, db_brand_lower).ratio()
+                                if brand_name_lower in db_brand_lower or db_brand_lower in brand_name_lower:
+                                    similarity = max(similarity, 0.7)  # Boost partial matches
+                                if similarity > best_score:
+                                    best_score = similarity
+                                    best_match = db_brand
+                        if best_match and best_score >= 0.6:
+                            if 'Brand' in query:
+                                if isinstance(query['Brand'], dict) and '$in' in query['Brand']:
+                                    if str(best_match) not in query['Brand']['$in']:
+                                        query['Brand']['$in'].append(str(best_match))
+                                else:
+                                    query['Brand'] = {'$in': [str(best_match)]}
+                            else:
+                                query['Brand'] = {'$in': [str(best_match)]}
+                            logger.info(f"✅ Fuzzy matched brand: '{brand_name}' -> '{best_match}' (similarity: {best_score:.2f})")
+                            matched = True
+                    except ImportError:
+                        logger.warning("⚠️ difflib not available, skipping fuzzy matching for brands")
+                if matched:
+                    break
     else:
         logger.info("ℹ️ Skipping brand extraction - user is asking FOR brands, not filtering BY brand")
     
@@ -6175,7 +6286,7 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     context_parts.append(f"  {month}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)}")
         
         # Yearly trend
-        if "year" in chart_lower or "yoy" in chart_lower or "yearly" in chart_lower:
+        if "year" in chart_lower or "yoy" in chart_lower or "yearly" in chart_lower or is_yearly or is_comparison:
             pipeline_yearly = [
                 match_stage,
                 {
@@ -6184,6 +6295,8 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        # CRITICAL: Include Gross_Sales (default metric)
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
                     }
                 },
                 {"$sort": {"_id": 1}}
@@ -6195,8 +6308,10 @@ async def get_data_context_for_chart(chart_title: str, query: Dict[str, Any], us
                     year = int(item.get("_id", 0))
                     revenue = safe_float(item.get("Revenue", 0))
                     profit = safe_float(item.get("Gross_Profit", 0))
+                    units = safe_float(item.get("Units", 0))
+                    gross_sales = safe_float(item.get("Gross_Sales", revenue))  # Fallback to revenue
                     margin = (profit / revenue * 100) if revenue > 0 else 0
-                    context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+                    context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
         
     except Exception as e:
         logger.error(f"Error building data context: {str(e)}")
@@ -6232,6 +6347,8 @@ async def get_comprehensive_data_context(
                     "total_revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                     "total_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                     "total_units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    # CRITICAL: Include Gross_Sales (default metric)
+                    "total_gross_sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
                 }
             }
         ]
@@ -6241,9 +6358,24 @@ async def get_comprehensive_data_context(
         total_revenue = safe_float(totals.get('total_revenue', 0))
         total_profit = safe_float(totals.get('total_profit', 0))
         total_units = safe_float(totals.get('total_units', 0))
+        total_gross_sales = safe_float(totals.get('total_gross_sales', total_revenue))  # Fallback to revenue if not available
         
-        context_parts.append("Overall Totals:")
+        # CRITICAL: Smart totals labeling based on filtered months
+        totals_label = "Overall Totals"
+        month_filter = query.get('Month_Name', {}).get('$in', [])
+        if len(month_filter) == 3:
+            if set(month_filter) == {'Jan', 'Feb', 'Mar'}:
+                totals_label = "Q1 Totals (Jan-Mar)"
+            elif set(month_filter) == {'Apr', 'May', 'Jun'}:
+                totals_label = "Q2 Totals (Apr-Jun)"
+            elif set(month_filter) == {'Jul', 'Aug', 'Sep'}:
+                totals_label = "Q3 Totals (Jul-Sep)"
+            elif set(month_filter) == {'Oct', 'Nov', 'Dec'}:
+                totals_label = "Q4 Totals (Oct-Dec)"
+        
+        context_parts.append(f"{totals_label}:")
         context_parts.append(f"  Total Revenue: {format_currency(total_revenue)}")
+        context_parts.append(f"  Total Gross Sales: {format_currency(total_gross_sales)}")  # CRITICAL: Include Gross Sales
         context_parts.append(f"  Total Gross Profit: {format_currency(total_profit)}")
         context_parts.append(f"  Total Units: {format_units(total_units)}")
         if total_revenue > 0:
@@ -6370,6 +6502,8 @@ async def get_comprehensive_data_context(
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        # CRITICAL: Include Gross_Sales (default metric)
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
                     }
                 },
                 {"$sort": {"_id": 1}}
@@ -6381,40 +6515,88 @@ async def get_comprehensive_data_context(
                     year = int(item.get("_id", 0))
                     revenue = safe_float(item.get("Revenue", 0))
                     profit = safe_float(item.get("Gross_Profit", 0))
+                    units = safe_float(item.get("Units", 0))
+                    gross_sales = safe_float(item.get("Gross_Sales", revenue))  # Fallback to revenue
                     if revenue > 0:
                         margin = (profit / revenue) * 100
-                        context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(safe_float(item.get('Units', 0)))}")
+                        context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
+                    else:
+                        context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
         
         # Brand breakdown (if brand mentioned or comparison)
-        if "brand" in user_msg_lower or is_comparison:
-            logger.info(f"🔍 Data context - Fetching brand breakdown with query: {query}")
+        # CRITICAL: Show brand breakdown when:
+        # 1. User mentions "brand" in message, OR
+        # 2. It's a comparison query, OR
+        # 3. User is comparing brands (e.g., "compare brand X with other brands")
+        is_comparing_brands = any(phrase in user_msg_lower for phrase in [
+            'compare brand', 'compare brands', 'brand vs', 'brands vs', 'brand versus', 'brands versus',
+            'vs other brands', 'versus other brands', 'with other brands', 'compared to other brands',
+            'compared with other brands'
+        ]) and ('brand' in user_msg_lower or 'brands' in user_msg_lower)
+        
+        if "brand" in user_msg_lower or is_comparison or is_comparing_brands:
+            # Use modified query without Brand filter when asking FOR brands or comparing brands
+            brand_query = query.copy() if query else {}
+            is_asking_for_brands = (
+                any(phrase in user_msg_lower for phrase in [
+                    'top brands', 'top 15 brands', 'top 10 brands', 'top 5 brands', 'top 20 brands',
+                    'brands by revenue', 'brands by profit', 'brands by', 'all brands',
+                    'list brands', 'show brands', 'which brands', 'what brands',
+                    'tell me about brands', 'tell me about brand', 'show me brands', 'show me brand',
+                    'brand performance', 'brand rankings', 'brand revenue', 'brand profit',
+                    'compare brand', 'compare brands', 'brand comparison', 'brands comparison'
+                ]) or 
+                re.search(r'top\s+\d+\s+brand', user_msg_lower) or
+                is_comparing_brands
+            )
+            # CRITICAL: Remove Brand filter when asking FOR brands or comparing brands (to show all brands)
+            if is_asking_for_brands and 'Brand' in brand_query:
+                logger.info(f"🔍 Removing Brand filter from brand breakdown (user is asking FOR brands or comparing brands)")
+                brand_query = {k: v for k, v in brand_query.items() if k != 'Brand'}
+            
+            logger.info(f"🔍 Data context - Fetching brand breakdown with query: {brand_query}")
+            brand_match_stage = {"$match": brand_query} if brand_query else {"$match": {}}
+            # Determine limit from query (e.g., "top 10" = 10, "top 15" = 15, default = 20)
+            top_match = re.search(r'top\s+(\d+)', user_msg_lower)
+            brand_limit = int(top_match.group(1)) if top_match else 20
+            
             pipeline_brand = [
-                match_stage,
+                brand_match_stage,
                 {
                     "$group": {
                         "_id": "$Brand",
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        # CRITICAL: Include Gross_Sales (default metric for comparisons)
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
                     }
                 },
                 {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
-                {"$sort": {"Revenue": -1}},
-                {"$limit": 20}
+                {"$sort": {"Gross_Sales": -1}},  # Sort by Gross_Sales (default metric) instead of Revenue
+                {"$limit": brand_limit}
             ]
-            brand_results = await db.business_data.aggregate(pipeline_brand).to_list(20)
+            brand_results = await db.business_data.aggregate(pipeline_brand).to_list(brand_limit)
             logger.info(f"📊 Data context - Brand results count: {len(brand_results)}")
             if brand_results:
-                context_parts.append("\nBrand Performance:")
+                # CRITICAL: For brand comparisons, show all brands with clear labeling
+                if is_comparing_brands:
+                    context_parts.append("\nBrand Comparison (All Brands):")
+                else:
+                    context_parts.append("\nBrand Performance:")
                 for idx, item in enumerate(brand_results, 1):
                     brand = str(item.get("_id", ""))
                     if brand and brand.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
                         profit = safe_float(item.get("Gross_Profit", 0))
+                        gross_sales = safe_float(item.get("Gross_Sales", revenue))  # Fallback to revenue
+                        units = safe_float(item.get("Units", 0))
                         if revenue > 0:
                             margin = (profit / revenue) * 100
-                            context_parts.append(f"  {idx}. {brand}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
-                            logger.info(f"  Brand {idx}: {brand} - Revenue: {revenue}")
+                            context_parts.append(f"  {idx}. {brand}: Gross Sales {format_currency(gross_sales)}, Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                            logger.info(f"  Brand {idx}: {brand} - Gross Sales: {gross_sales}, Revenue: {revenue}")
+                        else:
+                            context_parts.append(f"  {idx}. {brand}: Gross Sales {format_currency(gross_sales)}, Revenue {format_currency(revenue)}, Profit {format_currency(profit)}, Units {format_units(units)}")
             else:
                 logger.warning(f"⚠️ Data context - No brand results found with query: {query}")
         

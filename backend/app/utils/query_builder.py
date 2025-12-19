@@ -10,8 +10,6 @@ import re
 
 logger = logging.getLogger(__name__)
 
-logger = logging.getLogger(__name__)
-
 async def apply_business_filter(
     query: Dict[str, Any],
     businesses: str,
@@ -275,10 +273,92 @@ async def parse_query_from_natural_language(
     """
     Parse natural language query to extract filters and build MongoDB query
     Handles: business, channel, customer, brand, category, year, month, quarter
+    
+    Returns:
+        {
+            "filters": {...},  # MongoDB match filters
+            "intent": {
+                "metric": "Gross_Sales" | "Revenue" | "Units" | etc.,
+                "operation": "compare" | "sum" | "average" | etc.,
+                "group_by": "Year" | "Month" | "Business" | etc.
+            }
+        }
     """
     import re
     query = {}
     message_lower = message.lower()
+    
+    # CRITICAL: Extract intent (metric, operation, group_by) - as per ChatGPT recommendation
+    intent = {
+        "metric": None,
+        "operation": None,
+        "group_by": None
+    }
+    
+    # Extract metric intent (CRITICAL - as per ChatGPT recommendation)
+    if any(k in message_lower for k in [
+        'gross sales', 'gross sale', 'total sales', 'sales value', 'revenue', 'gross revenue'
+    ]):
+        intent["metric"] = "Gross_Sales"  # MongoDB field name
+        logger.info("📊 INTENT: Detected metric: gross_sales/revenue")
+    elif any(k in message_lower for k in [
+        'net sales', 'net revenue'
+    ]):
+        intent["metric"] = "Net_Sales"
+        logger.info("📊 INTENT: Detected metric: net_sales")
+    elif any(k in message_lower for k in [
+        'volume', 'units sold', 'quantity', 'units', 'cases'
+    ]):
+        intent["metric"] = "Units"
+        logger.info("📊 INTENT: Detected metric: units/volume")
+    elif any(k in message_lower for k in [
+        'profit', 'gross profit', 'margin'
+    ]):
+        intent["metric"] = "Gross_Profit"
+        logger.info("📊 INTENT: Detected metric: gross_profit")
+    else:
+        # DEFAULT: Assume gross sales if not specified (as per user requirement)
+        intent["metric"] = "Gross_Sales"
+        logger.info("📊 INTENT: No metric specified, defaulting to gross_sales")
+    
+    # Extract operation intent (compare, sum, average, etc.)
+    if any(k in message_lower for k in [
+        'compare', 'comparison', 'vs', 'versus', 'against', 'compared to', 'compared with'
+    ]):
+        intent["operation"] = "compare"
+        logger.info("📊 INTENT: Detected operation: compare")
+        
+        # Determine group_by for comparison
+        if any(k in message_lower for k in ['across years', 'year over year', 'yoy', 'by year']):
+            intent["group_by"] = "Year"
+            logger.info("📊 INTENT: Detected group_by: Year")
+        elif any(k in message_lower for k in ['by month', 'monthly', 'across months']):
+            intent["group_by"] = "Month_Name"
+            logger.info("📊 INTENT: Detected group_by: Month_Name")
+        elif any(k in message_lower for k in ['by business', 'across businesses', 'businesses']):
+            intent["group_by"] = "Business"
+            logger.info("📊 INTENT: Detected group_by: Business")
+        elif any(k in message_lower for k in ['by brand', 'across brands', 'brands']):
+            intent["group_by"] = "Brand"
+            logger.info("📊 INTENT: Detected group_by: Brand")
+        else:
+            # Default group_by for comparisons: Year (most common)
+            intent["group_by"] = "Year"
+            logger.info("📊 INTENT: Default group_by for comparison: Year")
+    elif any(k in message_lower for k in [
+        'sum', 'total', 'aggregate', 'combined'
+    ]):
+        intent["operation"] = "sum"
+        logger.info("📊 INTENT: Detected operation: sum")
+    elif any(k in message_lower for k in [
+        'average', 'avg', 'mean'
+    ]):
+        intent["operation"] = "average"
+        logger.info("📊 INTENT: Detected operation: average")
+    else:
+        # Default operation: sum (for totals)
+        intent["operation"] = "sum"
+        logger.info("📊 INTENT: Default operation: sum")
     
     # Get all available values from database for matching
     all_businesses = await db.business_data.distinct('Business')
@@ -294,37 +374,49 @@ async def parse_query_from_natural_language(
         query['Year'] = {'$in': [int(y) for y in years if 2000 <= int(y) <= 2100]}
     
     # Extract months (e.g., "January", "jan", "Q1", "quarter 1")
+    # CRITICAL FIX: Database stores abbreviated months (Jan, Feb, Mar), so convert full names to abbreviated
     month_names = ['january', 'february', 'march', 'april', 'may', 'june',
                    'july', 'august', 'september', 'october', 'november', 'december']
     month_abbr = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    # Map full names to abbreviated format (database format)
+    month_to_abbr = {
+        'january': 'Jan', 'february': 'Feb', 'march': 'Mar', 'april': 'Apr',
+        'may': 'May', 'june': 'Jun', 'july': 'Jul', 'august': 'Aug',
+        'september': 'Sep', 'october': 'Oct', 'november': 'Nov', 'december': 'Dec'
+    }
     found_months = []
     for i, month in enumerate(month_names):
         # Use word boundary to match whole words only (e.g., "november" not "novemberly")
         pattern = r'\b' + re.escape(month) + r'\b'
         if re.search(pattern, message_lower):
-            month_capitalized = month_names[i].capitalize()
-            if month_capitalized not in found_months:
-                found_months.append(month_capitalized)
+            # Convert to abbreviated format (database format)
+            month_abbreviated = month_to_abbr.get(month, month.capitalize())
+            if month_abbreviated not in found_months:
+                found_months.append(month_abbreviated)
     for i, abbr in enumerate(month_abbr):
         # Use word boundary for abbreviations too
         pattern = r'\b' + re.escape(abbr) + r'\b'
         if re.search(pattern, message_lower):
-            month_capitalized = month_names[i].capitalize()
-            if month_capitalized not in found_months:
-                found_months.append(month_capitalized)
+            # Map abbreviation to abbreviated format (capitalize first letter)
+            month_abbreviated = abbr.capitalize()
+            if month_abbreviated not in found_months:
+                found_months.append(month_abbreviated)
     if found_months:
         query['Month_Name'] = {'$in': found_months}
-        logger.info(f"📅 Extracted months from query builder: {found_months}")
+        logger.info(f"📅 Extracted months from query builder: {found_months} (converted to abbreviated format)")
     
     # Extract quarters (Q1, Q2, Q3, Q4)
+    # CRITICAL FIX: Database stores abbreviated months (Jan, Feb, Mar), not full names (January, February, March)
+    # Terminal logs confirm: dashboard uses 'Jan', 'Feb', 'Mar' and finds data, but 'January', 'February', 'March' finds 0 documents
     quarter_pattern = r'\bq([1-4])\b'
     quarters = re.findall(quarter_pattern, message_lower)
     if quarters:
+        # CRITICAL: Use abbreviated format to match database (confirmed from terminal logs)
         quarter_months = {
-            '1': ['January', 'February', 'March'],
-            '2': ['April', 'May', 'June'],
-            '3': ['July', 'August', 'September'],
-            '4': ['October', 'November', 'December']
+            '1': ['Jan', 'Feb', 'Mar'],
+            '2': ['Apr', 'May', 'Jun'],
+            '3': ['Jul', 'Aug', 'Sep'],
+            '4': ['Oct', 'Nov', 'Dec']
         }
         q_months = []
         for q in quarters:
@@ -336,6 +428,7 @@ async def parse_query_from_natural_language(
                 query['Month_Name'] = {'$in': [m for m in existing_months if m in q_months] or q_months}
             else:
                 query['Month_Name'] = {'$in': q_months}
+            logger.info(f"📅 Q{quarters[0]} mapped to months: {q_months} (abbreviated format to match database)")
     
     # Skip business extraction if comparing businesses or asking for all businesses
     # Also check for "with other business in the group" which is a common phrasing
@@ -385,8 +478,12 @@ async def parse_query_from_natural_language(
                 business_name = matches[0].strip()
                 # Remove trailing words that might be part of next filter
                 business_name = re.sub(r'\s+(channel|customer|brand|category|across|years|year).*$', '', business_name, flags=re.IGNORECASE).strip()
-                # Try to match with database businesses
+                # Try to match with database businesses using fuzzy matching
                 matched = False
+                best_match = None
+                best_score = 0
+                
+                # First try exact/contains matching (fast)
                 for db_business in all_businesses:
                     if db_business:
                         db_business_lower = str(db_business).lower()
@@ -395,24 +492,65 @@ async def parse_query_from_natural_language(
                         if business_name_lower == db_business_lower or business_name_lower in db_business_lower or db_business_lower in business_name_lower:
                             query = await apply_business_filter(query, str(db_business), db)
                             matched = True
-                            logger.info(f"✅ Matched business: '{business_name}' -> '{db_business}'")
+                            logger.info(f"✅ Exact/Contains match: '{business_name}' -> '{db_business}'")
                             break
+                
+                # If no exact match, try fuzzy matching
+                if not matched:
+                    try:
+                        from difflib import SequenceMatcher
+                        business_name_lower = business_name.lower()
+                        for db_business in all_businesses:
+                            if db_business:
+                                db_business_lower = str(db_business).lower()
+                                # Calculate similarity ratio
+                                similarity = SequenceMatcher(None, business_name_lower, db_business_lower).ratio()
+                                # Also check if one contains the other (partial match)
+                                if business_name_lower in db_business_lower or db_business_lower in business_name_lower:
+                                    similarity = max(similarity, 0.7)  # Boost partial matches
+                                
+                                if similarity > best_score:
+                                    best_score = similarity
+                                    best_match = db_business
+                        
+                        # Use fuzzy match if similarity is above threshold (60%)
+                        if best_match and best_score >= 0.6:
+                            query = await apply_business_filter(query, str(best_match), db)
+                            matched = True
+                            logger.info(f"✅ Fuzzy match: '{business_name}' -> '{best_match}' (similarity: {best_score:.2f})")
+                    except ImportError:
+                        logger.warning("⚠️ difflib not available, skipping fuzzy matching")
+                
                 if matched:
                     break
     else:
         logger.info("ℹ️ Skipping business extraction - user is comparing businesses, not filtering BY business")
     
-    # Extract channel (e.g., "channel Convenience", "channel: Convenience")
+    # Extract channel (e.g., "channel Convenience", "channel: Convenience", "Food and grocery channel", "Food and channel grocery")
+    # CRITICAL: Support patterns like "and grocery channel" AND "and channel grocery" (similar to brand extraction)
     channel_patterns = [
         r'channel\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|customer|brand|category)',
         r'channel:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|customer|brand|category)',
+        # CRITICAL: Match "and X channel" pattern (e.g., "Food and grocery channel")
+        r'and\s+([a-z][a-zA-Z\s]+?)\s+channel(?:\s|$|,|\.|\?|in|for|across)',
+        # CRITICAL: Match "and channel X" pattern (e.g., "Food and channel grocery")
+        r'and\s+channel\s+([a-z][a-zA-Z\s]+?)(?:\s|$|,|\.|\?|in|for|across)',
+        # Match "X channel" after business name (e.g., "business Food and grocery channel")
+        r'(?:business|for|of)\s+[^,]+\s+and\s+([a-z][a-zA-Z\s]+?)\s+channel',
+        # Match "channel X" after business name (e.g., "business Food and channel grocery")
+        r'(?:business|for|of)\s+[^,]+\s+and\s+channel\s+([a-z][a-zA-Z\s]+?)(?:\s|$|,|\.|\?|in|for|across)',
     ]
     for pattern in channel_patterns:
         matches = re.findall(pattern, message_lower, re.IGNORECASE)
         if matches:
             channel_name = matches[0].strip()
             # Remove trailing words that might be part of next filter
-            channel_name = re.sub(r'\s+(customer|brand|category).*$', '', channel_name, flags=re.IGNORECASE).strip()
+            channel_name = re.sub(r'\s+(customer|brand|category|in|for|across).*$', '', channel_name, flags=re.IGNORECASE).strip()
+            # Skip if it's a common phrase
+            if channel_name.lower() in ['and', 'or', 'the', 'a', 'an']:
+                continue
+            # Try exact/contains matching first
+            matched = False
             for db_channel in all_channels:
                 if db_channel:
                     db_channel_lower = str(db_channel).lower()
@@ -427,8 +565,41 @@ async def parse_query_from_natural_language(
                         else:
                             query['Channel'] = {'$in': [str(db_channel)]}
                         logger.info(f"✅ Matched channel: '{channel_name}' -> '{db_channel}'")
+                        matched = True
                         break
-            break
+            if matched:
+                break
+            # If no exact match, try fuzzy matching
+            if not matched:
+                try:
+                    from difflib import SequenceMatcher
+                    channel_name_lower = channel_name.lower()
+                    best_match = None
+                    best_score = 0
+                    for db_channel in all_channels:
+                        if db_channel:
+                            db_channel_lower = str(db_channel).lower()
+                            similarity = SequenceMatcher(None, channel_name_lower, db_channel_lower).ratio()
+                            if channel_name_lower in db_channel_lower or db_channel_lower in channel_name_lower:
+                                similarity = max(similarity, 0.7)  # Boost partial matches
+                            if similarity > best_score:
+                                best_score = similarity
+                                best_match = db_channel
+                    if best_match and best_score >= 0.6:
+                        if 'Channel' in query:
+                            if isinstance(query['Channel'], dict) and '$in' in query['Channel']:
+                                if str(best_match) not in query['Channel']['$in']:
+                                    query['Channel']['$in'].append(str(best_match))
+                            else:
+                                query['Channel'] = {'$in': [str(best_match)]}
+                        else:
+                            query['Channel'] = {'$in': [str(best_match)]}
+                        logger.info(f"✅ Fuzzy matched channel: '{channel_name}' -> '{best_match}' (similarity: {best_score:.2f})")
+                        matched = True
+                except ImportError:
+                    logger.warning("⚠️ difflib not available, skipping fuzzy matching for channels")
+            if matched:
+                break
     
     # Extract customer (e.g., "customer bwg", "customer: bwg")
     customer_patterns = [
@@ -458,12 +629,17 @@ async def parse_query_from_natural_language(
                         break
             break
     
-    # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman")
+    # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman", "Food and KOKA brand")
     # CRITICAL FIX: Don't match "brands by Revenue" or "top brands" - these are asking FOR brands, not filtering BY brand
+    # BUT: Match patterns like "Food and KOKA brand" where user is filtering BY a specific brand
     brand_patterns = [
         r'brands?\s+(?:is|are|of|for|by|top|all|the)\s+',  # Skip patterns like "brands by Revenue", "top brands", etc.
         r'brands?\s+([a-zA-Z][^,\.\?]+?)(?:\s+(?:and|or|,)\s+[a-zA-Z]|\s*$|\s*[,\?\.]|\s+category|\s+customer|\s+channel)',  # Match actual brand names
         r'brands?:\s*([a-zA-Z][^,\.\?]+?)(?:\s+(?:and|or|,)\s+[a-zA-Z]|\s*$|\s*[,\?\.]|\s+category|\s+customer|\s+channel)',
+        # CRITICAL: Match "and X brand" pattern (e.g., "Food and KOKA brand")
+        r'and\s+([A-Z][a-zA-Z\s]+?)\s+brand(?:\s|$|,|\.|\?|in|for|across)',
+        # Match "X brand" after business name (e.g., "business Food and KOKA brand")
+        r'(?:business|for|of)\s+[^,]+\s+and\s+([A-Z][a-zA-Z\s]+?)\s+brand',
     ]
     
     # Skip brand extraction if the message is asking FOR brands (not filtering BY brand)
@@ -548,5 +724,11 @@ async def parse_query_from_natural_language(
             break
     
     logger.info(f"🔍 Parsed query from natural language: {query}")
-    return query
+    logger.info(f"📊 Query intent: {intent}")
+    
+    # Return structured output with both filters and intent (as per ChatGPT recommendation)
+    return {
+        "filters": query,
+        "intent": intent
+    }
 

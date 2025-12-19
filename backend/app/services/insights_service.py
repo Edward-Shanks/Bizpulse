@@ -35,6 +35,14 @@ class InsightsService:
             r'show\s+me\s+top\s+\d+\s+(brand|brands|business|businesses|category|categories|customer|customers)',
             r'tell\s+me\s+top\s+\d+\s+(brand|brands|business|businesses|category|categories|customer|customers)',
             r'compare\s+(brand|brands|business|businesses|category|categories)\s+',
+            # Q1/Q2/Q3/Q4 comparison patterns - these are clear questions
+            r'compare\s+q[1-4].*business',
+            r'compare\s+q[1-4].*for\s+business',
+            r'q[1-4].*for\s+business.*compare',
+            r'q[1-4].*business.*across',
+            r'compare\s+q[1-4].*across\s+years?',
+            r'q[1-4].*for\s+business.*across',
+            r'compare.*q[1-4].*business.*across',
             r'all\s+(brand|brands|business|businesses|category|categories|customer|customers)',
             r'tell\s+me\s+about\s+all\s+(brand|brands|business|businesses|category|categories)',
             r'show\s+me\s+all\s+(brand|brands|business|businesses|category|categories)',
@@ -312,15 +320,78 @@ class InsightsService:
                 )
             
             # STEP 2: Process the question normally if it's clear
-            # CRITICAL: Check for "across years" BEFORE extracting years
-            # If user wants "across years", we should NOT filter by specific years
+            # CRITICAL: Extract structured intent FIRST (Query Planning Phase)
+            # This ensures we understand what the user wants BEFORE building queries
+            logger.info(f"🔍 STEP 2: Extracting structured intent from question: '{user_message}'")
+            
+            # Define quarter-to-months mapping (CODE, not LLM - as per ChatGPT recommendation)
+            QUARTER_TO_MONTHS = {
+                'q1': ['January', 'February', 'March'],
+                'q2': ['April', 'May', 'June'],
+                'q3': ['July', 'August', 'September'],
+                'q4': ['October', 'November', 'December']
+            }
+            
+            # Extract structured intent
             user_msg_lower_for_years = user_message.lower()
+            
+            # Extract quarter if mentioned
+            quarter_pattern = r'\bq([1-4])\b'
+            quarter_matches = re.findall(quarter_pattern, user_msg_lower_for_years)
+            detected_quarter = None
+            detected_quarter_months = None
+            if quarter_matches:
+                quarter_num = quarter_matches[0]
+                quarter_key = f'q{quarter_num}'
+                if quarter_key in QUARTER_TO_MONTHS:
+                    detected_quarter = quarter_key.upper()
+                    detected_quarter_months = QUARTER_TO_MONTHS[quarter_key]
+                    logger.info(f"📅 INTENT: Detected {detected_quarter} → months: {detected_quarter_months}")
+            
+            # Extract business if mentioned
+            detected_business = None
+            business_patterns = [
+                r'business\s+([a-zA-Z\s,&]+?)(?:\s+in|\s+for|\s+across|\s+and|\s+or|$)',
+                r'for\s+business\s+([a-zA-Z\s,&]+?)(?:\s+in|\s+for|\s+across|\s+and|\s+or|$)',
+            ]
+            for pattern in business_patterns:
+                match = re.search(pattern, user_msg_lower_for_years)
+                if match:
+                    detected_business = match.group(1).strip()
+                    logger.info(f"📅 INTENT: Detected business: '{detected_business}'")
+                    break
+            
+            # Extract years if mentioned
+            detected_years = []
+            year_pattern = r'\b(20\d{2})\b'
+            years_in_message = re.findall(year_pattern, user_message)
+            detected_years = [int(y) for y in years_in_message if 2000 <= int(y) <= 2100]
+            if detected_years:
+                logger.info(f"📅 INTENT: Detected years: {detected_years}")
+            
+            # Extract metric if mentioned
+            detected_metric = None
+            metric_patterns = [
+                r'(gross\s+sales|revenue|profit|units|margin)',
+                r'(sales|revenue|profit|units)',
+            ]
+            for pattern in metric_patterns:
+                match = re.search(pattern, user_msg_lower_for_years)
+                if match:
+                    detected_metric = match.group(1).lower()
+                    logger.info(f"📅 INTENT: Detected metric: '{detected_metric}'")
+                    break
+            
+            # Check for "across years" intent
             is_across_years = (
                 any(phrase in user_msg_lower_for_years for phrase in [
                     'across years', 'across all years', 'all years', 'year over year', 'yoy'
                 ]) or
                 re.search(r'compare.*across\s+years?', user_msg_lower_for_years) is not None
             )
+            if is_across_years:
+                logger.info(f"📅 INTENT: User wants comparison across ALL years (not specific years)")
+                detected_years = []  # Clear specific years if comparing across all years
             
             # Extract year from user message if mentioned (e.g., "2025", "sales trend for 2025")
             # BUT skip if "across years" is mentioned (user wants all years)
@@ -399,7 +470,19 @@ class InsightsService:
             context_query = await build_mongodb_query_from_context(context_for_query, self.db)
             
             # Parse query from natural language message
-            parsed_query = await parse_query_from_natural_language(user_message, self.db)
+            # CRITICAL: Now returns structured output with filters and intent (as per ChatGPT recommendation)
+            parsed_result = await parse_query_from_natural_language(user_message, self.db)
+            
+            # Extract filters and intent from structured output
+            if isinstance(parsed_result, dict) and "filters" in parsed_result:
+                parsed_query = parsed_result["filters"]
+                query_intent = parsed_result.get("intent", {})
+                logger.info(f"📊 Query intent extracted: {query_intent}")
+            else:
+                # Backward compatibility: if old format (just filters dict), use as-is
+                parsed_query = parsed_result if isinstance(parsed_result, dict) else {}
+                query_intent = {}
+                logger.warning("⚠️ parse_query_from_natural_language returned old format, using backward compatibility")
             
             # Add extracted months to parsed query if they were found in the message
             # This ensures months mentioned in the message are actually used in the MongoDB query
@@ -596,14 +679,28 @@ class InsightsService:
             # This ensures data context shows all brands, not just one
             # Also detect "compare brand X" queries - these should show all brands for comparison
             # Check for various phrasings: "compare brand X", "compare X with other brands", "X vs other brands", etc.
+            # CRITICAL: Distinguish between:
+            # 1. "Compare X with other brands" → Remove Brand filter (show all brands)
+            # 2. "Compare Q1 for Food and KOKA brand" → Keep Brand filter (filter BY KOKA, compare across years)
             is_comparing_brand = any(phrase in user_msg_lower for phrase in [
                 'compare brand', 'compare brands', 'brand vs', 'brands vs', 'brand versus', 'brands versus',
-                'compare x with', 'compare x to', 'compare x against', 'x compared to', 'x compared with',
-                'x vs other', 'x versus other', 'x against other', 'x and other brands', 'x with other brands',
-                'with other brands', 'versus other brands', 'against other brands', 'to other brands',
-                'how does', 'how do', 'how is', 'how are', 'compared to other', 'compared with other',
-                'relative to other brands', 'among other brands', 'alongside other brands'
+                'vs other brands', 'versus other brands', 'against other brands', 'to other brands',
+                'with other brands', 'compared to other brands', 'compared with other brands',
+                'relative to other brands', 'among other brands', 'alongside other brands',
+                'how does', 'how do', 'how is', 'how are'
             ]) and ('brand' in user_msg_lower or 'brands' in user_msg_lower)
+            
+            # CRITICAL: Check if user is filtering BY a specific brand (not comparing brands)
+            # Pattern: "Food and KOKA brand" or "business Food and KOKA brand" = filtering BY brand
+            is_filtering_by_specific_brand = (
+                'Brand' in query and
+                not is_comparing_brand and
+                (
+                    re.search(r'and\s+[A-Z][a-zA-Z\s]+\s+brand', user_msg_lower) or  # "and KOKA brand"
+                    re.search(r'business\s+[^,]+\s+and\s+[A-Z][a-zA-Z\s]+\s+brand', user_msg_lower) or  # "business Food and KOKA brand"
+                    ('brand' in user_msg_lower and 'and' in user_msg_lower and not any(phrase in user_msg_lower for phrase in ['other brands', 'other brand', 'vs other', 'versus other']))
+                )
+            )
             
             # Detect "compare business X" queries - these should show all businesses for comparison
             # Check for various phrasings: "compare business X", "compare X with other businesses", "X vs other businesses", etc.
@@ -641,11 +738,14 @@ class InsightsService:
             )
             
             # Remove Brand filter from main query when comparing brands (so pivot table shows all brands)
-            if is_comparing_brand and 'Brand' in query:
+            # BUT: Keep Brand filter if user is filtering BY a specific brand (e.g., "Food and KOKA brand")
+            if is_comparing_brand and 'Brand' in query and not is_filtering_by_specific_brand:
                 logger.info(f"🔍 Removing Brand filter from main query (user is comparing brands)")
                 logger.info(f"🔍 Original query had Brand filter: {query.get('Brand')}")
                 query = {k: v for k, v in query.items() if k != 'Brand'}
                 logger.info(f"🔍 Main query after removing Brand filter: {query}")
+            elif is_filtering_by_specific_brand:
+                logger.info(f"🔍 Keeping Brand filter in main query (user is filtering BY specific brand: {query.get('Brand')})")
             
             # Remove Business filter from main query when comparing businesses or asking for all businesses
             # Note: is_asking_for_all_businesses is defined earlier (line 67-78)
@@ -661,14 +761,29 @@ class InsightsService:
                 logger.info(f"🔍 is_comparing_business: {is_comparing_business}, is_asking_for_all_businesses: {is_asking_for_all_businesses}")
                 logger.info(f"🔍 User message: {user_message}")
             
-            # Use a modified query for data context that excludes Brand filter when asking FOR brands or comparing brands
+            # Use a modified query for data context
+            # CRITICAL: Only remove Brand filter if user is asking FOR brands (listing all brands) or comparing brands
+            # BUT: Keep Brand filter if user is filtering BY a specific brand (e.g., "Compare Q1 for Food and KOKA brand")
             data_context_query = query.copy() if query else {}
-            if (is_asking_for_brands or is_comparing_brand) and 'Brand' in data_context_query:
+            if (is_asking_for_brands or (is_comparing_brand and not is_filtering_by_specific_brand)) and 'Brand' in data_context_query:
                 logger.info(f"🔍 Removing Brand filter from data context query (user is asking FOR brands or comparing brands)")
                 logger.info(f"🔍 Original data context query had Brand filter: {data_context_query.get('Brand')}")
                 logger.info(f"🔍 is_asking_for_brands: {is_asking_for_brands}, is_comparing_brand: {is_comparing_brand}")
                 data_context_query = {k: v for k, v in data_context_query.items() if k != 'Brand'}
                 logger.info(f"🔍 Data context query after removing Brand filter: {data_context_query}")
+            
+            # CRITICAL: Detect if user is filtering BY a specific channel (not comparing channels)
+            # Pattern: "Food and grocery channel" OR "Food and channel grocery" = filtering BY channel
+            is_filtering_by_specific_channel = (
+                'Channel' in query and
+                (
+                    re.search(r'and\s+[a-z][a-zA-Z\s]+\s+channel', user_msg_lower) or  # "and grocery channel"
+                    re.search(r'and\s+channel\s+[a-z][a-zA-Z\s]+', user_msg_lower) or  # "and channel grocery"
+                    re.search(r'business\s+[^,]+\s+and\s+[a-z][a-zA-Z\s]+\s+channel', user_msg_lower) or  # "business Food and grocery channel"
+                    re.search(r'business\s+[^,]+\s+and\s+channel\s+[a-z][a-zA-Z\s]+', user_msg_lower) or  # "business Food and channel grocery"
+                    ('channel' in user_msg_lower and 'and' in user_msg_lower and not any(phrase in user_msg_lower for phrase in ['other channels', 'other channel', 'vs other', 'versus other']))
+                )
+            )
             
             # Remove Business filter from data context query when comparing businesses or asking for all businesses
             if (is_comparing_business or is_asking_for_all_businesses) and 'Business' in data_context_query:
@@ -746,28 +861,152 @@ class InsightsService:
             # Get comprehensive data context using the modified query
             # IMPORTANT: Use the modified query (without Brand filter) for data context when asking FOR brands
             logger.info(f"🔍 Query being passed to data context: {data_context_query}")
+            logger.info(f"📊 Query intent: {query_intent}")
+            
+            # CRITICAL: Use intent to determine aggregation needs (as per ChatGPT recommendation)
+            # If operation is "compare" and group_by is "Year", we need year-over-year aggregation
+            needs_year_aggregation = (
+                query_intent.get("operation") == "compare" and 
+                query_intent.get("group_by") == "Year"
+            )
+            if needs_year_aggregation:
+                logger.info("📊 Intent requires year-over-year comparison aggregation")
+                is_yearly = True  # Force yearly breakdown for comparison
+            
+            # CRITICAL: Implement query fallback logic - if query returns no data, try progressively relaxed queries
+            data_context = None
+            fallback_attempts = []
+            original_query = data_context_query.copy()
+            
             try:
+                # Try original query first
+                # CRITICAL: Set is_comparison to True when comparing brands or businesses
+                # This ensures brand/business breakdowns are shown in data context
+                is_comparison_for_context = (
+                    is_comparison or 
+                    (query_intent.get("operation") == "compare") or
+                    is_comparing_brand or
+                    is_comparing_business
+                )
+                
                 data_context = await get_comprehensive_data_context(
                     data_context_query,  # Use modified query without Brand filter when asking FOR brands
                     user_message,
                     self.db,
-                    is_comparison=is_comparison,
+                    is_comparison=is_comparison_for_context,
                     is_quarterly=is_quarterly,
                     is_monthly=is_monthly,
-                    is_yearly=is_yearly,
+                    is_yearly=is_yearly or needs_year_aggregation,
                     is_metrics=is_metrics
                 )
                 logger.info(f"📈 Data context length: {len(data_context)} characters")
                 logger.info(f"📈 Data context preview: {data_context[:500]}...")
                 
-                # If data context shows very little data, log a warning
+                # Check if query returned no data
+                if "⚠️ Note: No data found matching the specified filters" in data_context or "Total Revenue: €0" in data_context:
+                    logger.warning(f"⚠️ Original query returned no data. Attempting fallback queries...")
+                    fallback_attempts.append(f"Original query: {original_query}")
+                    
+                    # Fallback 1: Remove Month_Name filter (keep Business and Year)
+                    if 'Month_Name' in data_context_query:
+                        fallback_query_1 = {k: v for k, v in data_context_query.items() if k != 'Month_Name'}
+                        logger.info(f"🔄 Fallback 1: Trying without Month_Name filter: {fallback_query_1}")
+                        fallback_context_1 = await get_comprehensive_data_context(
+                            fallback_query_1,
+                            user_message,
+                            self.db,
+                            is_comparison=is_comparison,
+                            is_quarterly=is_quarterly,
+                            is_monthly=is_monthly,
+                            is_yearly=is_yearly,
+                            is_metrics=is_metrics
+                        )
+                        if "⚠️ Note: No data found" not in fallback_context_1 and "Total Revenue: €0" not in fallback_context_1:
+                            logger.info(f"✅ Fallback 1 succeeded - found data without Month_Name filter")
+                            # CRITICAL: Do NOT add misleading notes about "Q1-specific data not available"
+                            # The data exists, it's just aggregated differently - LLM should still use it
+                            data_context = fallback_context_1
+                            fallback_attempts.append(f"Fallback 1 (no Month_Name): Found data")
+                        else:
+                            fallback_attempts.append(f"Fallback 1 (no Month_Name): No data")
+                            
+                            # Fallback 2: Remove Year filter (keep Business and Month_Name)
+                            if 'Year' in data_context_query:
+                                fallback_query_2 = {k: v for k, v in data_context_query.items() if k != 'Year'}
+                                logger.info(f"🔄 Fallback 2: Trying without Year filter: {fallback_query_2}")
+                                fallback_context_2 = await get_comprehensive_data_context(
+                                    fallback_query_2,
+                                    user_message,
+                                    self.db,
+                                    is_comparison=is_comparison,
+                                    is_quarterly=is_quarterly,
+                                    is_monthly=is_monthly,
+                                    is_yearly=is_yearly,
+                                    is_metrics=is_metrics
+                                )
+                                if "⚠️ Note: No data found" not in fallback_context_2 and "Total Revenue: €0" not in fallback_context_2:
+                                    logger.info(f"✅ Fallback 2 succeeded - found data without Year filter")
+                                    # CRITICAL: Do NOT add misleading notes about "year-specific data not available"
+                                    # The data exists, it's just aggregated differently - LLM should still use it
+                                    data_context = fallback_context_2
+                                    fallback_attempts.append(f"Fallback 2 (no Year): Found data")
+                                else:
+                                    fallback_attempts.append(f"Fallback 2 (no Year): No data")
+                                    
+                                    # Fallback 3: Keep only Business filter
+                                    if 'Business' in data_context_query:
+                                        fallback_query_3 = {'Business': data_context_query['Business']}
+                                        logger.info(f"🔄 Fallback 3: Trying with only Business filter: {fallback_query_3}")
+                                        fallback_context_3 = await get_comprehensive_data_context(
+                                            fallback_query_3,
+                                            user_message,
+                                            self.db,
+                                            is_comparison=is_comparison,
+                                            is_quarterly=is_quarterly,
+                                            is_monthly=is_monthly,
+                                            is_yearly=is_yearly,
+                                            is_metrics=is_metrics
+                                        )
+                                        if "⚠️ Note: No data found" not in fallback_context_3 and "Total Revenue: €0" not in fallback_context_3:
+                                            logger.info(f"✅ Fallback 3 succeeded - found data with only Business filter")
+                                            # CRITICAL: Do NOT add misleading notes about "Q1-specific data not available"
+                                            # The data exists, it's just aggregated differently - LLM should still use it
+                                            data_context = fallback_context_3
+                                            fallback_attempts.append(f"Fallback 3 (only Business): Found data")
+                                        else:
+                                            fallback_attempts.append(f"Fallback 3 (only Business): No data")
+                    
+                    # Log all fallback attempts
+                    logger.info(f"📋 Fallback attempts summary: {fallback_attempts}")
+                
+                # CRITICAL: Validate query results BEFORE answering (as per ChatGPT recommendation)
+                # Check if we have sufficient data for the requested comparison
                 if "Overall Totals" in data_context:
                     # Extract total revenue from context
                     revenue_match = re.search(r'Total Revenue: (€[\d.]+[kM]?)', data_context)
                     if revenue_match:
-                        logger.info(f"📊 Total revenue in data context: {revenue_match.group(1)}")
+                        revenue_str = revenue_match.group(1)
+                        logger.info(f"📊 Total revenue in data context: {revenue_str}")
+                        
+                        # Check if revenue is zero (no data found)
+                        if revenue_str == "€0" or "€0.0" in revenue_str:
+                            logger.warning(f"⚠️ Query returned zero revenue - validating intent vs results")
+                            logger.warning(f"⚠️ Intent: quarter={detected_quarter}, business={detected_business}, years={detected_years}")
+                            logger.warning(f"⚠️ This suggests the query filters may not match the database schema or data")
                     else:
                         logger.warning(f"⚠️ Could not extract total revenue from data context")
+                
+                # Validate if we have data for comparison queries
+                if is_comparison and detected_years and len(detected_years) >= 2:
+                    # For comparison queries, check if we have data for all requested years
+                    year_data_check = []
+                    for year in detected_years:
+                        year_pattern = re.compile(rf'{year}.*?Revenue.*?(€[\d.]+[kM]?)', re.IGNORECASE)
+                        if year_pattern.search(data_context):
+                            year_data_check.append(year)
+                    if len(year_data_check) < len(detected_years):
+                        missing_years = [y for y in detected_years if y not in year_data_check]
+                        logger.warning(f"⚠️ Comparison query: Missing data for years {missing_years}. Available: {year_data_check}")
             except Exception as e:
                 logger.error(f"❌ Error getting data context: {str(e)}")
                 import traceback
@@ -930,6 +1169,30 @@ class InsightsService:
                 month_list_str = ', '.join(requested_months)
                 month_context = f"CRITICAL: The user specifically asked about month(s) {month_list_str}. You MUST focus your analysis ONLY on data from these month(s). Do NOT include data from other months unless explicitly requested. "
             
+            # CRITICAL: Add hard constraints for quarterly aggregation (as per ChatGPT recommendation)
+            quarterly_rules = (
+                "You are a business analytics assistant querying structured monthly sales data.\n\n"
+                "IMPORTANT RULES (NON-NEGOTIABLE):\n"
+                "1. Quarterly terms are ALWAYS implicit aggregations:\n"
+                "   - Q1 = January, February, March (ALWAYS)\n"
+                "   - Q2 = April, May, June (ALWAYS)\n"
+                "   - Q3 = July, August, September (ALWAYS)\n"
+                "   - Q4 = October, November, December (ALWAYS)\n"
+                "2. The dataset does NOT store quarters explicitly. Quarters MUST be computed by aggregating months.\n"
+                "3. If monthly data exists for the requested year(s), business, and metric, you MUST compute the quarterly result.\n"
+                "   You are NOT allowed to say 'data not available' or 'Q1 data is not available' in this case.\n"
+                "4. You may only say 'data not available' if:\n"
+                "   - One or more required months are completely missing from the dataset (e.g., no January data at all), OR\n"
+                "   - The requested business or metric truly does not exist in the dataset.\n"
+                "5. If a question asks for a comparison, you MUST compute and compare both values numerically whenever possible.\n"
+                "6. NEVER infer or speculate. Use only values derived from the aggregated data provided in context.\n"
+                "7. The data context provided is the result of correct database aggregation. You MUST treat these numbers as authoritative.\n"
+                "   Do NOT question their availability. Do NOT say 'data not available' if the data context shows aggregated values.\n"
+                "8. CRITICAL: If the data context shows ANY aggregated values (even yearly totals), you MUST use them to answer the question.\n"
+                "   For example, if data shows 'Yearly Breakdown: 2023: Gross Sales €12.3M' and user asks for Q1, use this yearly data.\n"
+                "   Do NOT refuse to answer just because Q1-specific breakdown is not shown.\n"
+            )
+            
             # Enhanced system context for comprehensive queries
             email_context = ""
             if "email" in user_msg_lower or ("write" in user_msg_lower and "email" in user_msg_lower) or ("draft" in user_msg_lower and "email" in user_msg_lower):
@@ -951,6 +1214,7 @@ class InsightsService:
                 "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
                 "You provide business insights and recommendations to non-technical executives and managers. "
                 ""
+                f"{quarterly_rules}\n"
                 "ABSOLUTELY CRITICAL - DATA USAGE RESTRICTIONS: "
                 "You MUST ONLY use the business data provided in the 'Business Data' section. "
                 "You MUST NOT use any external knowledge, general world information, news, historical events, geopolitical information, wars, elections, natural disasters, economics, international relations, or any information outside the provided business data. "
@@ -990,6 +1254,26 @@ class InsightsService:
                 "IMPORTANT: If the user asks for a specific number (e.g., 'top 15 brands', '15 brands'), you MUST provide exactly that number of items in your response. "
                 "CRITICAL: Use the EXACT numbers from the data provided to you. Do NOT round, estimate, or modify the numbers. The data contains precise values - use them exactly as shown. "
                 "Format monetary values in millions (M) or thousands (k) where appropriate, e.g., €59.0M or €1.6k, and cases as whole numbers. "
+                "CRITICAL - QUARTER-TO-MONTHS MAPPING (BUSINESS RULE - DO NOT FORGET THIS): "
+                "The database does NOT have a 'quarter' field. Quarters are derived from months. "
+                "Q1 = January + February + March (data is filtered by these 3 months) "
+                "Q2 = April + May + June "
+                "Q3 = July + August + September "
+                "Q4 = October + November + December "
+                "When the user asks for Q1/Q2/Q3/Q4 data, the query filters by the corresponding months. "
+                "If Q1 data is requested, it means data for January, February, and March combined. "
+                "If the data shows zero values for Q1, it means no data exists for those specific months, NOT that quarters don't exist in the database. "
+                "CRITICAL - INTELLIGENT DATA INTERPRETATION: "
+                "When the user asks about specific time periods (e.g., 'Q1', 'November 2025') or entities (e.g., 'Food business'), but the exact data is not available: "
+                "(1) Check if related data exists (e.g., other quarters, other months, similar business names) "
+                "(2) If related data exists, provide analysis based on that and explain what it implies about the requested period/entity "
+                "(3) If the data context mentions fallback queries or broader data, use that data to provide insights "
+                "(4) Suggest potential reasons why the exact data might not be available (e.g., business name mismatch, time period not in dataset) "
+                "(5) NEVER just state 'no data available' - always try to provide value from related available data "
+                "(6) NEVER use proxy quarters (e.g., do NOT use Q2 data to estimate Q1) unless the user explicitly asks for estimates "
+                "(7) NEVER assume even distribution across quarters unless explicitly stated "
+                "For Q1/Q2/Q3/Q4 queries: If Q1 data (January-March) is missing but the business has data in other quarters, analyze those quarters and explain what they suggest about Q1, but DO NOT use them as proxies. "
+                "For business name queries: If exact business name doesn't match, check if similar business names exist and suggest the user verify the exact name. "
                 "ABSOLUTELY CRITICAL - QUESTION INDEPENDENCE: "
                 "You MUST analyze each question as a STANDALONE question, not as a follow-up to previous questions. "
                 "Read the CURRENT question carefully and answer EXACTLY what is asked, not what was asked in previous questions. "
@@ -1014,7 +1298,11 @@ class InsightsService:
                 "When analyzing trends, identify patterns, seasonality, peaks, dips, and explain potential drivers. "
                 "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
                 "Use conversation history for context in follow-ups. "
-                "Keep it engaging and provide comprehensive analysis in plain business language that any executive can understand."
+                "Keep it engaging and provide comprehensive analysis in plain business language that any executive can understand. "
+                "CRITICAL: Answer the user's question directly using the data provided. "
+                "Do NOT explain data limitations unless explicitly asked. "
+                "Do NOT suggest next steps unless requested. "
+                "Do NOT say 'data not available' if the data context shows aggregated values for the requested period."
             )
             
             # Build user prompt with data context
@@ -1031,16 +1319,73 @@ class InsightsService:
                     f"Do NOT mix these up or assume one is a follow-up of the other.\n\n"
                 )
             
+            # Build query intent summary for LLM context (as per ChatGPT recommendation)
+            intent_summary = []
+            if detected_quarter:
+                intent_summary.append(f"Quarter: {detected_quarter} (months: {', '.join(detected_quarter_months)})")
+            if detected_business:
+                intent_summary.append(f"Business: {detected_business}")
+            if detected_years:
+                intent_summary.append(f"Years: {', '.join(map(str, detected_years))}")
+            if detected_metric:
+                intent_summary.append(f"Metric: {detected_metric}")
+            if is_across_years:
+                intent_summary.append("Comparison: Across all years")
+            
+            intent_context = ""
+            if intent_summary:
+                intent_context = f"\nQUERY INTENT (what the user asked for):\n" + "\n".join(f"  - {item}" for item in intent_summary) + "\n"
+                intent_context += f"\nIMPORTANT: The database does NOT have a 'quarter' field. "
+                intent_context += f"Q1/Q2/Q3/Q4 queries filter by months (e.g., Q1 = January + February + March). "
+                intent_context += f"If the data shows zero values, it means no data exists for those specific months/business/years, NOT that quarters don't exist.\n"
+            
             user_prompt = (
                 f"{chart_context}\n\n"
+                f"{intent_context}"
                 f"BUSINESS DATA (USE ONLY THIS DATA - DO NOT USE ANY EXTERNAL KNOWLEDGE):\n"
                 f"{data_context}\n\n"
                 f"CRITICAL INSTRUCTION: The above 'Business Data' section contains ALL the information you should use to answer the user's question. "
+                f"The following data context is the result of correct database aggregation. "
+                f"You MUST treat these numbers as authoritative. "
+                f"Do NOT question their availability. "
+                f"SYSTEM RULE: If Month_Name filter exists in the query (e.g., January, February, March for Q1), the data IS available. "
+                f"Never state 'data not available' unless an explicit ⚠️ Note: No data found appears. "
+                f"Q1 always means January–March. If you see 'Q1 Performance' or '📌 Quarter Interpretation: Q1', the data EXISTS. "
+                f"Do NOT say 'data not available' if the data context shows ANY aggregated values (even if labeled as 'all months' or 'broader data'). "
+                f"If you see notes like 'Data shown includes all months', this means the data EXISTS - extract the relevant values and use them. "
+                f"Do NOT interpret fallback notes as 'data not available'. "
                 f"Do NOT use any external knowledge, world events, news, or information outside this dataset. "
-                f"If the data doesn't contain information about what the user is asking, acknowledge this limitation. "
                 f"{question_independence_note}"
+                f"\nIMPORTANT - HANDLING INCOMPLETE DATA:\n"
+                f"If the data shows zero values or 'No data found', you should:\n"
+                f"(1) FIRST check if there's related data available (e.g., if Q1 data is missing, check if there's data for the business in other quarters or all months)\n"
+                f"(2) If related data exists, provide insights based on that available data and explain what it tells us about the requested period\n"
+                f"(3) If the data context mentions fallback queries (e.g., 'Data shown includes all months'), acknowledge this and provide analysis based on the available broader data\n"
+                f"(4) Suggest what filters might need adjustment to find the specific data requested (e.g., business name might not match exactly)\n"
+                f"(5) NEVER just say 'no data available' - always try to provide value from related available data\n"
+                f"(6) NEVER use proxy quarters (e.g., do NOT use Q2 data to estimate Q1) unless the user explicitly asks for estimates\n"
+                f"CRITICAL: If the data context shows ANY aggregated values (e.g., 'Q1 Performance: Revenue €X.XM', 'Yearly Breakdown: 2023: Gross Sales €Y.YM', "
+                f"'Overall Totals: Total Revenue: €Z.ZM'), this means the data EXISTS and has been aggregated correctly. "
+                f"You MUST use these values to answer the question. Do NOT say 'data not available' when ANY aggregated values are present.\n"
+                f"CRITICAL: Even if the data context shows yearly totals instead of Q1-specific breakdowns, you MUST extract the relevant information. "
+                f"For example, if the data shows 'Yearly Breakdown: 2023: Gross Sales €12.3M' and 'Yearly Breakdown: 2024: Gross Sales €13.5M', "
+                f"and the user asks for Q1 comparison, you should use these yearly values to provide insights about Q1 trends. "
+                f"Say something like: 'Based on the yearly data, Food business shows €12.3M in 2023 and €13.5M in 2024, indicating a positive trend that likely extends to Q1.'\n"
+                f"Do NOT say 'Q1 data is not available' when the data context shows ANY aggregated values.\n"
+                f"Do NOT interpret the absence of Q1-specific breakdowns as 'data not available' - use the available aggregated data.\n"
                 f"\n\nUser Question: {request.message}"
             )
+            
+            # CRITICAL: Add validation note for quarterly queries (as per ChatGPT recommendation)
+            if detected_quarter_months and detected_years and detected_business:
+                validation_note = (
+                    f"\n\nVALIDATION CHECK: "
+                    f"The user asked for {detected_quarter} ({', '.join(detected_quarter_months)}) data for business '{detected_business}' in years {detected_years}. "
+                    f"If the data context shows any aggregated values for this period, you MUST use them. "
+                    f"Do NOT say 'data not available' when aggregated values are present in the data context."
+                )
+                user_prompt += validation_note
+                logger.info(f"🔒 VALIDATION: Added validation note for {detected_quarter} query")
             
             logger.info(f"🤖 Sending to AI - Prompt length: {len(user_prompt)} characters")
             logger.info(f"🤖 System context length: {len(system_context)} characters")
@@ -1049,6 +1394,20 @@ class InsightsService:
             try:
                 ai_response = await query_perplexity(user_prompt, conversation_history, custom_system_message=system_context)
                 logger.info(f"✅ AI Response received - Length: {len(ai_response)} characters")
+                
+                # CRITICAL: Validate response for invalid refusals (as per ChatGPT recommendation)
+                if detected_quarter_months and detected_years and detected_business:
+                    refusal_phrases = [
+                        "not available", "data not available", "no data", "unavailable",
+                        "q1 data is not available", "q1-specific data is not available"
+                    ]
+                    response_lower = ai_response.lower()
+                    has_refusal = any(phrase in response_lower for phrase in refusal_phrases)
+                    
+                    if has_refusal:
+                        logger.warning(f"⚠️ REFUSAL VALIDATOR: Response contains refusal but intent suggests data should exist")
+                        logger.warning(f"⚠️ Intent: quarter={detected_quarter}, business={detected_business}, years={detected_years}")
+                        logger.warning(f"⚠️ This may be an invalid refusal - data context should be checked")
             except Exception as e:
                 logger.error(f"❌ Error querying Perplexity: {str(e)}")
                 import traceback
