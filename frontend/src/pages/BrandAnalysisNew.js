@@ -760,7 +760,8 @@ const BrandAnalysis = () => {
             title="Top 15 Brands by Revenue" 
             chartId="revenueTop"
             renderChart={({ brandData: chartBrandData }) => {
-              const topBrands = chartBrandData.slice(0, 15);
+              // Sort by Revenue descending (largest first), then take top 15
+              const topBrands = [...chartBrandData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 15);
               return (
                 <div className="h-96">
                   {topBrands.length > 0 ? (
@@ -834,7 +835,8 @@ const BrandAnalysis = () => {
             title="Brand Revenue Distribution" 
             chartId="revenueDistribution"
             renderChart={({ brandData: chartBrandData }) => {
-              const topBrands = chartBrandData.slice(0, 10);
+              // Sort by Revenue descending (largest first), then take top 10
+              const topBrands = [...chartBrandData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 10);
               return (
                 <div className="h-96">
                   {topBrands.length > 0 ? (
@@ -899,7 +901,8 @@ const BrandAnalysis = () => {
             title="Top 10 Brands by Profit" 
             chartId="profitTop"
             renderChart={({ brandData: chartBrandData }) => {
-              const topBrands = chartBrandData.slice(0, 10);
+              // Sort by Gross_Profit descending (largest first), then take top 10
+              const topBrands = [...chartBrandData].sort((a, b) => (b.Gross_Profit || 0) - (a.Gross_Profit || 0)).slice(0, 10);
               return (
                 <div className="h-80">
                   {topBrands.length > 0 ? (
@@ -969,7 +972,8 @@ const BrandAnalysis = () => {
             title="Revenue vs Profit (Top 10)" 
             chartId="revenueVsProfit"
             renderChart={({ brandData: chartBrandData }) => {
-              const topBrands = chartBrandData.slice(0, 10);
+              // Sort by Revenue descending (largest first), then take top 10
+              const topBrands = [...chartBrandData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 10);
               return (
                 <div className="h-80">
                   {topBrands.length > 0 ? (

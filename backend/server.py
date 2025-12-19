@@ -600,6 +600,38 @@ async def get_executive_overview(
                 return 0.0
             return float(val)
         
+        # Helper functions for sorting
+        def get_month_order(month_name):
+            """Get month order for sorting (1-12)"""
+            month_order_map = {
+                'jan': 1, 'january': 1,
+                'feb': 2, 'february': 2,
+                'mar': 3, 'march': 3,
+                'apr': 4, 'april': 4,
+                'may': 5,
+                'jun': 6, 'june': 6,
+                'jul': 7, 'july': 7,
+                'aug': 8, 'august': 8,
+                'sep': 9, 'september': 9, 'sept': 9,
+                'oct': 10, 'october': 10,
+                'nov': 11, 'november': 11,
+                'dec': 12, 'december': 12
+            }
+            month_lower = str(month_name).lower().strip()
+            return month_order_map.get(month_lower, 999)
+        
+        def sort_by_month(data_list, month_key="Month_Name"):
+            """Sort list by month in chronological order"""
+            return sorted(data_list, key=lambda x: get_month_order(x.get(month_key, "")))
+        
+        def sort_by_year(data_list, year_key="Year"):
+            """Sort list by year in ascending order"""
+            return sorted(data_list, key=lambda x: int(x.get(year_key, 0)) if x.get(year_key) else 0)
+        
+        def sort_by_metric(data_list, metric_key, reverse=True):
+            """Sort list by metric in descending order (largest first)"""
+            return sorted(data_list, key=lambda x: safe_float(x.get(metric_key, 0)), reverse=reverse)
+        
         logger.info(f"Query being executed: {query}")
         logger.info(f"🚀 Using MongoDB aggregation pipeline for performance")
         
@@ -624,6 +656,8 @@ async def get_executive_overview(
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Year in ascending order (2023, 2024, 2025)
+        yearly_list = sort_by_year(yearly_list, "Year")
         
         # Business performance aggregation
         pipeline_business = [
@@ -646,6 +680,8 @@ async def get_executive_overview(
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Revenue in descending order (largest first)
+        business_list = sort_by_metric(business_list, "Revenue", reverse=True)
         
         # Get current year for monthly trend
         pipeline_max_year = [
@@ -677,6 +713,8 @@ async def get_executive_overview(
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Month_Name in chronological order (Jan, Feb, Mar, ...)
+        monthly_list = sort_by_month(monthly_list, "Month_Name")
         
         # Channel performance aggregation
         pipeline_channel = [
@@ -699,6 +737,8 @@ async def get_executive_overview(
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Revenue in descending order (largest first)
+        channel_list = sort_by_metric(channel_list, "Revenue", reverse=True)
         
         # Get totals
         pipeline_totals = [
@@ -793,6 +833,11 @@ async def get_customer_analysis(
                 return float(value)
             except Exception:
                 return 0.0
+        
+        # Helper functions for sorting
+        def sort_by_metric(data_list, metric_key, reverse=True):
+            """Sort list by metric in descending order (largest first)"""
+            return sorted(data_list, key=lambda x: safe_float(x.get(metric_key, 0)), reverse=reverse)
 
         # Channel performance aggregation
         pipeline_channel = [
@@ -816,6 +861,8 @@ async def get_customer_analysis(
                 "Gross_Profit": safe_float(item.get("Gross_Profit")),
                 "Units": safe_float(item.get("Units")),
             })
+        # Sort by Revenue in descending order (largest first) - already sorted in pipeline, but ensure it's correct
+        channel_performance = sort_by_metric(channel_performance, "Revenue", reverse=True)
 
         # Customer performance aggregation
         pipeline_customer = [
@@ -839,6 +886,8 @@ async def get_customer_analysis(
                 "Gross_Profit": safe_float(item.get("Gross_Profit")),
                 "Units": safe_float(item.get("Units")),
             })
+        # Sort by Revenue in descending order (largest first) - already sorted in pipeline, but ensure it's correct
+        customer_performance = sort_by_metric(customer_performance, "Revenue", reverse=True)
 
         top_customers = customer_performance[:50]
 
@@ -947,6 +996,14 @@ async def get_brand_analysis(
                 return float(value)
             except Exception:
                 return 0.0
+        
+        # Helper functions for sorting
+        def sort_by_metric(data_list, metric_key, reverse=True):
+            """Sort list by metric in descending order (largest first)"""
+            return sorted(data_list, key=lambda x: safe_float(x.get(metric_key, 0)), reverse=reverse)
+        def sort_by_year(data_list, year_key="Year"):
+            """Sort list by year in ascending order"""
+            return sorted(data_list, key=lambda x: int(x.get(year_key, 0)) if x.get(year_key) else 0)
 
         # Brand performance aggregation
         pipeline_brand = [
@@ -970,6 +1027,8 @@ async def get_brand_analysis(
                 "Gross_Profit": safe_float(item.get("Gross_Profit")),
                 "Units": safe_float(item.get("Units")),
             })
+        # Sort by Revenue in descending order (largest first) - already sorted in pipeline, but ensure it's correct
+        brand_performance = sort_by_metric(brand_performance, "Revenue", reverse=True)
 
         # Brand by business aggregation
         pipeline_brand_business = [
@@ -1020,6 +1079,8 @@ async def get_brand_analysis(
                 "Year": int(key.get("Year")) if key.get("Year") else 0,
                 "Revenue": safe_float(item.get("Revenue")),
             })
+        # Sort by Brand first, then by Year ascending (already sorted in pipeline, but ensure it's correct)
+        brand_yoy_growth = sorted(brand_yoy_growth, key=lambda x: (x.get("Brand", ""), int(x.get("Year", 0))))
 
         # Totals and active brands
         pipeline_totals = [
@@ -1131,6 +1192,11 @@ async def get_category_analysis(
                 return float(value)
             except Exception:
                 return 0.0
+        
+        # Helper functions for sorting
+        def sort_by_metric(data_list, metric_key, reverse=True):
+            """Sort list by metric in descending order (largest first)"""
+            return sorted(data_list, key=lambda x: safe_float(x.get(metric_key, 0)), reverse=reverse)
 
         # Category performance aggregation
         pipeline_category = [

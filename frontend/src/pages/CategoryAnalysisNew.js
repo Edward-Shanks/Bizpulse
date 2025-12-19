@@ -736,16 +736,19 @@ const CategoryAnalysis = () => {
           <ChartCard 
             title="Revenue by Category" 
             chartId="categoryRevenue"
-            renderChart={({ categoryData: chartCategoryData }) => (
+            renderChart={({ categoryData: chartCategoryData }) => {
+              // Sort by Revenue descending (largest first)
+              const sortedCategoryData = [...chartCategoryData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0));
+              return (
               <div className="h-96">
-                {chartCategoryData.length > 0 ? (
+                {sortedCategoryData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartCategoryData.map(item => item.Category || 'Unknown'),
+                      labels: sortedCategoryData.map(item => item.Category || 'Unknown'),
                       datasets: [{
                         label: 'Revenue',
-                        data: chartCategoryData.map(item => item.Revenue || 0),
+                        data: sortedCategoryData.map(item => item.Revenue || 0),
                         backgroundColor: colorsWithOpacity,
                         borderRadius: 6
                       }]
@@ -799,14 +802,16 @@ const CategoryAnalysis = () => {
                   <p className="text-center text-gray-500 py-8">No data available</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           <ChartCard 
             title="Category Distribution" 
             chartId="categoryDistribution"
             renderChart={({ categoryData: chartCategoryData }) => {
-              const topCategories = chartCategoryData.slice(0, 10);
+              // Sort by Revenue descending (largest first), then take top 10
+              const topCategories = [...chartCategoryData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 10);
               return (
                 <div className="h-96">
                   {topCategories.length > 0 ? (
@@ -853,7 +858,8 @@ const CategoryAnalysis = () => {
             title="Profit by Category (Top 10)" 
             chartId="categoryProfit"
             renderChart={({ categoryData: chartCategoryData }) => {
-              const topCategories = chartCategoryData.slice(0, 10);
+              // Sort by Gross_Profit descending (largest first), then take top 10
+              const topCategories = [...chartCategoryData].sort((a, b) => (b.Gross_Profit || 0) - (a.Gross_Profit || 0)).slice(0, 10);
               return (
                 <div className="h-80">
                   {topCategories.length > 0 ? (
@@ -921,7 +927,8 @@ const CategoryAnalysis = () => {
             title="Top Sub-Categories by Revenue" 
             chartId="subcategoryRevenue"
             renderChart={({ subCategoryData: chartSubCategoryData }) => {
-              const topSubCategories = chartSubCategoryData.slice(0, 10);
+              // Sort by Revenue descending (largest first), then take top 10
+              const topSubCategories = [...chartSubCategoryData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 10);
               return (
                 <div className="h-80">
                   {topSubCategories.length > 0 ? (

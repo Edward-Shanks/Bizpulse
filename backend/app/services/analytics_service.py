@@ -6,7 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Dict, Any, List, Optional
 from app.repositories.business_data_repository import BusinessDataRepository
 from app.utils.query_builder import build_analytics_query, apply_business_filter
-from app.utils.helpers import safe_float
+from app.utils.helpers import safe_float, sort_by_year, sort_by_month, sort_by_metric
 import logging
 import math
 
@@ -60,6 +60,8 @@ class AnalyticsService:
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Year in ascending order (2023, 2024, 2025)
+        yearly_list = sort_by_year(yearly_list, "Year")
         
         # Business performance aggregation
         pipeline_business = [
@@ -83,6 +85,8 @@ class AnalyticsService:
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Revenue in descending order (largest first)
+        business_list = sort_by_metric(business_list, "Revenue", reverse=True)
         
         # Get current year for monthly trend
         pipeline_max_year = [
@@ -115,6 +119,8 @@ class AnalyticsService:
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Month_Name in chronological order (Jan, Feb, Mar, ...)
+        monthly_list = sort_by_month(monthly_list, "Month_Name")
         
         # Channel performance aggregation
         pipeline_channel = [
@@ -138,6 +144,8 @@ class AnalyticsService:
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
                 "Units": safe_float(item.get('Units', 0))
             })
+        # Sort by Revenue in descending order (largest first)
+        channel_list = sort_by_metric(channel_list, "Revenue", reverse=True)
         
         # Get totals
         pipeline_totals = [
@@ -213,6 +221,9 @@ class AnalyticsService:
                 "Units": safe_float(item.get("Units")),
             })
         
+        # Sort by Revenue in descending order (largest first) - already sorted in pipeline, but ensure it's correct
+        channel_performance = sort_by_metric(channel_performance, "Revenue", reverse=True)
+        
         # Calculate profit margin for channels
         for item in channel_performance:
             revenue = item.get("Revenue", 0)
@@ -243,6 +254,9 @@ class AnalyticsService:
                 "Gross_Profit": safe_float(item.get("Gross_Profit")),
                 "Units": safe_float(item.get("Units")),
             })
+        
+        # Sort by Revenue in descending order (largest first) - already sorted in pipeline, but ensure it's correct
+        customer_performance = sort_by_metric(customer_performance, "Revenue", reverse=True)
         
         top_customers = customer_performance[:50]
         
@@ -322,6 +336,8 @@ class AnalyticsService:
                 "Gross_Profit": safe_float(item.get("Gross_Profit")),
                 "Units": safe_float(item.get("Units")),
             })
+        # Sort by Revenue in descending order (largest first) - already sorted in pipeline, but ensure it's correct
+        brand_performance = sort_by_metric(brand_performance, "Revenue", reverse=True)
         
         # Brand by business aggregation
         pipeline_brand_business = [
@@ -374,6 +390,8 @@ class AnalyticsService:
                 "Year": int(key.get("Year")) if key.get("Year") else 0,
                 "Revenue": safe_float(item.get("Revenue")),
             })
+        # Sort by Brand first, then by Year ascending (already sorted in pipeline, but ensure it's correct)
+        brand_yoy_growth = sorted(brand_yoy_growth, key=lambda x: (x.get("Brand", ""), int(x.get("Year", 0))))
         
         # Totals and active brands
         pipeline_totals = [

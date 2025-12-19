@@ -987,23 +987,26 @@ const Dashboard = () => {
           <ChartCard 
             title="Revenue vs Expenses" 
             chartName="revenueExpenses"
-            renderChart={({ yearlyData: chartYearlyData }) => (
+            renderChart={({ yearlyData: chartYearlyData }) => {
+              // Sort by Year ascending (2023, 2024, 2025)
+              const sortedYearlyData = [...chartYearlyData].sort((a, b) => (a.Year || 0) - (b.Year || 0));
+              return (
               <div className="h-80">
-                {chartYearlyData.length > 0 ? (
+                {sortedYearlyData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartYearlyData.map(item => item.Year),
+                      labels: sortedYearlyData.map(item => item.Year),
                       datasets: [
                         {
                           label: 'Revenue',
-                          data: chartYearlyData.map(item => item.Revenue),
+                          data: sortedYearlyData.map(item => item.Revenue),
                           backgroundColor: '#1e293b',
                           borderRadius: 8
                         },
                         {
                           label: 'Expenses',
-                          data: chartYearlyData.map(item => item.Revenue - item.Gross_Profit),
+                          data: sortedYearlyData.map(item => item.Revenue - item.Gross_Profit),
                           backgroundColor: '#EDD5B1',
                           borderRadius: 8
                         }
@@ -1050,23 +1053,27 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           {/* Business vs Cases */}
           <ChartCard 
             title="Business vs Cases" 
             chartName="businessCases"
-            renderChart={({ businessData: chartBusinessData }) => (
+            renderChart={({ businessData: chartBusinessData }) => {
+              // Sort by Units descending (largest first)
+              const sortedData = [...chartBusinessData].sort((a, b) => (b.Units || 0) - (a.Units || 0));
+              return (
               <div className="h-80">
-                {chartBusinessData.length > 0 ? (
+                {sortedData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartBusinessData.map(item => item.Business),
+                      labels: sortedData.map(item => item.Business),
                       datasets: [{
                         label: 'Cases',
-                        data: chartBusinessData.map(item => item.Units),
+                        data: sortedData.map(item => item.Units),
                         backgroundColor: colorsWithOpacity,
                         borderRadius: 8
                       }]
@@ -1116,23 +1123,27 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           {/* Business vs Sales */}
           <ChartCard 
             title="Business vs Sales" 
             chartName="businessSales"
-            renderChart={({ businessData: chartBusinessData }) => (
+            renderChart={({ businessData: chartBusinessData }) => {
+              // Sort by Revenue descending (largest first)
+              const sortedData = [...chartBusinessData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0));
+              return (
               <div className="h-80">
-                {chartBusinessData.length > 0 ? (
+                {sortedData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartBusinessData.map(item => item.Business),
+                      labels: sortedData.map(item => item.Business),
                       datasets: [{
                         label: 'Revenue',
-                        data: chartBusinessData.map(item => item.Revenue),
+                        data: sortedData.map(item => item.Revenue),
                         backgroundColor: '#1e293b',
                         borderRadius: 8
                       }]
@@ -1184,23 +1195,27 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           {/* Business vs Gross Profit */}
           <ChartCard 
             title="Business vs Gross Profit" 
             chartName="businessProfit"
-            renderChart={({ businessData: chartBusinessData }) => (
+            renderChart={({ businessData: chartBusinessData }) => {
+              // Sort by Gross_Profit descending (largest first)
+              const sortedData = [...chartBusinessData].sort((a, b) => (b.Gross_Profit || 0) - (a.Gross_Profit || 0));
+              return (
               <div className="h-80">
-                {chartBusinessData.length > 0 ? (
+                {sortedData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartBusinessData.map(item => item.Business),
+                      labels: sortedData.map(item => item.Business),
                       datasets: [{
                         label: 'Profit',
-                        data: chartBusinessData.map(item => item.Gross_Profit),
+                        data: sortedData.map(item => item.Gross_Profit),
                         backgroundColor: '#1e293b',
                         borderRadius: 8
                       }]
@@ -1252,22 +1267,26 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           {/* Channel Distribution */}
           <ChartCard 
             title="Channel Distribution" 
             chartName="channelDist"
-            renderChart={({ channelData: chartChannelData }) => (
+            renderChart={({ channelData: chartChannelData }) => {
+              // Sort by Revenue descending (largest first)
+              const sortedChannelData = [...chartChannelData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0));
+              return (
               <div className="h-80">
-                {chartChannelData.length > 0 ? (
+                {sortedChannelData.length > 0 ? (
                   <ChartComponent
                     type="doughnut"
                     data={{
-                      labels: chartChannelData.map(item => item.Channel),
+                      labels: sortedChannelData.map(item => item.Channel),
                       datasets: [{
-                        data: chartChannelData.map(item => item.Revenue),
+                        data: sortedChannelData.map(item => item.Revenue),
                         backgroundColor: colorsWithOpacity,
                         borderWidth: 2,
                         borderColor: '#fff'
@@ -1308,22 +1327,26 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           {/* Business Performance */}
           <ChartCard 
             title="Business Performance" 
             chartName="businessPerf"
-            renderChart={({ businessData: chartBusinessData }) => (
+            renderChart={({ businessData: chartBusinessData }) => {
+              // Sort by Revenue descending (largest first)
+              const sortedData = [...chartBusinessData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0));
+              return (
               <div className="h-80">
-                {chartBusinessData.length > 0 ? (
+                {sortedData.length > 0 ? (
                   <ChartComponent
                     type="pie"
                     data={{
-                      labels: chartBusinessData.map(item => item.Business),
+                      labels: sortedData.map(item => item.Business),
                       datasets: [{
-                        data: chartBusinessData.map(item => item.Revenue),
+                        data: sortedData.map(item => item.Revenue),
                         backgroundColor: colorsWithOpacity,
                         borderWidth: 2,
                         borderColor: '#fff'
@@ -1364,30 +1387,34 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           {/* Top Performers */}
           <ChartCard 
             title="Top Performers" 
             chartName="topPerformers"
-            renderChart={({ businessData: chartBusinessData }) => (
+            renderChart={({ businessData: chartBusinessData }) => {
+              // Sort by Revenue descending (largest first), then take top 5
+              const sortedData = [...chartBusinessData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0)).slice(0, 5);
+              return (
               <div className="h-80">
-                {chartBusinessData.length > 0 ? (
+                {sortedData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartBusinessData.slice(0, 5).map(item => item.Business),
+                      labels: sortedData.map(item => item.Business),
                       datasets: [
                         {
                           label: 'Revenue',
-                          data: chartBusinessData.slice(0, 5).map(item => item.Revenue),
+                          data: sortedData.map(item => item.Revenue),
                           backgroundColor: '#1e293b',
                           borderRadius: 6
                         },
                         {
                           label: 'Profit',
-                          data: chartBusinessData.slice(0, 5).map(item => item.Gross_Profit),
+                          data: sortedData.map(item => item.Gross_Profit),
                           backgroundColor: '#EDD5B1',
                           borderRadius: 6
                         }
@@ -1434,7 +1461,8 @@ const Dashboard = () => {
                   <p className="text-center text-gray-500 py-8">No data</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
         </div>
       </div>

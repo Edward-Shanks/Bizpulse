@@ -750,16 +750,19 @@ const CustomerAnalysis = () => {
           <ChartCard 
             title="Revenue by Channel" 
             chartId="revenueByChannel"
-            renderChart={({ channelData: chartChannelData }) => (
+            renderChart={({ channelData: chartChannelData }) => {
+              // Sort by Revenue descending (largest first)
+              const sortedChannelData = [...chartChannelData].sort((a, b) => (b.Revenue || 0) - (a.Revenue || 0));
+              return (
               <div className="h-80">
-                {chartChannelData.length > 0 ? (
+                {sortedChannelData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartChannelData.map(item => item.Channel || 'Unknown'),
+                      labels: sortedChannelData.map(item => item.Channel || 'Unknown'),
                       datasets: [{
                         label: 'Revenue',
-                        data: chartChannelData.map(item => item.Revenue || 0),
+                        data: sortedChannelData.map(item => item.Revenue || 0),
                         backgroundColor: colorsWithOpacity,
                         borderRadius: 8,
                         borderWidth: 0,
@@ -813,7 +816,8 @@ const CustomerAnalysis = () => {
                   <p className="text-center text-gray-500 py-8">No data available</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           <ChartCard 
@@ -877,16 +881,19 @@ const CustomerAnalysis = () => {
           <ChartCard 
             title="Profit by Channel" 
             chartId="profitByChannel"
-            renderChart={({ channelData: chartChannelData }) => (
+            renderChart={({ channelData: chartChannelData }) => {
+              // Sort by Gross_Profit descending (largest first)
+              const sortedChannelData = [...chartChannelData].sort((a, b) => (b.Gross_Profit || 0) - (a.Gross_Profit || 0));
+              return (
               <div className="h-80">
-                {chartChannelData.length > 0 ? (
+                {sortedChannelData.length > 0 ? (
                   <ChartComponent
                     type="bar"
                     data={{
-                      labels: chartChannelData.map(item => item.Channel || 'Unknown'),
+                      labels: sortedChannelData.map(item => item.Channel || 'Unknown'),
                       datasets: [{
                         label: 'Profit',
-                        data: chartChannelData.map(item => item.Gross_Profit || 0),
+                        data: sortedChannelData.map(item => item.Gross_Profit || 0),
                         backgroundColor: '#1e293b',
                         borderRadius: 8,
                       }],
@@ -933,21 +940,25 @@ const CustomerAnalysis = () => {
                   <p className="text-center text-gray-500 py-8">No data available</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
 
           <ChartCard 
             title="Cases by Channel" 
             chartId="unitsByChannel"
-            renderChart={({ channelData: chartChannelData }) => (
+            renderChart={({ channelData: chartChannelData }) => {
+              // Sort by Units descending (largest first)
+              const sortedChannelData = [...chartChannelData].sort((a, b) => (b.Units || 0) - (a.Units || 0));
+              return (
               <div className="h-80">
-                {chartChannelData.length > 0 ? (
+                {sortedChannelData.length > 0 ? (
                   <ChartComponent
                     type="doughnut"
                     data={{
-                      labels: chartChannelData.map(item => item.Channel || 'Unknown'),
+                      labels: sortedChannelData.map(item => item.Channel || 'Unknown'),
                       datasets: [{
-                        data: chartChannelData.map(item => item.Units || 0),
+                        data: sortedChannelData.map(item => item.Units || 0),
                         backgroundColor: colorsWithOpacity,
                         borderWidth: 2,
                         borderColor: '#fff',
@@ -991,7 +1002,8 @@ const CustomerAnalysis = () => {
                   <p className="text-center text-gray-500 py-8">No data available</p>
                 )}
               </div>
-            )}
+              );
+            }}
           />
         </div>
       </div>
