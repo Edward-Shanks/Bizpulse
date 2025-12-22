@@ -888,6 +888,10 @@ class InsightsService:
                     is_comparing_business
                 )
                 
+                # Extract detected metric from query intent
+                detected_metric = query_intent.get("metric") if query_intent else None
+                logger.info(f"📊 Detected metric from query intent: {detected_metric}")
+                
                 data_context = await get_comprehensive_data_context(
                     data_context_query,  # Use modified query without Brand filter when asking FOR brands
                     user_message,
@@ -896,7 +900,8 @@ class InsightsService:
                     is_quarterly=is_quarterly,
                     is_monthly=is_monthly,
                     is_yearly=is_yearly or needs_year_aggregation,
-                    is_metrics=is_metrics
+                    is_metrics=is_metrics,
+                    detected_metric=detected_metric
                 )
                 logger.info(f"📈 Data context length: {len(data_context)} characters")
                 logger.info(f"📈 Data context preview: {data_context[:500]}...")
@@ -918,7 +923,8 @@ class InsightsService:
                             is_quarterly=is_quarterly,
                             is_monthly=is_monthly,
                             is_yearly=is_yearly,
-                            is_metrics=is_metrics
+                            is_metrics=is_metrics,
+                            detected_metric=detected_metric
                         )
                         if "⚠️ Note: No data found" not in fallback_context_1 and "Total Revenue: €0" not in fallback_context_1:
                             logger.info(f"✅ Fallback 1 succeeded - found data without Month_Name filter")
@@ -941,7 +947,8 @@ class InsightsService:
                                     is_quarterly=is_quarterly,
                                     is_monthly=is_monthly,
                                     is_yearly=is_yearly,
-                                    is_metrics=is_metrics
+                                    is_metrics=is_metrics,
+                                    detected_metric=detected_metric
                                 )
                                 if "⚠️ Note: No data found" not in fallback_context_2 and "Total Revenue: €0" not in fallback_context_2:
                                     logger.info(f"✅ Fallback 2 succeeded - found data without Year filter")
@@ -964,7 +971,8 @@ class InsightsService:
                                             is_quarterly=is_quarterly,
                                             is_monthly=is_monthly,
                                             is_yearly=is_yearly,
-                                            is_metrics=is_metrics
+                                            is_metrics=is_metrics,
+                                            detected_metric=detected_metric
                                         )
                                         if "⚠️ Note: No data found" not in fallback_context_3 and "Total Revenue: €0" not in fallback_context_3:
                                             logger.info(f"✅ Fallback 3 succeeded - found data with only Business filter")
@@ -1354,6 +1362,9 @@ class InsightsService:
                 f"If you see notes like 'Data shown includes all months', this means the data EXISTS - extract the relevant values and use them. "
                 f"Do NOT interpret fallback notes as 'data not available'. "
                 f"Do NOT use any external knowledge, world events, news, or information outside this dataset. "
+                f"Do NOT search the web or use external APIs to find information about customers, businesses, or any entities mentioned in the question. "
+                f"ONLY use the data provided in the 'Business Data' section above. "
+                f"If the data shows €0 or 'No data found', state that clearly based ONLY on the provided data, without adding external context or search results. "
                 f"{question_independence_note}"
                 f"\nIMPORTANT - HANDLING INCOMPLETE DATA:\n"
                 f"If the data shows zero values or 'No data found', you should:\n"

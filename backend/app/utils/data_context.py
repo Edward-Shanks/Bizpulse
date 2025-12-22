@@ -18,11 +18,44 @@ async def get_comprehensive_data_context(
     is_quarterly: bool = False,
     is_monthly: bool = False,
     is_yearly: bool = False,
-    is_metrics: bool = False
+    is_metrics: bool = False,
+    detected_metric: Optional[str] = None
 ) -> str:
-    """Get comprehensive data context for complex queries"""
+    """
+    Get comprehensive data context for complex queries
+    
+    Args:
+        detected_metric: The metric to use in aggregations (e.g., "Gross_Sales", "Gross_Profit", "Units", "Margin", "Price_Downs", etc.)
+                        If None, defaults to "Gross_Sales"
+    """
     context_parts = []
     user_msg_lower = user_message.lower()
+    
+    # CRITICAL: Determine which metric to use in aggregations
+    # Default to Gross_Sales if not specified
+    metric_field = detected_metric or "Gross_Sales"
+    
+    # Map metric names to MongoDB field names
+    metric_field_map = {
+        "Gross_Sales": "Gross_Sales",
+        "Net_Sales": "Net_Sales",
+        "Units": "Units",
+        "Gross_Profit": "Gross_Profit",
+        "Margin": "Gross_Profit",  # Margin is calculated from Gross_Profit and Revenue
+        "Price_Downs": "Price_Downs",
+        "Perm_Disc": "Perm_Disc",
+        "Group_Cost": "Group_Cost",
+        "LTA": "LTA",
+        "fGP": "fGP"
+    }
+    
+    # Get the actual MongoDB field name
+    mongo_metric_field = metric_field_map.get(metric_field, "Gross_Sales")
+    
+    # For Margin, we'll calculate it, but still need Gross_Profit and Revenue
+    is_margin_metric = (metric_field == "Margin")
+    
+    logger.info(f"📊 Using metric '{metric_field}' (MongoDB field: '{mongo_metric_field}') for aggregations")
     
     try:
         # CRITICAL: If query is empty, use empty match to get ALL data
@@ -42,7 +75,8 @@ async def get_comprehensive_data_context(
         elif "q2" in user_msg_lower or "quarter 2" in user_msg_lower:
             if 'Month_Name' in query:
                 month_filter = query.get('Month_Name', {}).get('$in', [])
-                if any(m in ['April', 'May', 'June'] for m in month_filter):
+                # CRITICAL: Database uses abbreviated month names (Apr, May, Jun), not full names
+                if any(m in ['Apr', 'May', 'Jun', 'April', 'May', 'June'] for m in month_filter):
                     quarter_label = "📌 Quarter Interpretation: Q2 = April, May, June. All figures below reflect only these months (Q2 data).\n\n"
                     logger.info("📌 Added Q2 label to data context")
         elif "q3" in user_msg_lower or "quarter 3" in user_msg_lower:
@@ -64,6 +98,9 @@ async def get_comprehensive_data_context(
         
         # Get overall totals
         # CRITICAL: Include Gross_Sales in aggregation (as per ChatGPT recommendation - default metric)
+        # CRITICAL: Build aggregation pipeline dynamically based on detected metric
+        # Always include Revenue, Gross_Profit, Units, and Gross_Sales for context
+        # But prioritize the detected metric
         pipeline_totals = [
             match_stage,
             {
@@ -73,6 +110,8 @@ async def get_comprehensive_data_context(
                     "total_gross_sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},  # Gross_Sales with fallback to Revenue
                     "total_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                     "total_units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                    # Add detected metric dynamically
+                    f"total_{mongo_metric_field.lower()}": {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
                 }
             }
         ]
@@ -265,16 +304,46 @@ async def get_comprehensive_data_context(
                     dimension_labels.append("Category")
                     logger.info(f"📊 Multi-dimensional breakdown: Added Category dimension (filter: {query.get('Category')})")
             
+            # Check for Sub-Category dimension
+            # CRITICAL: If Sub_Cat or Sub_Category filter exists in query, include it in breakdown
+            # This handles questions like "Compare Q1 for Food, Baking category, Cooking chocolate sub-category"
+            if 'Sub_Cat' in query or 'Sub_Category' in query:
+                is_asking_for_subcategories_list = any(phrase in user_msg_lower for phrase in [
+                    'top sub.categories', 'all sub.categories', 'list sub.categories', 'show sub.categories',
+                    'top subcategories', 'all subcategories', 'list subcategories', 'show subcategories',
+                    'top sub-categories', 'all sub-categories', 'list sub-categories', 'show sub-categories'
+                ])
+                is_filtering_by_subcategory = (
+                    re.search(r'and\s+[A-Z][a-zA-Z\s]+\s+sub[.\s-]?category', user_msg_lower) or
+                    re.search(r'sub[.\s-]?category[:\s]+([A-Z][a-zA-Z\s]+)', user_msg_lower) or
+                    ('sub' in user_msg_lower and 'category' in user_msg_lower and 'and' in user_msg_lower)
+                )
+                # For comparison queries, if Sub-Category filter exists and user is NOT asking for all sub-categories, include it
+                if is_comparison_query and not is_asking_for_subcategories_list and (is_filtering_by_subcategory or "sub" in user_msg_lower and "category" in user_msg_lower or query.get('Sub_Cat') or query.get('Sub_Category')):
+                    # Use Sub_Cat if available, otherwise Sub_Category
+                    if 'Sub_Cat' in query:
+                        requested_dimensions.append("$Sub_Cat")
+                        dimension_labels.append("Sub_Category")
+                    elif 'Sub_Category' in query:
+                        requested_dimensions.append("$Sub_Category")
+                        dimension_labels.append("Sub_Category")
+                    logger.info(f"📊 Multi-dimensional breakdown: Added Sub-Category dimension (filter: {query.get('Sub_Cat') or query.get('Sub_Category')})")
+            
             # Check for Customer dimension
+            # CRITICAL: Enhanced detection for customer dimension
+            # This handles questions like "Compare Q1 for Food, Grocery channel, Dunnes customer"
             if 'Customer' in query:
                 is_asking_for_customers_list = any(phrase in user_msg_lower for phrase in [
-                    'top customers', 'all customers', 'list customers', 'show customers'
+                    'top customers', 'all customers', 'list customers', 'show customers', 'which customers', 'what customers'
                 ])
                 is_filtering_by_customer = (
                     re.search(r'and\s+[A-Z][a-zA-Z\s]+\s+customer', user_msg_lower) or
-                    ('customer' in user_msg_lower and 'and' in user_msg_lower)
+                    re.search(r'channel\s+[^,]+\s+and\s+[A-Z][a-zA-Z\s]+\s+customer', user_msg_lower) or  # "channel Grocery and Dunnes customer"
+                    re.search(r'customer[:\s]+([A-Z][a-zA-Z\s]+)', user_msg_lower) or  # "customer: Dunnes"
+                    ('customer' in user_msg_lower and 'and' in user_msg_lower and not any(phrase in user_msg_lower for phrase in ['other customers', 'other customer', 'vs other', 'versus other']))
                 )
-                if not is_asking_for_customers_list and (is_filtering_by_customer or "customer" in user_msg_lower or query.get('Customer')):
+                # For comparison queries, if Customer filter exists and user is NOT asking for all customers, include it
+                if is_comparison_query and not is_asking_for_customers_list and (is_filtering_by_customer or "customer" in user_msg_lower or query.get('Customer')):
                     requested_dimensions.append("$Customer")
                     dimension_labels.append("Customer")
                     logger.info(f"📊 Multi-dimensional breakdown: Added Customer dimension (filter: {query.get('Customer')})")
@@ -314,16 +383,25 @@ async def get_comprehensive_data_context(
                         field_name = dim.replace("$", "")
                         group_id[field_name] = f"${field_name}"
                     
+                    # CRITICAL: Build aggregation pipeline dynamically with detected metric
+                    group_stage = {
+                        "_id": group_id,
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                        # Add detected metric dynamically
+                        mongo_metric_field: {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
+                    }
+                    # For Margin metric, ensure we have both Revenue and Gross_Profit for calculation
+                    if is_margin_metric:
+                        group_stage["Revenue"] = {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}}
+                        group_stage["Gross_Profit"] = {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}}
+                    
                     pipeline_quarter = [
                         quarter_match,
                         {
-                            "$group": {
-                                "_id": group_id,
-                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                            }
+                            "$group": group_stage
                         }
                     ]
                     # Build sort stage - sort by Year first (if present), then other dimensions
@@ -353,26 +431,51 @@ async def get_comprehensive_data_context(
                             profit = safe_float(q_item.get("Gross_Profit", 0))
                             gross_sales = safe_float(q_item.get("Gross_Sales", revenue))
                             units = safe_float(q_item.get("Units", 0))
+                            # Get detected metric value
+                            metric_value = safe_float(q_item.get(mongo_metric_field, 0))
+                            
+                            # Format metric value based on type
+                            if metric_field in ["Units", "Cases"]:
+                                metric_display = format_units(metric_value)
+                            elif metric_field == "Margin":
+                                # Calculate margin from Revenue and Gross_Profit
+                                if revenue > 0:
+                                    metric_display = f"{(profit / revenue) * 100:.1f}%"
+                                else:
+                                    metric_display = "0%"
+                            else:
+                                metric_display = format_currency(metric_value)
+                            
+                            # Build output string with detected metric
+                            metric_label = metric_field.replace("_", " ").title()
                             if revenue > 0:
                                 margin = (profit / revenue) * 100
-                                context_parts.append(f"  {label}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
+                                context_parts.append(f"  {label}: {metric_label} {metric_display}, Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
                             else:
-                                context_parts.append(f"  {label}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
+                                context_parts.append(f"  {label}: {metric_label} {metric_display}, Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
                         if quarter == 'Q1' and ("q1" in user_msg_lower or "quarter 1" in user_msg_lower):
                             context_parts.append(f"  ✅ Confirmed: Q1 data broken down by {', '.join(dimension_labels)} for comparison.")
                 elif is_comparison_query:
                     # Single dimension: Year only
+                    # CRITICAL: Include detected metric dynamically
+                    year_group_stage = {
+                        "_id": "$Year",  # Group by Year for comparison
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                        # Add detected metric dynamically
+                        mongo_metric_field: {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
+                    }
+                    # For Margin metric, ensure we have both Revenue and Gross_Profit
+                    if is_margin_metric:
+                        year_group_stage["Revenue"] = {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}}
+                        year_group_stage["Gross_Profit"] = {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}}
+                    
                     pipeline_quarter = [
                         quarter_match,
                         {
-                            "$group": {
-                                "_id": "$Year",  # Group by Year for comparison
-                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                                # CRITICAL: Include Gross_Sales (default metric)
-                                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                            }
+                            "$group": year_group_stage
                         },
                         {"$sort": {"_id": 1}}  # Sort by year
                     ]
@@ -385,11 +488,28 @@ async def get_comprehensive_data_context(
                             profit = safe_float(q_item.get("Gross_Profit", 0))
                             gross_sales = safe_float(q_item.get("Gross_Sales", revenue))  # Fallback to revenue
                             units = safe_float(q_item.get("Units", 0))
+                            # Get detected metric value
+                            metric_value = safe_float(q_item.get(mongo_metric_field, 0))
+                            
+                            # Format metric value based on type
+                            if metric_field in ["Units", "Cases"]:
+                                metric_display = format_units(metric_value)
+                            elif metric_field == "Margin":
+                                # Calculate margin from Revenue and Gross_Profit
+                                if revenue > 0:
+                                    metric_display = f"{(profit / revenue) * 100:.1f}%"
+                                else:
+                                    metric_display = "0%"
+                            else:
+                                metric_display = format_currency(metric_value)
+                            
+                            # Build output string with detected metric
+                            metric_label = metric_field.replace("_", " ").title()
                             if revenue > 0:
                                 margin = (profit / revenue) * 100
-                                context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
+                                context_parts.append(f"  {year}: {metric_label} {metric_display}, Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Cases {format_units(units)}")
                             else:
-                                context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
+                                context_parts.append(f"  {year}: {metric_label} {metric_display}, Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)}, Cases {format_units(units)}")
                         # CRITICAL: Add confirmation that Q1 data exists
                         if quarter == 'Q1' and ("q1" in user_msg_lower or "quarter 1" in user_msg_lower):
                             context_parts.append(f"  ✅ Confirmed: Q1 data (January-March) broken down by year for comparison.")
@@ -400,17 +520,25 @@ async def get_comprehensive_data_context(
                             context_parts.append(f"  Note: Q1 filter (January-March) was applied, but no data found for the specified filters.")
                 else:
                     # For non-comparison queries, show overall totals
+                    # CRITICAL: Include detected metric dynamically
+                    non_comparison_group_stage = {
+                        "_id": None,
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                        # Add detected metric dynamically
+                        mongo_metric_field: {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
+                    }
+                    # For Margin metric, ensure we have both Revenue and Gross_Profit
+                    if is_margin_metric:
+                        non_comparison_group_stage["Revenue"] = {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}}
+                        non_comparison_group_stage["Gross_Profit"] = {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}}
+                    
                     pipeline_quarter = [
                         quarter_match,
                         {
-                            "$group": {
-                                "_id": None,
-                                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                                # CRITICAL: Include Gross_Sales (default metric)
-                                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                            }
+                            "$group": non_comparison_group_stage
                         }
                     ]
                     quarter_result = await db.business_data.aggregate(pipeline_quarter).to_list(1)
@@ -419,15 +547,34 @@ async def get_comprehensive_data_context(
                         revenue = safe_float(q_data.get('Revenue', 0))
                         profit = safe_float(q_data.get('Gross_Profit', 0))
                         gross_sales = safe_float(q_data.get('Gross_Sales', revenue))  # Fallback to revenue
+                        units = safe_float(q_data.get('Units', 0))
+                        # Get detected metric value
+                        metric_value = safe_float(q_data.get(mongo_metric_field, 0))
+                        
+                        # Format metric value based on type
+                        if metric_field in ["Units", "Cases"]:
+                            metric_display = format_units(metric_value)
+                        elif metric_field == "Margin":
+                            # Calculate margin from Revenue and Gross_Profit
+                            if revenue > 0:
+                                metric_display = f"{(profit / revenue) * 100:.1f}%"
+                            else:
+                                metric_display = "0%"
+                        else:
+                            metric_display = format_currency(metric_value)
+                        
+                        # Build output string with detected metric
+                        metric_label = metric_field.replace("_", " ").title()
                         # CRITICAL FIX #2: Always show Q1 data, even if zero (proves it exists)
                         context_parts.append(f"\n{quarter} Performance ({', '.join(months)}):")
+                        context_parts.append(f"  {metric_label}: {metric_display}")
                         context_parts.append(f"  Revenue: {format_currency(revenue)}")
                         context_parts.append(f"  Gross Sales: {format_currency(gross_sales)}")  # CRITICAL: Include Gross Sales
                         context_parts.append(f"  Gross Profit: {format_currency(profit)}")
                         if revenue > 0:
                             margin = (profit / revenue) * 100
                             context_parts.append(f"  Margin: {margin:.2f}%")
-                        context_parts.append(f"  Cases: {format_units(safe_float(q_data.get('Units', 0)))}")
+                        context_parts.append(f"  Cases: {format_units(units)}")
                         # CRITICAL: Add confirmation that Q1 data exists
                         if quarter == 'Q1' and ("q1" in user_msg_lower or "quarter 1" in user_msg_lower):
                             context_parts.append(f"  ✅ Confirmed: Q1 data (January-March) exists and has been aggregated above.")
@@ -658,7 +805,7 @@ async def get_comprehensive_data_context(
                             context_parts.append(f"  {channel}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
         
         # Category breakdown
-        if "category" in user_msg_lower:
+        if "category" in user_msg_lower or is_comparison:
             pipeline_category = [
                 match_stage,
                 {
@@ -667,9 +814,11 @@ async def get_comprehensive_data_context(
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        # CRITICAL: Include Gross_Sales
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
                     }
                 },
-                {"$sort": {"Revenue": -1}}
+                {"$sort": {"Gross_Sales": -1}}
             ]
             category_results = await db.business_data.aggregate(pipeline_category).to_list(20)
             if category_results:
@@ -679,9 +828,51 @@ async def get_comprehensive_data_context(
                     if category and category.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
                         profit = safe_float(item.get("Gross_Profit", 0))
+                        gross_sales = safe_float(item.get("Gross_Sales", revenue))
+                        units = safe_float(item.get("Units", 0))
                         if revenue > 0:
                             margin = (profit / revenue) * 100
-                            context_parts.append(f"  {category}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
+                            context_parts.append(f"  {category}: Gross Sales {format_currency(gross_sales)}, Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                        else:
+                            context_parts.append(f"  {category}: Gross Sales {format_currency(gross_sales)}, Revenue {format_currency(revenue)}, Profit {format_currency(profit)}, Units {format_units(units)}")
+        
+        # Customer breakdown
+        # CRITICAL: Show customer breakdown when customer is mentioned, comparison query, or Customer filter exists
+        if "customer" in user_msg_lower or is_comparison or query.get('Customer'):
+            pipeline_customer = [
+                match_stage,
+                {
+                    "$group": {
+                        "_id": "$Customer",
+                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        # CRITICAL: Include Gross_Sales
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                    }
+                },
+                {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
+                {"$sort": {"Gross_Sales": -1}}
+            ]
+            customer_results = await db.business_data.aggregate(pipeline_customer).to_list(20)
+            logger.info(f"📊 Data context - Customer results count: {len(customer_results)}")
+            if customer_results:
+                context_parts.append("\nCustomer Performance:")
+                for item in customer_results:
+                    customer = str(item.get("_id", ""))
+                    if customer and customer.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        profit = safe_float(item.get("Gross_Profit", 0))
+                        gross_sales = safe_float(item.get("Gross_Sales", revenue))
+                        units = safe_float(item.get("Units", 0))
+                        if revenue > 0:
+                            margin = (profit / revenue) * 100
+                            context_parts.append(f"  {customer}: Gross Sales {format_currency(gross_sales)}, Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
+                            logger.info(f"  Customer: {customer} - Gross Sales: {gross_sales}, Revenue: {revenue}")
+                        else:
+                            context_parts.append(f"  {customer}: Gross Sales {format_currency(gross_sales)}, Revenue {format_currency(revenue)}, Profit {format_currency(profit)}, Units {format_units(units)}")
+            else:
+                logger.warning(f"⚠️ Data context - No customer results found with query: {query}")
         
     except Exception as e:
         logger.error(f"Error building comprehensive data context: {str(e)}")

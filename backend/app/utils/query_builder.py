@@ -295,9 +295,10 @@ async def parse_query_from_natural_language(
         "group_by": None
     }
     
-    # Extract metric intent (CRITICAL - as per ChatGPT recommendation)
+    # Extract metric intent (CRITICAL - Enhanced to support ALL metrics)
+    # Support for: Gross Sales, Revenue, Net Sales, Units, Cases, Profit, Margin, Price Downs, Perm Disc, Group Cost, LTA, fGP, etc.
     if any(k in message_lower for k in [
-        'gross sales', 'gross sale', 'total sales', 'sales value', 'revenue', 'gross revenue'
+        'gross sales', 'gross sale', 'total sales', 'sales value', 'revenue', 'gross revenue', 'sales revenue'
     ]):
         intent["metric"] = "Gross_Sales"  # MongoDB field name
         logger.info("📊 INTENT: Detected metric: gross_sales/revenue")
@@ -307,15 +308,46 @@ async def parse_query_from_natural_language(
         intent["metric"] = "Net_Sales"
         logger.info("📊 INTENT: Detected metric: net_sales")
     elif any(k in message_lower for k in [
-        'volume', 'units sold', 'quantity', 'units', 'cases'
+        'volume', 'units sold', 'quantity', 'units', 'cases', 'cases sold'
     ]):
         intent["metric"] = "Units"
-        logger.info("📊 INTENT: Detected metric: units/volume")
+        logger.info("📊 INTENT: Detected metric: units/volume/cases")
     elif any(k in message_lower for k in [
-        'profit', 'gross profit', 'margin'
+        'gross profit', 'profit', 'gross profit margin', 'profit margin'
     ]):
         intent["metric"] = "Gross_Profit"
         logger.info("📊 INTENT: Detected metric: gross_profit")
+    elif any(k in message_lower for k in [
+        'margin', 'profit margin', 'gross margin', 'margin %', 'margin percentage'
+    ]):
+        # Margin is calculated, but we'll use Gross_Profit and Revenue to calculate it
+        intent["metric"] = "Margin"
+        logger.info("📊 INTENT: Detected metric: margin (will be calculated)")
+    elif any(k in message_lower for k in [
+        'price downs', 'price down', 'price reduction', 'price reductions'
+    ]):
+        intent["metric"] = "Price_Downs"  # Assuming this field exists in MongoDB
+        logger.info("📊 INTENT: Detected metric: price_downs")
+    elif any(k in message_lower for k in [
+        'perm disc', 'permanent discount', 'permanent discounts', 'perm discount', 'perm discounts'
+    ]):
+        intent["metric"] = "Perm_Disc"  # Assuming this field exists in MongoDB
+        logger.info("📊 INTENT: Detected metric: perm_disc")
+    elif any(k in message_lower for k in [
+        'group cost', 'group costs', 'cost', 'costs'
+    ]):
+        intent["metric"] = "Group_Cost"  # Assuming this field exists in MongoDB
+        logger.info("📊 INTENT: Detected metric: group_cost")
+    elif any(k in message_lower for k in [
+        'lta', 'long term agreement', 'long term agreements'
+    ]):
+        intent["metric"] = "LTA"  # Assuming this field exists in MongoDB
+        logger.info("📊 INTENT: Detected metric: lta")
+    elif any(k in message_lower for k in [
+        'fgp', 'full gross profit', 'full gross profit margin'
+    ]):
+        intent["metric"] = "fGP"  # Assuming this field exists in MongoDB
+        logger.info("📊 INTENT: Detected metric: fgp")
     else:
         # DEFAULT: Assume gross sales if not specified (as per user requirement)
         intent["metric"] = "Gross_Sales"
@@ -341,6 +373,18 @@ async def parse_query_from_natural_language(
         elif any(k in message_lower for k in ['by brand', 'across brands', 'brands']):
             intent["group_by"] = "Brand"
             logger.info("📊 INTENT: Detected group_by: Brand")
+        elif any(k in message_lower for k in ['by category', 'across categories', 'categories']):
+            intent["group_by"] = "Category"
+            logger.info("📊 INTENT: Detected group_by: Category")
+        elif any(k in message_lower for k in ['by sub.category', 'by subcategory', 'across sub.categories', 'across subcategories', 'sub.categories', 'subcategories']):
+            intent["group_by"] = "Sub_Category"
+            logger.info("📊 INTENT: Detected group_by: Sub_Category")
+        elif any(k in message_lower for k in ['by channel', 'across channels', 'channels']):
+            intent["group_by"] = "Channel"
+            logger.info("📊 INTENT: Detected group_by: Channel")
+        elif any(k in message_lower for k in ['by customer', 'across customers', 'customers']):
+            intent["group_by"] = "Customer"
+            logger.info("📊 INTENT: Detected group_by: Customer")
         else:
             # Default group_by for comparisons: Year (most common)
             intent["group_by"] = "Year"
@@ -366,6 +410,10 @@ async def parse_query_from_natural_language(
     all_customers = await db.business_data.distinct('Customer')
     all_brands = await db.business_data.distinct('Brand')
     all_categories = await db.business_data.distinct('Category')
+    # Get sub-categories (try both field names)
+    all_subcategories_subcat = await db.business_data.distinct('Sub_Cat')
+    all_subcategories_subcategory = await db.business_data.distinct('Sub_Category')
+    all_subcategories = list(set(all_subcategories_subcat + all_subcategories_subcategory))
     
     # Extract years (e.g., "2023", "2023 and 2024", "2023, 2024, 2025")
     year_pattern = r'\b(20\d{2})\b'
@@ -601,22 +649,43 @@ async def parse_query_from_natural_language(
             if matched:
                 break
     
-    # Extract customer (e.g., "customer bwg", "customer: bwg")
+    # Extract customer (e.g., "customer bwg", "customer: bwg", "for Dunnes customer", "Dunnes ROI customer")
+    # CRITICAL: Support patterns like "for X customer", "X customer", "customer X", etc.
     customer_patterns = [
-        r'customer\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|brand|category)',
-        r'customer:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|brand|category)',
+        r'customer\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|brand|category|in|for|across)',
+        r'customer:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|brand|category|in|for|across)',
+        # CRITICAL: Match "for X customer" pattern (e.g., "for Dunnes customer", "for Dunnes ROI customer")
+        r'for\s+([A-Z][a-zA-Z\s]+?)\s+customer(?:\s|$|,|\.|\?|in|for|across)',
+        # Match "X customer" pattern (e.g., "Dunnes customer", "Dunnes ROI customer")
+        r'([A-Z][a-zA-Z\s]+?)\s+customer(?:\s|$|,|\.|\?|in|for|across)',
+        # Match "and X customer" pattern (e.g., "Food and Dunnes customer")
+        r'and\s+([A-Z][a-zA-Z\s]+?)\s+customer(?:\s|$|,|\.|\?|in|for|across)',
     ]
-    for pattern in customer_patterns:
+    logger.info(f"🔍 Attempting customer extraction from message: '{message}'")
+    for pattern_idx, pattern in enumerate(customer_patterns):
         matches = re.findall(pattern, message_lower, re.IGNORECASE)
         if matches:
             customer_name = matches[0].strip()
+            logger.info(f"🔍 Pattern {pattern_idx} matched customer name: '{customer_name}'")
             # Remove trailing words that might be part of next filter
-            customer_name = re.sub(r'\s+(brand|category).*$', '', customer_name, flags=re.IGNORECASE).strip()
+            customer_name = re.sub(r'\s+(brand|category|in|for|across).*$', '', customer_name, flags=re.IGNORECASE).strip()
+            # Skip if it's a common phrase
+            if customer_name.lower() in ['and', 'or', 'the', 'a', 'an', 'for', 'in']:
+                continue
+            # Try exact/contains matching first
+            matched = False
             for db_customer in all_customers:
                 if db_customer:
                     db_customer_lower = str(db_customer).lower()
                     customer_name_lower = customer_name.lower()
-                    if customer_name_lower == db_customer_lower or customer_name_lower in db_customer_lower or db_customer_lower in customer_name_lower:
+                    # CRITICAL: Handle variations like "Dunnes", "Dunnes ROI", "Dunnes NI"
+                    # If user says "Dunnes customer", match "Dunnes ROI", "Dunnes NI", etc.
+                    if (customer_name_lower == db_customer_lower or 
+                        customer_name_lower in db_customer_lower or 
+                        db_customer_lower in customer_name_lower or
+                        # Handle partial matches: "Dunnes" should match "Dunnes ROI", "Dunnes NI"
+                        (customer_name_lower in db_customer_lower.split() or 
+                         any(word in db_customer_lower for word in customer_name_lower.split() if len(word) > 3))):
                         if 'Customer' in query:
                             if isinstance(query['Customer'], dict) and '$in' in query['Customer']:
                                 if str(db_customer) not in query['Customer']['$in']:
@@ -626,8 +695,47 @@ async def parse_query_from_natural_language(
                         else:
                             query['Customer'] = {'$in': [str(db_customer)]}
                         logger.info(f"✅ Matched customer: '{customer_name}' -> '{db_customer}'")
+                        matched = True
                         break
-            break
+            
+            # If no exact match, try fuzzy matching
+            if not matched:
+                try:
+                    from difflib import SequenceMatcher
+                    customer_name_lower = customer_name.lower()
+                    best_match = None
+                    best_score = 0
+                    for db_customer in all_customers:
+                        if db_customer:
+                            db_customer_lower = str(db_customer).lower()
+                            similarity = SequenceMatcher(None, customer_name_lower, db_customer_lower).ratio()
+                            # Boost partial matches (e.g., "Dunnes" matching "Dunnes ROI")
+                            if customer_name_lower in db_customer_lower or db_customer_lower in customer_name_lower:
+                                similarity = max(similarity, 0.7)
+                            # Boost if key words match (e.g., "Dunnes" in "Dunnes ROI")
+                            customer_words = set(customer_name_lower.split())
+                            db_customer_words = set(db_customer_lower.split())
+                            if customer_words & db_customer_words:
+                                similarity = max(similarity, 0.65)
+                            if similarity > best_score:
+                                best_score = similarity
+                                best_match = db_customer
+                    if best_match and best_score >= 0.6:
+                        if 'Customer' in query:
+                            if isinstance(query['Customer'], dict) and '$in' in query['Customer']:
+                                if str(best_match) not in query['Customer']['$in']:
+                                    query['Customer']['$in'].append(str(best_match))
+                            else:
+                                query['Customer'] = {'$in': [str(best_match)]}
+                        else:
+                            query['Customer'] = {'$in': [str(best_match)]}
+                        logger.info(f"✅ Fuzzy matched customer: '{customer_name}' -> '{best_match}' (similarity: {best_score:.2f})")
+                        matched = True
+                except ImportError:
+                    logger.warning("⚠️ difflib not available, skipping fuzzy matching for customers")
+            
+            if matched:
+                break
     
     # Extract brand (e.g., "brand bensons", "brand: bensons", "brands Bonne Maman", "Food and KOKA brand")
     # CRITICAL FIX: Don't match "brands by Revenue" or "top brands" - these are asking FOR brands, not filtering BY brand
@@ -722,6 +830,50 @@ async def parse_query_from_natural_language(
                         logger.info(f"✅ Matched category: '{category_name}' -> '{db_category}'")
                         break
             break
+    
+    # Extract sub-category (e.g., "sub-category Cooking chocolate", "subcategory: Cooking chocolate", "Cooking chocolate sub-category")
+    # CRITICAL: Support patterns like "and Cooking chocolate sub-category" or "Baking category, Cooking chocolate sub-category"
+    subcategory_patterns = [
+        r'sub[.\s-]?category\s+([^,\.\?]+?)(?:\s|,|\.|\?|$|and|on|for|basis)',
+        r'sub[.\s-]?category:\s*([^,\.\?]+?)(?:\s|,|\.|\?|$|and|on|for|basis)',
+        r'and\s+([A-Z][a-zA-Z\s]+?)\s+sub[.\s-]?category(?:\s|$|,|\.|\?|in|for|across)',
+        r'category\s+[^,]+\s+and\s+([A-Z][a-zA-Z\s]+?)\s+sub[.\s-]?category',
+        r'([A-Z][a-zA-Z\s]+?)\s+sub[.\s-]?category(?:\s|$|,|\.|\?|in|for|across)',
+    ]
+    for pattern in subcategory_patterns:
+        matches = re.findall(pattern, message_lower, re.IGNORECASE)
+        if matches:
+            subcategory_name = matches[0].strip()
+            # Remove trailing words that might be part of next filter
+            subcategory_name = re.sub(r'\s+(and|on|for|basis).*$', '', subcategory_name, flags=re.IGNORECASE).strip()
+            # Try exact/contains matching first
+            matched = False
+            for db_subcategory in all_subcategories:
+                if db_subcategory:
+                    db_subcategory_lower = str(db_subcategory).lower()
+                    subcategory_name_lower = subcategory_name.lower()
+                    if subcategory_name_lower == db_subcategory_lower or subcategory_name_lower in db_subcategory_lower or db_subcategory_lower in subcategory_name_lower:
+                        # Try Sub_Cat first (normalized field)
+                        if 'Sub_Cat' in query:
+                            if isinstance(query['Sub_Cat'], dict) and '$in' in query['Sub_Cat']:
+                                if str(db_subcategory) not in query['Sub_Cat']['$in']:
+                                    query['Sub_Cat']['$in'].append(str(db_subcategory))
+                            else:
+                                query['Sub_Cat'] = {'$in': [str(db_subcategory)]}
+                        elif 'Sub_Category' in query:
+                            if isinstance(query['Sub_Category'], dict) and '$in' in query['Sub_Category']:
+                                if str(db_subcategory) not in query['Sub_Category']['$in']:
+                                    query['Sub_Category']['$in'].append(str(db_subcategory))
+                            else:
+                                query['Sub_Category'] = {'$in': [str(db_subcategory)]}
+                        else:
+                            # Try Sub_Cat first, then Sub_Category
+                            query['Sub_Cat'] = {'$in': [str(db_subcategory)]}
+                        logger.info(f"✅ Matched sub-category: '{subcategory_name}' -> '{db_subcategory}'")
+                        matched = True
+                        break
+            if matched:
+                break
     
     logger.info(f"🔍 Parsed query from natural language: {query}")
     logger.info(f"📊 Query intent: {intent}")
