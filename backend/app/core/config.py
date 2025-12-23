@@ -44,6 +44,13 @@ class Settings:
     PERPLEXITY_API_KEY: str = os.getenv('PERPLEXITY_API_KEY', '')
     OPENAI_API_KEY: str = os.getenv('OPENAI_API_KEY', '')
     
+    # Ollama Configuration (for local LLM)
+    OLLAMA_BASE_URL: str = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11436')
+    OLLAMA_MODEL: str = os.getenv('OLLAMA_MODEL', 'qwen2.5:32b-instruct')
+    OLLAMA_FALLBACK_MODEL: str = os.getenv('OLLAMA_FALLBACK_MODEL', 'llama3:70b')
+    OLLAMA_TIMEOUT: int = int(os.getenv('OLLAMA_TIMEOUT', '120'))
+    LLM_PROVIDER: str = os.getenv('LLM_PROVIDER', 'ollama')
+    
     @property
     def is_development(self) -> bool:
         """Check if running in development mode"""

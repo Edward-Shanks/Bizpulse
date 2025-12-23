@@ -1,127 +1,140 @@
 """
 AI Service utilities
-Handles Perplexity API integration
+Unified interface for all LLM providers (Perplexity, Ollama, vLLM)
 """
-import os
-import asyncio
-import requests
 import logging
 from typing import Optional, List, Dict
-from fastapi import HTTPException
-from app.core.config import settings
+from app.utils.llm_providers.factory import get_llm_provider
 
 logger = logging.getLogger(__name__)
 
-async def query_perplexity(
-    prompt: str, 
-    conversation_history: Optional[List[Dict]] = None, 
-    custom_system_message: Optional[str] = None
+async def query_llm(
+    prompt: str,
+    conversation_history: Optional[List[Dict]] = None,
+    custom_system_message: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 4000,
+    provider_name: Optional[str] = None,
+    **kwargs
 ) -> str:
-    """Query Perplexity API for AI responses
+    """
+    Query LLM (unified interface for all providers)
+    
+    This function automatically uses the provider specified in LLM_PROVIDER
+    environment variable, or can be overridden with provider_name parameter.
     
     Args:
         prompt: User prompt/question
         conversation_history: Previous conversation messages
-        custom_system_message: Optional custom system message to override default
+        custom_system_message: Optional custom system message
+        temperature: Sampling temperature (0-1)
+        max_tokens: Maximum tokens to generate
+        provider_name: Override provider (perplexity, ollama, vllm)
+        **kwargs: Provider-specific parameters
+    
+    Returns:
+        Generated response text
     """
-    
-    # Try PERPLEXITY_API_KEY first, then PPLX_API_KEY1 for backward compatibility
-    api_key = settings.PERPLEXITY_API_KEY or os.getenv("PPLX_API_KEY1")
-    if not api_key:
-        logger.error("PERPLEXITY_API_KEY or PPLX_API_KEY1 environment variable is not set")
-        raise ValueError("PERPLEXITY_API_KEY or PPLX_API_KEY1 environment variable is required")
-    
-    url = "https://api.perplexity.ai/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json"
-    }
-    
-    # Use custom system message if provided, otherwise use default
-    system_content = custom_system_message or (
-        "You are Vector AI, a strategic business intelligence analyst for ThriveBrands. "
-        "Analyze the provided business data and generate strategic marketing and business recommendations. "
-        "All monetary values are in Euros (€). Be specific, data-driven, and actionable. "
-        "Focus on growth opportunities, customer acquisition, retention strategies, and revenue optimization. "
-        "Provide recommendations with clear reasoning, expected impact, and implementation channels."
-    )
-    
-    messages = [{
-        "role": "system",
-        "content": system_content
-    }]
-    
-    if conversation_history:
-        messages.extend(conversation_history)
-    
-    messages.append({"role": "user", "content": prompt})
-    
-    payload = {
-        "model": "sonar-pro",
-        "messages": messages,
-        "max_tokens": 4000  # Increased for longer responses (strategic recommendations, goals, etc.)
-    }
-    
-    # Retry logic with exponential backoff
-    max_retries = 3
-    retry_delay = 1  # Start with 1 second
-    
-    for attempt in range(max_retries):
+    try:
+        provider = get_llm_provider(provider_name)
+        provider_name_actual = provider.get_provider_name()
+        
+        # Log which provider is being used (with clear formatting)
+        logger.info("=" * 80)
+        logger.info(f"🤖 USING LLM PROVIDER: {provider_name_actual.upper()}")
+        logger.info(f"📍 Provider Type: {provider_name_actual}")
+        if provider_name_actual == "ollama":
+            import os
+            ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11436")
+            logger.info(f"🔗 Ollama URL: {ollama_url}")
+        elif provider_name_actual == "perplexity":
+            logger.info(f"🔗 Perplexity API: https://api.perplexity.ai")
+        logger.info(f"💬 User Prompt Length: {len(prompt)} characters")
+        logger.info("=" * 80)
+        
         try:
-            # Use asyncio.to_thread to run synchronous requests in a thread pool
-            def make_request():
-                response = requests.post(url, headers=headers, json=payload, timeout=60)
-                response.raise_for_status()
-                result = response.json()
-                if 'choices' not in result or len(result['choices']) == 0:
-                    raise ValueError("Invalid response format from Perplexity API")
-                return result['choices'][0]['message']['content']
+            response = await provider.generate(
+                prompt=prompt,
+                conversation_history=conversation_history,
+                custom_system_message=custom_system_message,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
             
-            # Run the synchronous request in a thread pool
-            result = await asyncio.to_thread(make_request)
-            logger.info(f"Perplexity API call successful on attempt {attempt + 1}")
-            return result
+            logger.info("=" * 80)
+            logger.info(f"✅ LLM RESPONSE RECEIVED from {provider_name_actual.upper()}")
+            logger.info(f"📝 Response Length: {len(response)} characters")
+            logger.info("=" * 80)
             
-        except requests.exceptions.Timeout as e:
-            logger.warning(f"Perplexity API timeout on attempt {attempt + 1}/{max_retries}: {str(e)}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2  # Exponential backoff
-                continue
-            else:
-                logger.error(f"Perplexity API timeout after {max_retries} attempts")
-                raise HTTPException(status_code=500, detail="AI service timeout. Please try again.")
+            return response
+        except Exception as provider_error:
+            # If Ollama fails and we're using Ollama, try Perplexity as fallback
+            if provider_name_actual == "ollama":
+                logger.warning("=" * 80)
+                logger.warning(f"⚠️  OLLAMA FAILED: {str(provider_error)}")
+                logger.warning(f"🔄 FALLING BACK TO PERPLEXITY")
+                logger.warning("=" * 80)
                 
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Perplexity API request error on attempt {attempt + 1}/{max_retries}: {str(e)}")
-            if attempt < max_retries - 1:
-                # Check if it's a rate limit or server error (5xx) - retry these
-                if hasattr(e, 'response') and e.response is not None:
-                    status_code = e.response.status_code
-                    if status_code >= 500 or status_code == 429:  # Server error or rate limit
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2
-                        continue
-                # For other errors, don't retry
-                logger.error(f"Perplexity API non-retryable error: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+                try:
+                    # Get Perplexity provider as fallback
+                    fallback_provider = get_llm_provider("perplexity")
+                    if fallback_provider.is_available():
+                        logger.info("🔍 PERPLEXITY: Using as fallback provider")
+                        response = await fallback_provider.generate(
+                            prompt=prompt,
+                            conversation_history=conversation_history,
+                            custom_system_message=custom_system_message,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                            **kwargs
+                        )
+                        logger.info("=" * 80)
+                        logger.info(f"✅ LLM RESPONSE RECEIVED from PERPLEXITY (fallback)")
+                        logger.info(f"📝 Response Length: {len(response)} characters")
+                        logger.info("=" * 80)
+                        return response
+                    else:
+                        logger.error("❌ PERPLEXITY: Not available as fallback (API key missing)")
+                        raise provider_error  # Re-raise original error
+                except Exception as fallback_error:
+                    logger.error(f"❌ PERPLEXITY FALLBACK ALSO FAILED: {str(fallback_error)}")
+                    raise provider_error  # Re-raise original Ollama error
             else:
-                logger.error(f"Perplexity API request failed after {max_retries} attempts: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"AI service error after retries: {str(e)}")
-                
-        except (KeyError, ValueError) as e:
-            logger.error(f"Perplexity API response parsing error: {str(e)}")
-            # Don't retry parsing errors
-            raise HTTPException(status_code=500, detail=f"AI service response format error: {str(e)}")
-            
-        except Exception as e:
-            logger.error(f"Unexpected Perplexity API error on attempt {attempt + 1}: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2
-                continue
-            else:
-                raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
+                # If not Ollama, just raise the original error
+                raise provider_error
+    except Exception as e:
+        logger.error(f"Error querying LLM: {str(e)}")
+        raise
+
+# Backward compatibility - uses configured provider by default
+async def query_perplexity(
+    prompt: str,
+    conversation_history: Optional[List[Dict]] = None,
+    custom_system_message: Optional[str] = None
+) -> str:
+    """
+    Backward compatibility function
+    Uses the configured LLM provider (can be Perplexity, Ollama, or vLLM)
+    To force Perplexity, set provider_name="perplexity" or use query_llm with provider_name
+    """
+    return await query_llm(
+        prompt=prompt,
+        conversation_history=conversation_history,
+        custom_system_message=custom_system_message
+    )
+
+# Convenience function for Ollama
+async def query_ollama(
+    prompt: str,
+    conversation_history: Optional[List[Dict]] = None,
+    custom_system_message: Optional[str] = None
+) -> str:
+    """Convenience function for Ollama provider"""
+    return await query_llm(
+        prompt=prompt,
+        conversation_history=conversation_history,
+        custom_system_message=custom_system_message,
+        provider_name="ollama"
+    )
 

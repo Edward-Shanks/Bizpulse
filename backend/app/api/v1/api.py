@@ -68,3 +68,10 @@ try:
 except ImportError:
     pass
 
+# Debug endpoints (for checking system status)
+try:
+    from app.api import debug
+    api_router.include_router(debug.router, tags=["Debug"])
+except ImportError:
+    pass
+

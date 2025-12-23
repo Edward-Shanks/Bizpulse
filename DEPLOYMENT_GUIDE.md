@@ -1,213 +1,336 @@
-# 🚀 Complete Deployment Guide for BizPulse
+# Global Deployment Guide - Mac Studio Ollama to Server
 
-## 📋 Architecture Overview
+## Current Implementation Status
 
-Your application has 3 separate components:
+### ✅ What's Already Implemented
 
-1. **Frontend** (React) → Vercel/Netlify (recommended) OR Hostinger
-2. **Backend API** (FastAPI) → Hostinger VPS/Shared Hosting → Port 8000
-3. **AI FastAPI** (Perplexity) → Hostinger VPS/Shared Hosting → Port 8005
+1. **LLM Provider System** ✅
+   - Flexible provider architecture (Ollama, Perplexity, vLLM-ready)
+   - Automatic fallback (Ollama → Perplexity)
+   - Clear logging and debugging
+
+2. **Ollama Integration** ✅
+   - Ollama provider implementation
+   - SSH tunnel support
+   - Model configuration
+
+3. **Error Handling** ✅
+   - Automatic fallback
+   - Debug endpoints
+   - Status checking
+
+### ❌ What's NOT Yet Implemented
+
+1. **Vector Database (ChromaDB)** ❌
+   - Only documented in roadmap
+   - Not implemented in code yet
+
+2. **Embedding Service** ❌
+   - Only documented in roadmap
+   - Not implemented in code yet
+
+3. **Caching Layer** ❌
+   - Only documented in roadmap
+   - Not implemented in code yet
 
 ---
 
-## 🔧 Pre-Deployment Checklist
+## Deployment Options
 
-### ✅ Prerequisites
+### Option 1: Keep Mac Studio + Expose via VPN/Reverse Proxy (Current Setup)
 
-- [ ] MongoDB Atlas account (free tier available)
-- [ ] Hostinger VPS or Shared Hosting with Python 3.9+
-- [ ] Perplexity API key
-- [ ] Azure Blob Storage credentials (if using Azure)
-- [ ] Domain names (optional but recommended)
+**Pros:**
+- ✅ No changes needed
+- ✅ Uses existing Mac Studio
+- ✅ Cost-effective
+
+**Cons:**
+- ❌ Requires VPN for security
+- ❌ Mac Studio must be always on
+- ❌ Single point of failure
+
+### Option 2: Deploy Ollama on Cloud Server (Recommended)
+
+**Pros:**
+- ✅ Accessible from anywhere
+- ✅ Better reliability
+- ✅ Scalable
+- ✅ No VPN needed
+
+**Cons:**
+- ❌ Requires cloud server with GPU
+- ❌ Higher cost than Mac Studio
+
+### Option 3: Hybrid Approach (Best for Production)
+
+**Pros:**
+- ✅ Mac Studio for development
+- ✅ Cloud server for production
+- ✅ Easy switching
+
+**Cons:**
+- ❌ Need to manage both
 
 ---
 
-## 📦 STEP 1: Backend API Deployment (Port 8000)
+## Deployment Strategy: Cloud Server
 
-### Location: `backend/` folder
+### Step 1: Choose Cloud Provider
 
-### 1.1 Prepare Hostinger VPS/Shared Hosting
+**Recommended Options:**
 
-**SSH into your Hostinger server:**
+#### Option A: AWS EC2 (GPU Instance)
+- **Instance Type**: `g5.xlarge` or `g5.2xlarge` (NVIDIA A10G)
+- **Cost**: ~$1-2/hour (~$720-1440/month)
+- **RAM**: 16-32GB (can run smaller models)
+
+#### Option B: Google Cloud Platform (GPU)
+- **Instance Type**: `n1-standard-4` + `NVIDIA T4`
+- **Cost**: ~$0.50-1/hour (~$360-720/month)
+- **RAM**: 15GB + GPU memory
+
+#### Option C: Azure (GPU)
+- **Instance Type**: `NC6s_v3` (NVIDIA V100)
+- **Cost**: ~$1.50/hour (~$1080/month)
+- **RAM**: 112GB
+
+#### Option D: RunPod / Vast.ai (Cheaper GPU Rental)
+- **Cost**: ~$0.20-0.50/hour (~$144-360/month)
+- **GPU**: Various (RTX 3090, A100, etc.)
+- **Best for**: Cost-effective GPU access
+
+### Step 2: Server Requirements
+
+**Minimum:**
+- **CPU**: 8+ cores
+- **RAM**: 32GB+ (for 32B models)
+- **GPU**: NVIDIA GPU with 16GB+ VRAM (for faster inference)
+- **Storage**: 200GB+ (for models)
+- **OS**: Ubuntu 22.04 LTS
+
+**Recommended:**
+- **CPU**: 16+ cores
+- **RAM**: 64GB+ (for multiple models)
+- **GPU**: NVIDIA A100 or RTX 4090 (24GB+ VRAM)
+- **Storage**: 500GB+ SSD
+- **OS**: Ubuntu 22.04 LTS
+
+### Step 3: Install Ollama on Server
+
+**On your cloud server:**
 
 ```bash
-ssh your-username@your-server-ip
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Pull models
+ollama pull qwen2.5:32b-instruct
+ollama pull llama3:70b
+ollama pull mixtral:8x7b
+
+# Start Ollama service
+systemctl enable ollama
+systemctl start ollama
+
+# Configure to accept remote connections
+export OLLAMA_HOST=0.0.0.0:11434
+# Add to /etc/environment for persistence
+echo 'OLLAMA_HOST=0.0.0.0:11434' >> /etc/environment
 ```
 
-**Install Python and dependencies:**
+### Step 4: Configure Firewall
+
+```bash
+# Allow Ollama port
+sudo ufw allow 11434/tcp
+
+# Allow SSH
+sudo ufw allow 22/tcp
+
+# Allow your backend port (if deploying backend on same server)
+sudo ufw allow 8000/tcp
+
+# Enable firewall
+sudo ufw enable
+```
+
+### Step 5: Update Backend Configuration
+
+**On your laptop/backend server, update `.env`:**
+
+```bash
+# Use cloud server Ollama
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://your-server-ip:11434
+# OR use domain
+OLLAMA_BASE_URL=http://ollama.yourdomain.com:11434
+
+OLLAMA_MODEL=qwen2.5:32b-instruct
+OLLAMA_FALLBACK_MODEL=llama3:70b
+OLLAMA_TIMEOUT=120
+```
+
+### Step 6: Deploy Backend to Cloud
+
+**Option A: Same Server as Ollama**
+
+```bash
+# On cloud server
+git clone your-repo
+cd backend
+pip install -r requirements.txt
+
+# Set environment variables
+export MONGO_URL=your-mongodb-url
+export OLLAMA_BASE_URL=http://localhost:11434
+export LLM_PROVIDER=ollama
+
+# Run with PM2 or systemd
+pm2 start "uvicorn app.main:app --host 0.0.0.0 --port 8000" --name bizpulse-api
+```
+
+**Option B: Separate Backend Server**
+
+- Deploy backend to a separate server
+- Point `OLLAMA_BASE_URL` to Ollama server IP
+- Use load balancer if needed
+
+### Step 7: Set Up Domain & SSL
+
+**Using Nginx:**
+
+```nginx
+# /etc/nginx/sites-available/bizpulse
+server {
+    listen 80;
+    server_name api.yourdomain.com;
+
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+**Enable SSL with Let's Encrypt:**
+
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d api.yourdomain.com
+```
+
+### Step 8: Security Hardening
+
+```bash
+# 1. Use firewall
+sudo ufw enable
+
+# 2. Disable password auth (use SSH keys only)
+sudo nano /etc/ssh/sshd_config
+# Set: PasswordAuthentication no
+
+# 3. Use fail2ban
+sudo apt install fail2ban
+sudo systemctl enable fail2ban
+
+# 4. Restrict Ollama access (optional - use reverse proxy)
+# Only allow from backend server IP
+```
+
+---
+
+## Deployment Architecture
+
+### Architecture 1: All on One Server
+
+```
+Internet
+    ↓
+[Cloud Server]
+├── Nginx (Port 80/443)
+├── Backend API (Port 8000)
+├── Ollama (Port 11434)
+└── MongoDB (Port 27017) [or external]
+```
+
+### Architecture 2: Separated Services
+
+```
+Internet
+    ↓
+[Load Balancer]
+    ↓
+[Backend Server 1] ──┐
+[Backend Server 2] ──┼──→ [Ollama Server]
+[Backend Server 3] ──┘
+    ↓
+[MongoDB Cluster]
+```
+
+---
+
+## Step-by-Step Deployment (AWS Example)
+
+### 1. Launch EC2 Instance
+
+```bash
+# Launch g5.xlarge instance
+# OS: Ubuntu 22.04 LTS
+# Storage: 200GB SSD
+# Security Group: Allow SSH (22), HTTP (80), HTTPS (443), Ollama (11434)
+```
+
+### 2. Connect to Server
+
+```bash
+ssh -i your-key.pem ubuntu@your-server-ip
+```
+
+### 3. Install Dependencies
 
 ```bash
 # Update system
 sudo apt update && sudo apt upgrade -y
 
-# Install Python 3.9+
-sudo apt install python3 python3-pip python3-venv -y
+# Install NVIDIA drivers (if GPU instance)
+sudo apt install nvidia-driver-535 -y
+sudo reboot
 
-# Install MongoDB (if using local MongoDB, otherwise use Atlas)
-sudo apt install mongodb -y
-```
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
 
-### 1.2 Upload Backend Code
+# Install Python
+sudo apt install python3.10 python3-pip python3-venv -y
 
-**Upload backend folder to server:**
-
-```bash
-# On your local machine
-cd backend/
-scp -r * your-username@your-server-ip:/home/your-username/bizpulse-backend/
-```
-
-**OR use FileZilla/WinSCP to upload files via FTP**
-
-### 1.3 Set Up Backend Environment
-
-**On Hostinger server:**
-
-```bash
-# Navigate to backend directory
-cd /home/your-username/bizpulse-backend/
-
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### 1.4 Configure Backend Environment Variables
-
-**Create `.env` file in backend folder:**
-
-```bash
-nano .env
-```
-
-**Add these variables:**
-
-```env
-# MongoDB Configuration
-MONGO_URL=mongodb+srv://username:password@cluster.mongodb.net/
-DB_NAME=bizpulse
-
-# JWT Configuration
-SECRET_KEY=your-super-secret-key-change-this-in-production
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# Azure Blob Storage (Optional)
-AZURE_CONNECTION_STRING=your-azure-connection-string
-AZURE_CONTAINER_NAME=your-container-name
-AZURE_BLOB_PATH=yearly_data.csv
-
-# Server Configuration
-HOST=0.0.0.0
-PORT=8000
-CORS_ORIGINS=http://localhost:3000,https://your-frontend-domain.com
-
-# Environment
-ENVIRONMENT=production
-DEBUG=False
-```
-
-### 1.5 Create Systemd Service for Backend
-
-**Create service file:**
-
-```bash
-sudo nano /etc/systemd/system/bizpulse-backend.service
-```
-
-**Add this content:**
-
-```ini
-[Unit]
-Description=BizPulse Backend API
-After=network.target
-
-[Service]
-Type=simple
-User=your-username
-WorkingDirectory=/home/your-username/bizpulse-backend
-Environment="PATH=/home/your-username/bizpulse-backend/venv/bin"
-ExecStart=/home/your-username/bizpulse-backend/venv/bin/uvicorn server:api_router --host 0.0.0.0 --port 8000
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**Enable and start the service:**
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable bizpulse-backend
-sudo systemctl start bizpulse-backend
-sudo systemctl status bizpulse-backend
-```
-
-### 1.6 Set Up Nginx Reverse Proxy (Optional but Recommended)
-
-**Install Nginx:**
-
-```bash
+# Install Nginx
 sudo apt install nginx -y
 ```
 
-**Create Nginx config:**
+### 4. Configure Ollama
 
 ```bash
-sudo nano /etc/nginx/sites-available/bizpulse-backend
+# Set Ollama to listen on all interfaces
+export OLLAMA_HOST=0.0.0.0:11434
+echo 'OLLAMA_HOST=0.0.0.0:11434' | sudo tee -a /etc/environment
+
+# Start Ollama service
+sudo systemctl enable ollama
+sudo systemctl start ollama
+
+# Pull models
+ollama pull qwen2.5:32b-instruct
+ollama pull llama3:70b
 ```
 
-**Add this content:**
-
-```nginx
-server {
-    listen 80;
-    server_name api.yourdomain.com;  # Replace with your domain
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-**Enable the site:**
+### 5. Deploy Backend
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/bizpulse-backend /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
-```
-
----
-
-## 🤖 STEP 2: AI FastAPI Deployment (Port 8005)
-
-### Location: `python_code/` folder
-
-### 2.1 Upload AI FastAPI Code
-
-**Upload python_code folder to server:**
-
-```bash
-# On your local machine
-cd python_code/
-scp -r * your-username@your-server-ip:/home/your-username/bizpulse-ai/
-```
-
-### 2.2 Set Up AI FastAPI Environment
-
-**On Hostinger server:**
-
-```bash
-# Navigate to AI directory
-cd /home/your-username/bizpulse-ai/
+# Clone repository
+git clone https://github.com/your-repo/bizpulse.git
+cd bizpulse/backend
 
 # Create virtual environment
 python3 -m venv venv
@@ -215,460 +338,216 @@ source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-```
 
-### 2.3 Configure AI FastAPI Environment Variables
-
-**Create `.env` file in python_code folder:**
-
-```bash
+# Create .env file
 nano .env
+# Add:
+# MONGO_URL=your-mongodb-url
+# OLLAMA_BASE_URL=http://localhost:11434
+# LLM_PROVIDER=ollama
+# OLLAMA_MODEL=qwen2.5:32b-instruct
+
+# Test run
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-**Add these variables:**
-
-```env
-# Perplexity API Key
-PPLX_API_KEY1=your-perplexity-api-key
-
-# Data File Path
-DATA_PATH=/home/your-username/bizpulse-ai/yearly_data_1.xlsx
-
-# Server Configuration
-HOST=0.0.0.0
-PORT=8005
-CORS_ORIGINS=http://localhost:3000,https://your-frontend-domain.com
-
-# Environment
-ENVIRONMENT=production
-DEBUG=False
-LOG_FILE=/home/your-username/bizpulse-ai/deep_intelligence_errors.log
-```
-
-### 2.4 Upload Data File
-
-**Upload the Excel file:**
+### 6. Set Up PM2 (Process Manager)
 
 ```bash
-# On your local machine
-scp yearly_data_1.xlsx your-username@your-server-ip:/home/your-username/bizpulse-ai/
+# Install PM2
+npm install -g pm2
+
+# Start backend
+cd /path/to/backend
+pm2 start "uvicorn app.main:app --host 0.0.0.0 --port 8000" --name bizpulse-api
+
+# Save PM2 configuration
+pm2 save
+pm2 startup
 ```
 
-### 2.5 Create Systemd Service for AI FastAPI
-
-**Create service file:**
+### 7. Configure Nginx
 
 ```bash
-sudo nano /etc/systemd/system/bizpulse-ai.service
-```
+# Create Nginx config
+sudo nano /etc/nginx/sites-available/bizpulse
 
-**Add this content:**
-
-```ini
-[Unit]
-Description=BizPulse AI FastAPI
-After=network.target
-
-[Service]
-Type=simple
-User=your-username
-WorkingDirectory=/home/your-username/bizpulse-ai
-Environment="PATH=/home/your-username/bizpulse-ai/venv/bin"
-ExecStart=/home/your-username/bizpulse-ai/venv/bin/uvicorn enhanced_fastapi_fixed:app --host 0.0.0.0 --port 8005
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**Enable and start the service:**
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable bizpulse-ai
-sudo systemctl start bizpulse-ai
-sudo systemctl status bizpulse-ai
-```
-
-### 2.6 Set Up Nginx for AI FastAPI
-
-**Create Nginx config:**
-
-```bash
-sudo nano /etc/nginx/sites-available/bizpulse-ai
-```
-
-**Add this content:**
-
-```nginx
+# Add:
 server {
     listen 80;
-    server_name ai.yourdomain.com;  # Replace with your domain
+    server_name api.yourdomain.com;
 
     location / {
-        proxy_pass http://127.0.0.1:8005;
+        proxy_pass http://localhost:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
     }
 }
+
+# Enable site
+sudo ln -s /etc/nginx/sites-available/bizpulse /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 ```
 
-**Enable the site:**
+### 8. Set Up SSL
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/bizpulse-ai /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
+sudo certbot --nginx -d api.yourdomain.com
+```
+
+### 9. Update Frontend
+
+**Update frontend API URL:**
+
+```javascript
+// frontend/src/config/api.js
+const API_BASE_URL = 'https://api.yourdomain.com';
 ```
 
 ---
 
-## 💻 STEP 3: Frontend Deployment
+## Cost Comparison
 
-### Location: `frontend/` folder
+### Current Setup (Mac Studio)
+- **Cost**: $0 (electricity only)
+- **Access**: VPN/SSH tunnel required
+- **Reliability**: Depends on Mac Studio uptime
 
-### 3.1 Option A: Deploy to Vercel (Recommended)
+### Cloud Deployment Options
 
-**Why Vercel?**
-- Free tier available
-- Auto-deployments from GitHub
-- Built-in SSL
-- CDN for fast loading
+| Provider | Instance | Cost/Month | GPU | RAM |
+|----------|----------|------------|-----|-----|
+| AWS EC2 | g5.xlarge | ~$720 | A10G 24GB | 32GB |
+| GCP | n1-standard-4 + T4 | ~$360 | T4 16GB | 15GB |
+| RunPod | RTX 3090 | ~$144 | RTX 3090 24GB | 64GB |
+| Vast.ai | RTX 4090 | ~$200 | RTX 4090 24GB | 64GB |
 
-**Steps:**
+---
 
-1. **Push code to GitHub:**
+## Security Considerations
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/your-username/bizpulse.git
-git push -u origin main
-```
+### 1. Restrict Ollama Access
 
-2. **Deploy to Vercel:**
-   - Go to https://vercel.com
-   - Import your GitHub repository
-   - Configure:
-     - **Framework Preset:** Create React App
-     - **Root Directory:** `frontend`
-     - **Environment Variables:**
-       ```
-       REACT_APP_BACKEND_URL=https://api.yourdomain.com
-       REACT_APP_INSIGHTS_URL=https://ai.yourdomain.com
-       ```
-   - Deploy
-
-### 3.2 Option B: Deploy to Netlify
-
-**Steps:**
-
-1. **Push to GitHub** (same as above)
-
-2. **Deploy to Netlify:**
-   - Go to https://netlify.com
-   - Import repository
-   - Configure:
-     - **Base directory:** `frontend`
-     - **Build command:** `npm run build`
-     - **Publish directory:** `build`
-   - Add environment variables:
-     ```
-     REACT_APP_BACKEND_URL=https://api.yourdomain.com
-     REACT_APP_INSIGHTS_URL=https://ai.yourdomain.com
-     ```
-
-### 3.3 Option C: Deploy to Hostinger Static Hosting
-
-**Build frontend locally:**
-
-```bash
-cd frontend/
-npm install
-npm run build
-```
-
-**Upload build folder:**
-
-```bash
-# On your local machine
-scp -r build/* your-username@your-server-ip:/home/your-username/public_html/
-```
-
-**Configure Nginx for frontend:**
-
-```bash
-sudo nano /etc/nginx/sites-available/bizpulse-frontend
-```
-
-**Add this content:**
+**Option A: Use Nginx Reverse Proxy**
 
 ```nginx
+# Only allow from localhost (backend)
+upstream ollama {
+    server 127.0.0.1:11434;
+}
+
 server {
-    listen 80;
-    server_name yourdomain.com;  # Your main domain
-
-    root /home/your-username/public_html;
-    index index.html;
-
+    listen 11434;
+    server_name _;
+    
     location / {
-        try_files $uri $uri/ /index.html;
+        allow 127.0.0.1;
+        deny all;
+        proxy_pass http://ollama;
     }
 }
 ```
 
-**Enable the site:**
+**Option B: Use Firewall Rules**
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/bizpulse-frontend /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl restart nginx
+# Only allow from backend server IP
+sudo ufw allow from YOUR_BACKEND_IP to any port 11434
+sudo ufw deny 11434
 ```
 
-### 3.4 Update Frontend Environment Variables
-
-**Before building, create `.env.production` in frontend folder:**
+### 2. Use API Keys for Backend
 
 ```bash
-cd frontend/
-nano .env.production
+# Add API key authentication
+OLLAMA_API_KEY=your-secret-key
 ```
 
-**Add this content:**
+### 3. Enable Rate Limiting
 
-```env
-REACT_APP_BACKEND_URL=http://api.yourdomain.com
-REACT_APP_INSIGHTS_URL=http://ai.yourdomain.com
-```
+```nginx
+# In Nginx config
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
 
-**Rebuild:**
-
-```bash
-npm run build
+location / {
+    limit_req zone=api_limit burst=20;
+    proxy_pass http://localhost:8000;
+}
 ```
 
 ---
 
-## 🔒 STEP 4: SSL/HTTPS Setup (Important!)
+## Monitoring & Maintenance
 
-**Install Certbot:**
+### 1. Set Up Monitoring
 
 ```bash
-sudo apt install certbot python3-certbot-nginx -y
+# Install monitoring tools
+sudo apt install htop iotop nethogs -y
+
+# Monitor Ollama
+watch -n 1 'curl -s http://localhost:11434/api/tags | jq .models[].name'
 ```
 
-**Get SSL certificates:**
+### 2. Set Up Logging
 
 ```bash
-sudo certbot --nginx -d yourdomain.com -d api.yourdomain.com -d ai.yourdomain.com
+# Backend logs
+pm2 logs bizpulse-api
+
+# Ollama logs
+sudo journalctl -u ollama -f
 ```
 
-**Auto-renewal:**
+### 3. Auto-Restart on Failure
 
 ```bash
-sudo certbot renew --dry-run
-```
-
----
-
-## 🧪 STEP 5: Testing & Verification
-
-### 5.1 Test Backend API
-
-```bash
-# Health check
-curl http://api.yourdomain.com/api/data/source
-
-# Should return JSON with data source info
-```
-
-### 5.2 Test AI FastAPI
-
-```bash
-# Health check
-curl http://ai.yourdomain.com/filter-options
-
-# Should return filter options
-```
-
-### 5.3 Test Frontend
-
-- Open `https://yourdomain.com` in browser
-- Try logging in
-- Test dashboard features
-- Verify AI chat works
-
----
-
-## 🔍 STEP 6: Monitoring & Logs
-
-### View Backend Logs
-
-```bash
-sudo journalctl -u bizpulse-backend -f
-```
-
-### View AI FastAPI Logs
-
-```bash
-sudo journalctl -u bizpulse-ai -f
-```
-
-### View Nginx Logs
-
-```bash
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/access.log
-```
-
-### Restart Services
-
-```bash
-sudo systemctl restart bizpulse-backend
-sudo systemctl restart bizpulse-ai
-sudo systemctl restart nginx
+# PM2 auto-restart
+pm2 startup
+pm2 save
 ```
 
 ---
 
-## 🚨 Troubleshooting
+## Next Steps
 
-### Issue: Backend not starting
-
-**Check:**
-```bash
-sudo systemctl status bizpulse-backend
-# Look for errors in output
-
-# Check if port 8000 is in use
-sudo netstat -tlnp | grep 8000
-
-# Check logs
-sudo journalctl -u bizpulse-backend --no-pager
-```
-
-**Common fixes:**
-- Verify `.env` file exists and has correct values
-- Check MongoDB connection string
-- Ensure virtual environment is activated
-- Check file permissions
-
-### Issue: AI FastAPI not starting
-
-**Check:**
-```bash
-sudo systemctl status bizpulse-ai
-sudo journalctl -u bizpulse-ai --no-pager
-```
-
-**Common fixes:**
-- Verify Perplexity API key is correct
-- Check if `yearly_data_1.xlsx` exists at correct path
-- Ensure Python dependencies are installed
-- Check `.env` configuration
-
-### Issue: Frontend not connecting to APIs
-
-**Check:**
-- Verify environment variables are set in frontend
-- Check CORS settings in backend/AI FastAPI
-- Test API endpoints directly with curl/Postman
-- Check browser console for errors
-
-### Issue: MongoDB connection failed
-
-**Check:**
-- Verify connection string in `.env`
-- Whitelist your server IP in MongoDB Atlas
-- Check network connectivity: `ping cluster.mongodb.net`
-- Verify database name is correct
+1. **Choose deployment option** (cloud provider)
+2. **Set up server** (install Ollama, dependencies)
+3. **Deploy backend** (clone repo, configure, run)
+4. **Configure domain** (Nginx, SSL)
+5. **Update frontend** (point to new API URL)
+6. **Test globally** (from different locations)
 
 ---
 
-## 📊 Cost Estimation
+## Quick Reference
 
-### Free Tier (Development/Small Projects)
-- **Vercel:** Free (frontend)
-- **MongoDB Atlas:** Free (512MB storage)
-- **Hostinger VPS:** ~$5-10/month
-- **Domain:** ~$10/year
-- **Total:** ~$70-130/year
-
-### Production (Recommended)
-- **Vercel Pro:** $20/month
-- **MongoDB Atlas M10:** ~$57/month
-- **Hostinger VPS:** ~$15-30/month
-- **Domain:** ~$15/year
-- **Perplexity API:** Pay-per-use
-- **Total:** ~$1000-1500/year
-
----
-
-## 🎉 Success Checklist
-
-- [ ] Backend API accessible at `https://api.yourdomain.com`
-- [ ] AI FastAPI accessible at `https://ai.yourdomain.com`
-- [ ] Frontend accessible at `https://yourdomain.com`
-- [ ] Login functionality works
-- [ ] Dashboard loads data correctly
-- [ ] AI chat responds with insights
-- [ ] SSL certificates installed
-- [ ] Services restart automatically on server reboot
-- [ ] Logs are being written and accessible
-
----
-
-## 📞 Support
-
-**If you encounter issues:**
-
-1. Check logs for errors
-2. Verify all environment variables are set
-3. Test each component independently
-4. Check network connectivity
-5. Verify MongoDB Atlas IP whitelist
-
----
-
-## 🔄 Updates & Maintenance
-
-### Update Backend
-
+**Server Setup:**
 ```bash
-cd /home/your-username/bizpulse-backend/
-git pull origin main
-source venv/bin/activate
-pip install -r requirements.txt
-sudo systemctl restart bizpulse-backend
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Configure
+export OLLAMA_HOST=0.0.0.0:11434
+
+# Pull models
+ollama pull qwen2.5:32b-instruct
 ```
 
-### Update AI FastAPI
-
+**Backend Config:**
 ```bash
-cd /home/your-username/bizpulse-ai/
-git pull origin main
-source venv/bin/activate
-pip install -r requirements.txt
-sudo systemctl restart bizpulse-ai
+OLLAMA_BASE_URL=http://your-server-ip:11434
+LLM_PROVIDER=ollama
 ```
 
-### Update Frontend
-
-**If using Vercel/Netlify:** Automatic on git push
-
-**If using Hostinger:** Rebuild and upload
-
+**Test:**
 ```bash
-cd frontend/
-npm run build
-scp -r build/* your-server-ip:/home/your-username/public_html/
+curl http://your-server-ip:11434/api/tags
 ```
 
 ---
 
-**🎉 Congratulations! Your BizPulse application is now deployed!**
-
+**Ready to deploy? Start with Step 1!** 🚀

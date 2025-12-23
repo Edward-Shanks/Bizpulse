@@ -6,6 +6,8 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.models.insights import InsightsChatRequest, InsightsChatResponse
 from app.utils.query_builder import build_mongodb_query_from_context, parse_query_from_natural_language
 from app.utils.data_context import get_comprehensive_data_context
+# NOTE: query_perplexity() actually uses the provider configured in LLM_PROVIDER env variable
+# It can be Ollama (local LLM) or Perplexity (API) depending on .env configuration
 from app.utils.ai_service import query_perplexity
 from app.utils.helpers import safe_float
 from datetime import datetime
