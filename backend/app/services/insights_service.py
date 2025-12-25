@@ -1429,6 +1429,13 @@ class InsightsService:
             # Get pivot table data for visualization - make it relevant to the question
             pivot_table = await self._generate_pivot_table(request, query, user_msg_lower, chart_title_lower)
             
+            # CRITICAL: Log pivot table for debugging
+            logger.info(f"📊 PIVOT TABLE GENERATED: {len(pivot_table)} rows")
+            if len(pivot_table) > 0:
+                logger.info(f"📊 First pivot row: {pivot_table[0]}")
+            else:
+                logger.warning(f"⚠️ WARNING: Pivot table is EMPTY! Message: '{request.message}', Chart: '{request.chart_title}'")
+            
             # Get total row count
             total_rows = await self.db.business_data.count_documents(query) if query else await self.db.business_data.count_documents({})
             
@@ -1438,21 +1445,27 @@ class InsightsService:
             # Format timestamp
             timestamp = datetime.now().strftime("%I:%M %p IST on %B %d, %Y")
             
+            # Build response data
+            response_data = {
+                "pivot_table": pivot_table,
+                "columns": ["Revenue", "Gross_Profit", "Units"],
+                "filters": query,
+                "is_trend_query": "trend" in (request.message or "").lower(),
+                "is_loser_query": any(word in (request.message or "").lower() for word in ["worst", "lowest", "loser", "least"]),
+                "total_rows": total_rows,
+                "follow_up_questions": follow_up_questions
+            }
+            
+            # CRITICAL: Log response data structure
+            logger.info(f"📊 RESPONSE DATA - pivot_table length: {len(response_data['pivot_table'])}, columns: {response_data['columns']}")
+            
             return InsightsChatResponse(
                 response=ai_response,
                 timestamp=timestamp,
                 needs_clarification=False,
                 suggested_questions=[],
                 context=data_context,
-                data={
-                    "pivot_table": pivot_table,
-                    "columns": ["Revenue", "Gross_Profit", "Units"],
-                    "filters": query,
-                    "is_trend_query": "trend" in (request.message or "").lower(),
-                    "is_loser_query": any(word in (request.message or "").lower() for word in ["worst", "lowest", "loser", "least"]),
-                    "total_rows": total_rows,
-                    "follow_up_questions": follow_up_questions
-                }
+                data=response_data
             )
             
         except Exception as e:

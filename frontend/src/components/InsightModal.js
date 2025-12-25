@@ -194,8 +194,8 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         useStreaming = false; // Customer Deep Intelligence doesn't support streaming yet
       } else if (API) {
         // Use backend MongoDB-based insights API for all screens (Business Compass, Brands, Customers, Categories, Sales Analysis)
-        endpoint = `${API}/insights/chat/stream`; // Use streaming endpoint
-        useStreaming = true;
+        // CRITICAL: Use non-streaming endpoint when streaming is disabled
+        endpoint = useStreaming ? `${API}/insights/chat/stream` : `${API}/insights/chat`;
       } else {
         // Fallback to external insights API
         endpoint = `${INSIGHTS_API}/insights/chat`;
@@ -447,28 +447,48 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
             fullResponse = String(fullResponse || 'No response');
           }
         }
-        const pivot = response?.data?.data?.pivot_table || [];
+        // CRITICAL: Extract pivot table from response
+        // Response structure: response.data = InsightsChatResponse { response, data: { pivot_table, ... } }
+        // Try multiple possible paths in case response structure varies
+        let pivot = null;
+        if (response?.data?.data?.pivot_table) {
+          pivot = response.data.data.pivot_table;
+        } else if (response?.data?.pivot_table) {
+          pivot = response.data.pivot_table;
+        } else if (response?.pivot_table) {
+          pivot = response.pivot_table;
+        }
+        
         const pivotArray = Array.isArray(pivot) ? pivot : [];
         
-        // CRITICAL: Log pivot data for debugging
-        console.log('🔍 InsightModal - Received pivot data:', {
-          length: pivotArray.length,
+        // CRITICAL: Log full response structure for debugging
+        console.log('🔍 InsightModal - Full response structure:', {
+          fullResponse: response,
+          responseData: response?.data,
+          responseDataData: response?.data?.data,
+          pivotTablePath1: response?.data?.data?.pivot_table,
+          pivotTablePath2: response?.data?.pivot_table,
+          pivotTablePath3: response?.pivot_table,
+          extractedPivot: pivot,
+          pivotArrayLength: pivotArray.length,
           firstItem: pivotArray[0],
           question: msgToSend
         });
         
         // CRITICAL: Update lastPivot with fresh data for this response
-        // Increment pivotKey FIRST to force component unmount, then update pivot data
-        setPivotKey(prev => {
-          const newKey = prev + 1;
-          console.log('🔄 InsightModal - Incrementing pivotKey to:', newKey);
-          // Update pivot data after key change
-          setTimeout(() => {
-            setLastPivot(pivotArray);
-            console.log('✅ InsightModal - Updated lastPivot with', pivotArray.length, 'items for question:', msgToSend);
-          }, 10);
-          return newKey;
-        });
+        // Set pivot data immediately (no setTimeout needed)
+        if (pivotArray.length > 0) {
+          console.log('✅ InsightModal - Setting pivot data immediately:', pivotArray.length, 'items');
+          console.log('✅ InsightModal - Pivot data sample:', pivotArray.slice(0, 3));
+          setLastPivot(pivotArray);
+          setPivotKey(prev => prev + 1); // Force re-render
+        } else {
+          console.warn('⚠️ InsightModal - No pivot data received!');
+          console.warn('⚠️ InsightModal - Response keys:', Object.keys(response?.data || {}));
+          console.warn('⚠️ InsightModal - Response.data keys:', Object.keys(response?.data?.data || {}));
+          // Clear previous pivot if no new data
+          setLastPivot([]);
+        }
         
         // Extract dynamic recommendations and follow-up questions from API response
         const apiRecommendations = response?.data?.data?.recommendations || [];

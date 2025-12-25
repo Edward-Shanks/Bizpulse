@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Bot, X, Send, Sparkles, RotateCcw, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ChartComponent from '@/components/ChartComponent';
 
 const AIAssistant = () => {
   const { token } = useAuth();
@@ -17,6 +18,8 @@ const AIAssistant = () => {
   const [loading, setLoading] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isContextCleared, setIsContextCleared] = useState(false);
+  const [lastPivot, setLastPivot] = useState([]);
+  const [pivotKey, setPivotKey] = useState(0);
   const scrollRef = useRef(null);
   const sessionId = useRef(`session-${Date.now()}`);
 
@@ -83,9 +86,9 @@ const AIAssistant = () => {
         conversation_history: conversationHistory
       };
 
-      // Try streaming first
-      const endpoint = `${API}/insights/chat/stream`;
+      // CRITICAL: Use non-streaming endpoint when streaming is disabled
       let useStreaming = false; // TEMPORARILY DISABLED - Streaming has extraction issues, using non-streaming for reliable responses
+      const endpoint = useStreaming ? `${API}/insights/chat/stream` : `${API}/insights/chat`;
       
       if (useStreaming) {
         try {
@@ -220,11 +223,48 @@ const AIAssistant = () => {
       const fullResponse = response.data?.response || 'No response';
       // Ensure content is always a string
       const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
+      
+      // CRITICAL: Extract pivot table from response
+      // Response structure: response.data = InsightsChatResponse { response, data: { pivot_table, ... } }
+      let pivot = null;
+      if (response?.data?.data?.pivot_table) {
+        pivot = response.data.data.pivot_table;
+      } else if (response?.data?.pivot_table) {
+        pivot = response.data.pivot_table;
+      } else if (response?.pivot_table) {
+        pivot = response.pivot_table;
+      }
+      
+      const pivotArray = Array.isArray(pivot) ? pivot : [];
+      
+      // CRITICAL: Log pivot data for debugging
+      console.log('🔍 AIAssistant - Pivot table extraction:', {
+        responseData: response?.data,
+        responseDataData: response?.data?.data,
+        pivotTablePath1: response?.data?.data?.pivot_table,
+        pivotTablePath2: response?.data?.pivot_table,
+        pivotTablePath3: response?.pivot_table,
+        extractedPivot: pivot,
+        pivotArrayLength: pivotArray.length,
+        firstItem: pivotArray[0]
+      });
+      
+      // Update pivot data
+      if (pivotArray.length > 0) {
+        console.log('✅ AIAssistant - Setting pivot data:', pivotArray.length, 'items');
+        setLastPivot(pivotArray);
+        setPivotKey(prev => prev + 1);
+      } else {
+        console.warn('⚠️ AIAssistant - No pivot data received!');
+        setLastPivot([]);
+      }
+      
       const aiMessage = { 
         role: 'ai', 
         content: safeContent,
         needs_clarification: needsClarification,
-        suggested_questions: suggestedQuestions
+        suggested_questions: suggestedQuestions,
+        pivot_table: pivotArray
       };
       
       console.log('🔍 AIAssistant - Adding message:', aiMessage);
@@ -388,6 +428,13 @@ const AIAssistant = () => {
                         {typeof msg.content === 'string' ? msg.content : String(msg.content || '')}
                       </ReactMarkdown>
                       
+                      {/* Show pivot table if available for this message */}
+                      {msg.pivot_table && Array.isArray(msg.pivot_table) && msg.pivot_table.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <AIDataVisuals pivot={msg.pivot_table} key={`pivot-${idx}-${msg.pivot_table.length}`} />
+                        </div>
+                      )}
+                      
                       {/* Suggested Questions for Clarification */}
                       {msg.needs_clarification && msg.suggested_questions && Array.isArray(msg.suggested_questions) && msg.suggested_questions.length > 0 && (
                         <div className="mt-4 space-y-2 pt-3 border-t border-gray-200">
@@ -421,6 +468,21 @@ const AIAssistant = () => {
                 </div>
               </div>
             ))}
+
+            {/* Visualization from AI data - Show for the most recent AI message with pivot data */}
+            {lastPivot && Array.isArray(lastPivot) && lastPivot.length > 0 && messages.length > 0 && (
+              <div className="mb-6" key={`pivot-container-${pivotKey}-${lastPivot.length}`}>
+                <div className="bg-white rounded-lg border border-gray-200 p-4">
+                  <h4 className="text-sm font-semibold mb-3 text-gray-800">Visuals from AI data</h4>
+                  {lastPivot[0] && (
+                    <AIDataVisuals 
+                      pivot={lastPivot} 
+                      key={`pivot-${pivotKey}-${lastPivot.length}-${lastPivot[0].Brand || lastPivot[0].Category || lastPivot[0].Customer || 'default'}-${lastPivot[0].Revenue || 0}`} 
+                    />
+                  )}
+                </div>
+              </div>
+            )}
 
             {loading && (
               <div className="flex justify-start mb-4">
@@ -474,6 +536,213 @@ const AIAssistant = () => {
         </div>
       )}
     </>
+  );
+};
+
+// Lightweight in-file component to render a table and a simple chart from pivot data
+const AIDataVisuals = ({ pivot }) => {
+  const { labels, datasetLabel, datasetValues, chartType, secondaryDataset } = useMemo(() => {
+    if (!pivot || pivot.length === 0) return { labels: [], datasetLabel: '', datasetValues: [], chartType: 'bar', secondaryDataset: null };
+    const sample = pivot[0];
+    
+    // Updated label candidates to match backend data
+    const labelCandidates = ['Year', 'Month_Name', 'Month Name', 'Business', 'Brand', 'Category', 'Customer', 'Channel'];
+    // Updated value candidates to match backend data
+    const valueCandidates = ['Revenue', 'Gross_Profit', 'Units', 'Margin_%', 'gSales', 'fGP', 'Cases'];
+    
+    // Find all available label candidates
+    const availableLabels = labelCandidates.filter((k) => Object.prototype.hasOwnProperty.call(sample, k));
+    
+    // Determine labels based on data structure
+    let labels;
+    let chartType = 'bar'; // Default chart type
+    
+    // If we have time-based data (Year or Month), use line chart
+    if (availableLabels.includes('Year') || availableLabels.includes('Month_Name') || availableLabels.includes('Month Name')) {
+      chartType = 'line';
+      const timeKey = availableLabels.find(k => ['Year', 'Month_Name', 'Month Name'].includes(k));
+      labels = pivot.map((r) => String(r[timeKey] || ''));
+    } else if (availableLabels.length > 1) {
+      // Combine category columns for unique labels
+      labels = pivot.map((r) => {
+        const combined = availableLabels.slice(0, 2).map(k => String(r[k] || '')).join(' - ');
+        return combined;
+      });
+    } else {
+      // Use first available label
+      const labelKey = availableLabels[0] || Object.keys(sample).find(k => typeof sample[k] !== 'number');
+      labels = pivot.map((r) => String(r[labelKey] || ''));
+    }
+    
+    // Determine value column - prioritize Revenue, then Gross_Profit, then Units
+    const valueKey = valueCandidates.find((k) => Object.prototype.hasOwnProperty.call(sample, k)) 
+      || Object.keys(sample).find(k => typeof sample[k] === 'number' && !k.includes('%'));
+    const datasetValues = pivot.map((r) => Number(r[valueKey] || 0));
+    
+    // If we have both Revenue and Gross_Profit, create a comparison chart
+    let secondaryDataset = null;
+    if (sample.hasOwnProperty('Revenue') && sample.hasOwnProperty('Gross_Profit')) {
+      chartType = 'bar'; // Use grouped bar for comparison
+      secondaryDataset = {
+        label: 'Gross Profit',
+        data: pivot.map((r) => Number(r['Gross_Profit'] || 0)),
+        backgroundColor: 'rgba(16, 185, 129, 0.3)',
+        borderColor: 'rgba(16, 185, 129, 1)',
+        borderWidth: 1.5,
+      };
+    } else if (availableLabels.length === 1 && pivot.length <= 10 && valueKey === 'Revenue') {
+      // If we have few items and revenue data, use pie chart for distribution
+      chartType = 'pie';
+    }
+    
+    return { 
+      labels, 
+      datasetLabel: valueKey || 'Value', 
+      datasetValues,
+      chartType,
+      secondaryDataset
+    };
+  }, [pivot]);
+
+  const chartData = useMemo(() => {
+    const baseDataset = {
+      label: datasetLabel,
+      data: datasetValues,
+      backgroundColor: chartType === 'pie' 
+        ? ['rgba(59, 130, 246, 0.6)', 'rgba(16, 185, 129, 0.6)', 'rgba(245, 158, 11, 0.6)', 'rgba(239, 68, 68, 0.6)', 'rgba(139, 92, 246, 0.6)', 'rgba(236, 72, 153, 0.6)', 'rgba(20, 184, 166, 0.6)', 'rgba(249, 115, 22, 0.6)', 'rgba(6, 182, 212, 0.6)', 'rgba(132, 204, 22, 0.6)']
+        : 'rgba(59, 130, 246, 0.3)',
+      borderColor: chartType === 'pie'
+        ? ['rgba(59, 130, 246, 1)', 'rgba(16, 185, 129, 1)', 'rgba(245, 158, 11, 1)', 'rgba(239, 68, 68, 1)', 'rgba(139, 92, 246, 1)', 'rgba(236, 72, 153, 1)', 'rgba(20, 184, 166, 1)', 'rgba(249, 115, 22, 1)', 'rgba(6, 182, 212, 1)', 'rgba(132, 204, 22, 1)']
+        : 'rgba(59, 130, 246, 1)',
+      borderWidth: chartType === 'pie' ? 2 : 1.5,
+    };
+    
+    return {
+      labels,
+      datasets: secondaryDataset ? [baseDataset, secondaryDataset] : [baseDataset],
+    };
+  }, [labels, datasetLabel, datasetValues, chartType, secondaryDataset]);
+
+  const chartOptions = useMemo(() => {
+    const baseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { 
+          display: true,
+          position: chartType === 'pie' ? 'right' : 'top'
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const value = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
+              if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
+                return `${ctx.dataset.label}: €${(value / 1000000).toFixed(2)}M`;
+              } else if (datasetLabel === 'Units') {
+                return `${ctx.dataset.label}: ${value.toLocaleString()}`;
+              } else if (datasetLabel === 'Margin_%') {
+                return `${ctx.dataset.label}: ${value.toFixed(2)}%`;
+              }
+              return `${ctx.dataset.label}: ${value}`;
+            }
+          }
+        }
+      }
+    };
+    
+    if (chartType === 'line') {
+      baseOptions.scales = {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: (value) => {
+              if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
+                return `€${(value / 1000000).toFixed(1)}M`;
+              }
+              return value.toLocaleString();
+            }
+          }
+        }
+      };
+    } else if (chartType === 'bar') {
+      baseOptions.scales = {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: (value) => {
+              if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
+                return `€${(value / 1000000).toFixed(1)}M`;
+              }
+              return value.toLocaleString();
+            }
+          }
+        }
+      };
+    }
+    
+    return baseOptions;
+  }, [chartType, datasetLabel]);
+
+  // Create table data
+  const tableData = useMemo(() => {
+    if (!pivot || pivot.length === 0) return [];
+    return pivot.map((row, idx) => {
+      const rowData = { ...row };
+      // Format numbers for display
+      if (rowData.Revenue) rowData.Revenue = `€${(rowData.Revenue / 1000000).toFixed(2)}M`;
+      if (rowData.Gross_Profit) rowData.Gross_Profit = `€${(rowData.Gross_Profit / 1000000).toFixed(2)}M`;
+      if (rowData.Units) rowData.Units = rowData.Units.toLocaleString();
+      if (rowData['Margin_%']) rowData['Margin_%'] = `${rowData['Margin_%']}%`;
+      return rowData;
+    });
+  }, [pivot]);
+
+  const tableColumns = useMemo(() => {
+    if (!pivot || pivot.length === 0) return [];
+    return Object.keys(pivot[0] || {});
+  }, [pivot]);
+
+  return (
+    <div className="space-y-4">
+      {/* Chart */}
+      {chartData.labels.length > 0 && (
+        <div className="w-full" style={{ height: '300px' }}>
+          <ChartComponent
+            type={chartType}
+            data={chartData}
+            options={chartOptions}
+          />
+        </div>
+      )}
+      
+      {/* Table */}
+      {tableData.length > 0 && tableColumns.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-gray-100">
+                {tableColumns.map((col, idx) => (
+                  <th key={idx} className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">
+                    {col.replace(/_/g, ' ')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tableData.map((row, rowIdx) => (
+                <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  {tableColumns.map((col, colIdx) => (
+                    <td key={colIdx} className="border border-gray-300 px-3 py-2 text-gray-700">
+                      {row[col] !== undefined && row[col] !== null ? String(row[col]) : '-'}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 };
 
