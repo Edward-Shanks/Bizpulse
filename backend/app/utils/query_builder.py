@@ -297,11 +297,13 @@ async def parse_query_from_natural_language(
     
     # Extract metric intent (CRITICAL - Enhanced to support ALL metrics)
     # Support for: Gross Sales, Revenue, Net Sales, Units, Cases, Profit, Margin, Price Downs, Perm Disc, Group Cost, LTA, fGP, etc.
+    # IMPORTANT: gSales already has tax removed, so Gross Sales = Revenue (they are the same)
+    # Both "gross sales" and "revenue" should map to the same field (Revenue)
     if any(k in message_lower for k in [
         'gross sales', 'gross sale', 'total sales', 'sales value', 'revenue', 'gross revenue', 'sales revenue'
     ]):
-        intent["metric"] = "Gross_Sales"  # MongoDB field name
-        logger.info("📊 INTENT: Detected metric: gross_sales/revenue")
+        intent["metric"] = "Revenue"  # CRITICAL: Both Gross Sales and Revenue use the same field (gSales = Revenue, tax already removed)
+        logger.info("📊 INTENT: Detected metric: gross_sales/revenue (both map to Revenue field - gSales has tax removed)")
     elif any(k in message_lower for k in [
         'net sales', 'net revenue'
     ]):
@@ -334,7 +336,13 @@ async def parse_query_from_natural_language(
         intent["metric"] = "Perm_Disc"  # Assuming this field exists in MongoDB
         logger.info("📊 INTENT: Detected metric: perm_disc")
     elif any(k in message_lower for k in [
-        'group cost', 'group costs', 'cost', 'costs'
+        'operational expense', 'operational expenses', 'opex', 'operating expense', 'operating expenses',
+        'operational cost', 'operational costs', 'operating cost', 'operating costs'
+    ]):
+        intent["metric"] = "Operational_Expense"  # Calculated as Group_Cost + LTA
+        logger.info("📊 INTENT: Detected metric: operational_expense (Group_Cost + LTA)")
+    elif any(k in message_lower for k in [
+        'group cost', 'group costs'
     ]):
         intent["metric"] = "Group_Cost"  # Assuming this field exists in MongoDB
         logger.info("📊 INTENT: Detected metric: group_cost")
@@ -350,8 +358,8 @@ async def parse_query_from_natural_language(
         logger.info("📊 INTENT: Detected metric: fgp")
     else:
         # DEFAULT: Assume gross sales if not specified (as per user requirement)
-        intent["metric"] = "Gross_Sales"
-        logger.info("📊 INTENT: No metric specified, defaulting to gross_sales")
+        intent["metric"] = "Revenue"  # Both Gross Sales and Revenue are the same (gSales = Revenue, tax already removed)
+        logger.info("📊 INTENT: No metric specified, defaulting to revenue/gross_sales (both are the same)")
     
     # Extract operation intent (compare, sum, average, etc.)
     if any(k in message_lower for k in [

@@ -185,146 +185,325 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       // Determine the correct endpoint based on API URL
       // Priority: 1) apiUrl prop (Customer Deep Intelligence), 2) Backend API (MongoDB-based), 3) External insights API
       let endpoint;
+      let useStreaming = false; // TEMPORARILY DISABLED - Streaming has extraction issues, using non-streaming for reliable responses
+      
       if (apiUrl) {
         // apiUrl is like "http://localhost:8000/api", so we append the path
         // Use view-insights/chat endpoint for Customer Deep Intelligence view insights modal
         endpoint = `${apiUrl}/analytics/customer-insights/view-insights/chat`;
+        useStreaming = false; // Customer Deep Intelligence doesn't support streaming yet
       } else if (API) {
         // Use backend MongoDB-based insights API for all screens (Business Compass, Brands, Customers, Categories, Sales Analysis)
-        endpoint = `${API}/insights/chat`;
+        endpoint = `${API}/insights/chat/stream`; // Use streaming endpoint
+        useStreaming = true;
       } else {
         // Fallback to external insights API
         endpoint = `${INSIGHTS_API}/insights/chat`;
+        useStreaming = false;
       }
       
       console.log('InsightModal - Making API call to:', endpoint);
       console.log('InsightModal - Payload:', payload);
-      console.log('InsightModal - API URL:', INSIGHTS_API);
-      console.log('InsightModal - apiUrl prop:', apiUrl);
+      console.log('InsightModal - Streaming:', useStreaming);
       
-      const response = await axios.post(endpoint, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      // Check if question needs clarification
-      const needsClarification = response.data?.needs_clarification || false;
-      let suggestedQuestions = response.data?.suggested_questions || [];
-      
-      console.log('🔍 Full API Response:', response.data);
-      console.log('🔍 Clarification check:', { 
-        needsClarification, 
-        suggestedQuestionsCount: suggestedQuestions?.length || 0, 
-        suggestedQuestions,
-        suggestedQuestionsType: typeof suggestedQuestions,
-        isArray: Array.isArray(suggestedQuestions)
-      });
-      
-      // Ensure suggestedQuestions is always an array
-      if (!Array.isArray(suggestedQuestions)) {
-        if (suggestedQuestions && typeof suggestedQuestions === 'object') {
-          // If it's an object, try to convert to array
-          suggestedQuestions = Object.values(suggestedQuestions);
-        } else if (typeof suggestedQuestions === 'string') {
-          // If it's a string, try to parse it
-          try {
-            const parsed = JSON.parse(suggestedQuestions);
-            suggestedQuestions = Array.isArray(parsed) ? parsed : [];
-          } catch {
-            suggestedQuestions = [suggestedQuestions];
-          }
-        } else {
-          suggestedQuestions = [];
-        }
-      }
-      
-      if (needsClarification) {
-        // Question needs clarification - show suggested questions
-        setLoading(false);
-        const clarificationResponse = response.data?.response || 'I want to make sure I understand your question correctly. Could you please select one of these clarified versions, or rewrite your question?';
-        const clarificationMessage = {
+      // Use streaming if available
+      if (useStreaming) {
+        console.log('🔄 STREAMING: Starting streaming request to:', endpoint);
+        
+        // Create AI message placeholder for streaming
+        const aiMessageId = Date.now();
+        const aiMessage = {
           role: 'ai',
-          content: clarificationResponse,
-          needs_clarification: true,
-          suggested_questions: suggestedQuestions, // Now guaranteed to be an array
-          messageId: Date.now()
-        };
-        console.log('🔍 Adding clarification message:', clarificationMessage);
-        console.log('🔍 Suggested questions array:', suggestedQuestions);
-        setMessages((prev) => {
-          const newMessages = [...prev, clarificationMessage];
-          console.log('🔍 Updated messages array length:', newMessages.length);
-          console.log('🔍 Last message:', newMessages[newMessages.length - 1]);
-          return newMessages;
-        });
-        return; // Don't process further, just show suggestions
-      }
-      
-      // Ensure response is always a string
-      let fullResponse = response.data?.response || 'No response';
-      if (typeof fullResponse !== 'string') {
-        // If response is not a string, try to convert it
-        if (fullResponse && typeof fullResponse === 'object') {
-          fullResponse = JSON.stringify(fullResponse);
-        } else {
-          fullResponse = String(fullResponse || 'No response');
-        }
-      }
-      const pivot = response?.data?.data?.pivot_table || [];
-      const pivotArray = Array.isArray(pivot) ? pivot : [];
-      
-      // CRITICAL: Log pivot data for debugging
-      console.log('🔍 InsightModal - Received pivot data:', {
-        length: pivotArray.length,
-        firstItem: pivotArray[0],
-        question: msgToSend
-      });
-      
-      // CRITICAL: Update lastPivot with fresh data for this response
-      // Increment pivotKey FIRST to force component unmount, then update pivot data
-      setPivotKey(prev => {
-        const newKey = prev + 1;
-        console.log('🔄 InsightModal - Incrementing pivotKey to:', newKey);
-        // Update pivot data after key change
-        setTimeout(() => {
-          setLastPivot(pivotArray);
-          console.log('✅ InsightModal - Updated lastPivot with', pivotArray.length, 'items for question:', msgToSend);
-        }, 10);
-        return newKey;
-      });
-      
-      // Extract dynamic recommendations and follow-up questions from API response
-      const apiRecommendations = response?.data?.data?.recommendations || [];
-      const apiFollowUps = response?.data?.data?.follow_up_questions || [];
-      
-      // Update dynamic recommendations and follow-ups
-      if (apiRecommendations.length > 0) {
-        setDynamicRecommendations(apiRecommendations);
-      }
-      if (apiFollowUps.length > 0) {
-        setDynamicFollowUps(apiFollowUps);
-      }
-      
-      // Start streaming the message word by word
-      setLoading(false);
-      // Reset context cleared flag after sending first message after clear
-      if (isContextCleared) {
-        setIsContextCleared(false);
-      }
-      streamMessage(fullResponse, () => {
-        // When streaming completes, add the full message to chat with pivot data
-        // Ensure content is always a string
-        const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
-        const aiMessage = { 
-          role: 'ai', 
-          content: safeContent,
-          pivot_table: pivotArray, // Store pivot data with this message
-          messageId: Date.now() // Unique ID for this message to force re-render
+          content: '',
+          messageId: aiMessageId,
+          isStreaming: true
         };
         setMessages((prev) => [...prev, aiMessage]);
-        // CRITICAL: Update lastPivot AFTER message is added to ensure visualization updates
-        setLastPivot(pivotArray);
-        setPivotKey(prev => prev + 1);
-      });
+        
+        try {
+          // Use fetch for streaming with no buffering
+          console.log('🔄 STREAMING: Making fetch request...');
+          // Enable thinking mode for models that support it (like qwen2.5:32b-instruct)
+          const response = await fetch(endpoint + '?think=true', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'text/event-stream',
+              'Cache-Control': 'no-cache'
+            },
+            body: JSON.stringify(payload)
+          });
+          
+          console.log('🔄 STREAMING: Response received, status:', response.status, 'ok:', response.ok);
+          console.log('🔄 STREAMING: Content-Type:', response.headers.get('content-type'));
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('🔄 STREAMING: Response not OK:', errorText);
+            throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
+          }
+          
+          if (!response.body) {
+            console.error('🔄 STREAMING: No response body!');
+            throw new Error('No response body for streaming');
+          }
+          
+          // Read streaming response (SSE format)
+          console.log('🔄 STREAMING: Getting reader from response body...');
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let fullResponse = '';
+          let chunkCount = 0;
+          
+          console.log('🔄 STREAMING: Starting to read chunks...');
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
+              console.log('🔄 STREAMING: Stream done, total chunks:', chunkCount);
+              break;
+            }
+            
+            chunkCount++;
+            if (chunkCount % 10 === 0) {
+              console.log('🔄 STREAMING: Received', chunkCount, 'chunks so far...');
+            }
+            
+            buffer += decoder.decode(value, { stream: true });
+            
+            // SSE format: events are separated by double newline "\n\n"
+            // Each event can have multiple lines, but the data line starts with "data: "
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || ''; // Keep incomplete event in buffer
+            
+            for (const event of events) {
+              if (!event.trim()) continue; // Skip empty events
+              
+              // Find the "data: " line in this event
+              const lines = event.split('\n');
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const jsonStr = line.slice(6); // Remove "data: " prefix
+                    const data = JSON.parse(jsonStr);
+                    
+                    if (data.type === 'content') {
+                      // Content chunks - append and update UI immediately
+                      const chunkText = data.data || '';
+                      fullResponse += chunkText;
+                      
+                      // Update message in real-time (this triggers re-render)
+                      setMessages((prev) => 
+                        prev.map(msg => 
+                          msg.messageId === aiMessageId 
+                            ? { ...msg, content: fullResponse, isStreaming: true }
+                            : msg
+                        )
+                      );
+                    } else if (data.type === 'metadata') {
+                      // Final metadata (pivot table, etc.)
+                      const metadata = data.data;
+                      const pivot = metadata?.pivot_table || [];
+                      const pivotArray = Array.isArray(pivot) ? pivot : [];
+                      
+                      // Update message with metadata
+                      setMessages((prev) => 
+                        prev.map(msg => 
+                          msg.messageId === aiMessageId 
+                            ? { 
+                                ...msg, 
+                                pivot_table: pivotArray,
+                                isStreaming: false,
+                                needs_clarification: metadata?.needs_clarification || false,
+                                suggested_questions: metadata?.suggested_questions || []
+                              }
+                            : msg
+                        )
+                      );
+                      
+                      setLastPivot(pivotArray);
+                      setPivotKey(prev => prev + 1);
+                      
+                      // Handle clarification if needed
+                      if (metadata?.needs_clarification && metadata?.suggested_questions?.length > 0) {
+                        setLoading(false);
+                        return;
+                      }
+                    } else if (data.type === 'done') {
+                      // Streaming complete
+                      setMessages((prev) => 
+                        prev.map(msg => 
+                          msg.messageId === aiMessageId 
+                            ? { ...msg, isStreaming: false }
+                            : msg
+                        )
+                      );
+                    } else if (data.type === 'error') {
+                      // Handle error chunk - show error message to user
+                      console.error('Streaming error received:', data.data);
+                      setLoading(false);
+                      const errorMessage = {
+                        role: 'ai',
+                        content: `Error: ${data.data || 'An error occurred while processing your request. Please try again.'}`,
+                        messageId: Date.now()
+                      };
+                      setMessages((prev) => {
+                        // Remove streaming message and add error message
+                        const filtered = prev.filter(msg => msg.messageId !== aiMessageId);
+                        return [...filtered, errorMessage];
+                      });
+                      return; // Exit streaming
+                    }
+                  } catch (e) {
+                    console.error('Error parsing SSE chunk:', e, 'Line:', line);
+                  }
+                }
+              }
+            }
+          }
+          
+          // Streaming complete - metadata already handled in the loop
+          setLoading(false);
+          return;
+          
+        } catch (error) {
+          console.error('Streaming error, falling back:', error);
+          // Remove the streaming message and fallback to non-streaming
+          setMessages((prev) => prev.filter(msg => msg.messageId !== aiMessageId));
+          useStreaming = false;
+          endpoint = endpoint.replace('/stream', '');
+        }
+      }
+      
+      // Non-streaming fallback (original code)
+      if (!useStreaming) {
+        const response = await axios.post(endpoint, payload, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        // Check if question needs clarification
+        const needsClarification = response.data?.needs_clarification || false;
+        let suggestedQuestions = response.data?.suggested_questions || [];
+        
+        console.log('🔍 Full API Response:', response.data);
+        console.log('🔍 Clarification check:', { 
+          needsClarification, 
+          suggestedQuestionsCount: suggestedQuestions?.length || 0, 
+          suggestedQuestions,
+          suggestedQuestionsType: typeof suggestedQuestions,
+          isArray: Array.isArray(suggestedQuestions)
+        });
+        
+        // Ensure suggestedQuestions is always an array
+        if (!Array.isArray(suggestedQuestions)) {
+          if (suggestedQuestions && typeof suggestedQuestions === 'object') {
+            // If it's an object, try to convert to array
+            suggestedQuestions = Object.values(suggestedQuestions);
+          } else if (typeof suggestedQuestions === 'string') {
+            // If it's a string, try to parse it
+            try {
+              const parsed = JSON.parse(suggestedQuestions);
+              suggestedQuestions = Array.isArray(parsed) ? parsed : [];
+            } catch {
+              suggestedQuestions = [suggestedQuestions];
+            }
+          } else {
+            suggestedQuestions = [];
+          }
+        }
+        
+        if (needsClarification) {
+          // Question needs clarification - show suggested questions
+          setLoading(false);
+          const clarificationResponse = response.data?.response || 'I want to make sure I understand your question correctly. Could you please select one of these clarified versions, or rewrite your question?';
+          const clarificationMessage = {
+            role: 'ai',
+            content: clarificationResponse,
+            needs_clarification: true,
+            suggested_questions: suggestedQuestions, // Now guaranteed to be an array
+            messageId: Date.now()
+          };
+          console.log('🔍 Adding clarification message:', clarificationMessage);
+          console.log('🔍 Suggested questions array:', suggestedQuestions);
+          setMessages((prev) => {
+            const newMessages = [...prev, clarificationMessage];
+            console.log('🔍 Updated messages array length:', newMessages.length);
+            console.log('🔍 Last message:', newMessages[newMessages.length - 1]);
+            return newMessages;
+          });
+          return; // Don't process further, just show suggestions
+        }
+        
+        // Ensure response is always a string
+        let fullResponse = response.data?.response || 'No response';
+        if (typeof fullResponse !== 'string') {
+          // If response is not a string, try to convert it
+          if (fullResponse && typeof fullResponse === 'object') {
+            fullResponse = JSON.stringify(fullResponse);
+          } else {
+            fullResponse = String(fullResponse || 'No response');
+          }
+        }
+        const pivot = response?.data?.data?.pivot_table || [];
+        const pivotArray = Array.isArray(pivot) ? pivot : [];
+        
+        // CRITICAL: Log pivot data for debugging
+        console.log('🔍 InsightModal - Received pivot data:', {
+          length: pivotArray.length,
+          firstItem: pivotArray[0],
+          question: msgToSend
+        });
+        
+        // CRITICAL: Update lastPivot with fresh data for this response
+        // Increment pivotKey FIRST to force component unmount, then update pivot data
+        setPivotKey(prev => {
+          const newKey = prev + 1;
+          console.log('🔄 InsightModal - Incrementing pivotKey to:', newKey);
+          // Update pivot data after key change
+          setTimeout(() => {
+            setLastPivot(pivotArray);
+            console.log('✅ InsightModal - Updated lastPivot with', pivotArray.length, 'items for question:', msgToSend);
+          }, 10);
+          return newKey;
+        });
+        
+        // Extract dynamic recommendations and follow-up questions from API response
+        const apiRecommendations = response?.data?.data?.recommendations || [];
+        const apiFollowUps = response?.data?.data?.follow_up_questions || [];
+        
+        // Update dynamic recommendations and follow-ups
+        if (apiRecommendations.length > 0) {
+          setDynamicRecommendations(apiRecommendations);
+        }
+        if (apiFollowUps.length > 0) {
+          setDynamicFollowUps(apiFollowUps);
+        }
+        
+        // Start streaming the message word by word
+        setLoading(false);
+        // Reset context cleared flag after sending first message after clear
+        if (isContextCleared) {
+          setIsContextCleared(false);
+        }
+        streamMessage(fullResponse, () => {
+          // When streaming completes, add the full message to chat with pivot data
+          // Ensure content is always a string
+          const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
+          const aiMessage = { 
+            role: 'ai', 
+            content: safeContent,
+            pivot_table: pivotArray, // Store pivot data with this message
+            messageId: Date.now() // Unique ID for this message to force re-render
+          };
+          setMessages((prev) => [...prev, aiMessage]);
+          // CRITICAL: Update lastPivot AFTER message is added to ensure visualization updates
+          setLastPivot(pivotArray);
+          setPivotKey(prev => prev + 1);
+        });
+      } // End of if (!useStreaming) block
     } catch (error) {
       console.error('InsightModal API Error:', error);
       console.error('Error details:', error.response?.data || error.message);

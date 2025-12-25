@@ -83,6 +83,107 @@ const AIAssistant = () => {
         conversation_history: conversationHistory
       };
 
+      // Try streaming first
+      const endpoint = `${API}/insights/chat/stream`;
+      let useStreaming = false; // TEMPORARILY DISABLED - Streaming has extraction issues, using non-streaming for reliable responses
+      
+      if (useStreaming) {
+        try {
+          console.log('🔄 AIAssistant STREAMING: Starting streaming request');
+          
+          // Create AI message placeholder
+          const aiMessageId = Date.now();
+          const aiMessage = {
+            role: 'ai',
+            content: '',
+            messageId: aiMessageId,
+            isStreaming: true
+          };
+          setMessages((prev) => [...prev, aiMessage]);
+          
+          const response = await fetch(endpoint + '?think=true', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'text/event-stream',
+              'Cache-Control': 'no-cache'
+            },
+            body: JSON.stringify(payload)
+          });
+          
+          if (!response.ok || !response.body) {
+            throw new Error(`Streaming failed: ${response.status}`);
+          }
+          
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          let fullResponse = '';
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';
+            
+            for (const event of events) {
+              if (!event.trim()) continue;
+              
+              for (const line of event.split('\n')) {
+                if (line.startsWith('data: ')) {
+                  try {
+                    const data = JSON.parse(line.slice(6));
+                    
+                    if (data.type === 'content') {
+                      fullResponse += data.data || '';
+                      setMessages((prev) => 
+                        prev.map(msg => 
+                          msg.messageId === aiMessageId 
+                            ? { ...msg, content: fullResponse, isStreaming: true }
+                            : msg
+                        )
+                      );
+                    } else if (data.type === 'metadata') {
+                      setMessages((prev) => 
+                        prev.map(msg => 
+                          msg.messageId === aiMessageId 
+                            ? { ...msg, isStreaming: false }
+                            : msg
+                        )
+                      );
+                      setLoading(false);
+                      return;
+                    } else if (data.type === 'done') {
+                      setMessages((prev) => 
+                        prev.map(msg => 
+                          msg.messageId === aiMessageId 
+                            ? { ...msg, isStreaming: false }
+                            : msg
+                        )
+                      );
+                      setLoading(false);
+                      return;
+                    }
+                  } catch (e) {
+                    console.error('Error parsing SSE:', e);
+                  }
+                }
+              }
+            }
+          }
+          
+          setLoading(false);
+          return;
+        } catch (error) {
+          console.error('🔄 AIAssistant STREAMING: Error, falling back:', error);
+          useStreaming = false;
+        }
+      }
+      
+      // Non-streaming fallback
       const response = await axios.post(`${API}/insights/chat`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });

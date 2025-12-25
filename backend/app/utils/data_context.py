@@ -33,11 +33,16 @@ async def get_comprehensive_data_context(
     
     # CRITICAL: Determine which metric to use in aggregations
     # Default to Gross_Sales if not specified
-    metric_field = detected_metric or "Gross_Sales"
+    # IMPORTANT: Gross Sales = Revenue (gSales already has tax removed, so they are the same)
+    metric_field = detected_metric or "Revenue"
     
     # Map metric names to MongoDB field names
+    # NOTE: gSales column from CSV is renamed to Revenue during data sync
+    # IMPORTANT: gSales already has tax and other things removed, so gSales = Revenue (they are the same)
+    # When user asks about "gross sales" OR "revenue", both should use the Revenue field
     metric_field_map = {
-        "Gross_Sales": "Gross_Sales",
+        "Gross_Sales": "Revenue",  # CRITICAL: gSales is renamed to Revenue during sync, and gSales = Revenue (tax already removed)
+        "Revenue": "Revenue",  # Revenue and Gross Sales are the same (gSales already has tax removed)
         "Net_Sales": "Net_Sales",
         "Units": "Units",
         "Gross_Profit": "Gross_Profit",
@@ -46,14 +51,18 @@ async def get_comprehensive_data_context(
         "Perm_Disc": "Perm_Disc",
         "Group_Cost": "Group_Cost",
         "LTA": "LTA",
-        "fGP": "fGP"
+        "fGP": "fGP",
+        "Operational_Expense": "Operational_Expense"  # Calculated field: Group_Cost + LTA
     }
     
     # Get the actual MongoDB field name
-    mongo_metric_field = metric_field_map.get(metric_field, "Gross_Sales")
+    mongo_metric_field = metric_field_map.get(metric_field, "Revenue")  # Default to Revenue (gSales = Revenue, tax already removed)
     
     # For Margin, we'll calculate it, but still need Gross_Profit and Revenue
     is_margin_metric = (metric_field == "Margin")
+    
+    # For Operational_Expense, we need to calculate it as Group_Cost + LTA
+    is_operational_expense = (metric_field == "Operational_Expense")
     
     logger.info(f"📊 Using metric '{metric_field}' (MongoDB field: '{mongo_metric_field}') for aggregations")
     
@@ -107,7 +116,7 @@ async def get_comprehensive_data_context(
                 "$group": {
                     "_id": None,
                     "total_revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                    "total_gross_sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},  # Gross_Sales with fallback to Revenue
+                    "total_gross_sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
                     "total_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                     "total_units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                     # Add detected metric dynamically
@@ -119,9 +128,15 @@ async def get_comprehensive_data_context(
         totals = totals_result[0] if totals_result else {}
         
         total_revenue = safe_float(totals.get('total_revenue', 0))
-        total_gross_sales = safe_float(totals.get('total_gross_sales', total_revenue))  # Fallback to revenue if not available
+        total_gross_sales = safe_float(totals.get('total_gross_sales', total_revenue))  # Revenue contains gSales (Gross Sales)
         total_profit = safe_float(totals.get('total_profit', 0))
         total_units = safe_float(totals.get('total_units', 0))
+        
+        # Get operational expense if requested
+        if is_operational_expense:
+            total_operational_expense = safe_float(totals.get('total_operational_expense', 0))
+        else:
+            total_operational_expense = None
         
         # CRITICAL FIX #3: Label totals based on what filters are applied
         totals_label = "Overall Totals"
@@ -141,9 +156,11 @@ async def get_comprehensive_data_context(
         
         context_parts.append(f"{totals_label}:")
         context_parts.append(f"  Total Revenue: {format_currency(total_revenue)}")
-        context_parts.append(f"  Total Gross Sales: {format_currency(total_gross_sales)}")  # CRITICAL: Include Gross Sales (default metric)
+        context_parts.append(f"  Total Gross Sales: {format_currency(total_gross_sales)}")  # CRITICAL: Revenue contains gSales (Gross Sales) data
         context_parts.append(f"  Total Gross Profit: {format_currency(total_profit)}")
         context_parts.append(f"  Total Units: {format_units(total_units)}")
+        if is_operational_expense and total_operational_expense is not None:
+            context_parts.append(f"  Total Operational Expense: {format_currency(total_operational_expense)}")  # Group_Cost + LTA
         if total_revenue > 0:
             margin = (total_profit / total_revenue) * 100
             context_parts.append(f"  Profit Margin: {margin:.2f}%")
@@ -389,14 +406,27 @@ async def get_comprehensive_data_context(
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                        # Add detected metric dynamically
-                        mongo_metric_field: {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
                     }
-                    # For Margin metric, ensure we have both Revenue and Gross_Profit for calculation
-                    if is_margin_metric:
+                    
+                    # Add detected metric dynamically
+                    if is_operational_expense:
+                        # Operational Expense = Group_Cost + LTA
+                        group_stage["Operational_Expense"] = {
+                            "$sum": {
+                                "$add": [
+                                    {"$toDouble": {"$ifNull": ["$Group_Cost", 0]}},
+                                    {"$toDouble": {"$ifNull": ["$LTA", 0]}}
+                                ]
+                            }
+                        }
+                    elif is_margin_metric:
+                        # For Margin metric, ensure we have both Revenue and Gross_Profit for calculation
                         group_stage["Revenue"] = {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}}
                         group_stage["Gross_Profit"] = {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}}
+                    else:
+                        # Add the detected metric field
+                        group_stage[mongo_metric_field] = {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}}
                     
                     pipeline_quarter = [
                         quarter_match,
@@ -429,10 +459,14 @@ async def get_comprehensive_data_context(
                             
                             revenue = safe_float(q_item.get("Revenue", 0))
                             profit = safe_float(q_item.get("Gross_Profit", 0))
-                            gross_sales = safe_float(q_item.get("Gross_Sales", revenue))
+                            gross_sales = safe_float(q_item.get("Revenue", revenue))  # Revenue contains gSales (Gross Sales)
                             units = safe_float(q_item.get("Units", 0))
                             # Get detected metric value
-                            metric_value = safe_float(q_item.get(mongo_metric_field, 0))
+                            if is_operational_expense:
+                                # Operational Expense = Group_Cost + LTA
+                                metric_value = safe_float(q_item.get("Operational_Expense", 0))
+                            else:
+                                metric_value = safe_float(q_item.get(mongo_metric_field, 0))
                             
                             # Format metric value based on type
                             if metric_field in ["Units", "Cases"]:
@@ -463,7 +497,7 @@ async def get_comprehensive_data_context(
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
                         # Add detected metric dynamically
                         mongo_metric_field: {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
                     }
@@ -486,10 +520,14 @@ async def get_comprehensive_data_context(
                             year = int(q_item.get("_id", 0))
                             revenue = safe_float(q_item.get("Revenue", 0))
                             profit = safe_float(q_item.get("Gross_Profit", 0))
-                            gross_sales = safe_float(q_item.get("Gross_Sales", revenue))  # Fallback to revenue
+                            gross_sales = safe_float(q_item.get("Revenue", revenue))  # Revenue contains gSales (Gross Sales)  # Fallback to revenue
                             units = safe_float(q_item.get("Units", 0))
                             # Get detected metric value
-                            metric_value = safe_float(q_item.get(mongo_metric_field, 0))
+                            if is_operational_expense:
+                                # Operational Expense = Group_Cost + LTA
+                                metric_value = safe_float(q_item.get("Operational_Expense", 0))
+                            else:
+                                metric_value = safe_float(q_item.get(mongo_metric_field, 0))
                             
                             # Format metric value based on type
                             if metric_field in ["Units", "Cases"]:
@@ -526,7 +564,7 @@ async def get_comprehensive_data_context(
                         "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
                         # Add detected metric dynamically
                         mongo_metric_field: {"$sum": {"$toDouble": {"$ifNull": [f"${mongo_metric_field}", 0]}}},
                     }
@@ -546,10 +584,14 @@ async def get_comprehensive_data_context(
                         q_data = quarter_result[0]
                         revenue = safe_float(q_data.get('Revenue', 0))
                         profit = safe_float(q_data.get('Gross_Profit', 0))
-                        gross_sales = safe_float(q_data.get('Gross_Sales', revenue))  # Fallback to revenue
+                        gross_sales = safe_float(q_data.get('Revenue', revenue))  # Revenue contains gSales (Gross Sales)  # Fallback to revenue
                         units = safe_float(q_data.get('Units', 0))
                         # Get detected metric value
-                        metric_value = safe_float(q_data.get(mongo_metric_field, 0))
+                        if is_operational_expense:
+                            # Operational Expense = Group_Cost + LTA
+                            metric_value = safe_float(q_data.get("Operational_Expense", 0))
+                        else:
+                            metric_value = safe_float(q_data.get(mongo_metric_field, 0))
                         
                         # Format metric value based on type
                         if metric_field in ["Units", "Cases"]:
@@ -639,7 +681,7 @@ async def get_comprehensive_data_context(
                         "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
                         "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         # CRITICAL: Also include Gross_Sales if available (as per ChatGPT recommendation)
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
+                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
                     }
                 },
                 {"$sort": {"_id": 1}}
@@ -655,7 +697,7 @@ async def get_comprehensive_data_context(
                     profit = safe_float(item.get("Gross_Profit", 0))
                     units = safe_float(item.get("Units", 0))
                     # CRITICAL: Include Gross_Sales if available (as per ChatGPT recommendation)
-                    gross_sales = safe_float(item.get("Gross_Sales", revenue))  # Fallback to Revenue if Gross_Sales not available
+                    gross_sales = safe_float(item.get("Revenue", revenue))  # Revenue contains gSales (Gross Sales)
                     if revenue > 0:
                         margin = (profit / revenue) * 100
                         context_parts.append(f"  {year}: Revenue {format_currency(revenue)}, Gross Sales {format_currency(gross_sales)}, Profit {format_currency(profit)} ({margin:.1f}% margin), Units {format_units(units)}")
@@ -700,20 +742,32 @@ async def get_comprehensive_data_context(
             top_match = re.search(r'top\s+(\d+)', user_msg_lower)
             brand_limit = int(top_match.group(1)) if top_match else 20
             
+            # Build brand aggregation group stage
+            brand_group_stage = {
+                "_id": "$Brand",
+                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
+            }
+            # Add operational expense if requested
+            if is_operational_expense:
+                brand_group_stage["Operational_Expense"] = {
+                    "$sum": {
+                        "$add": [
+                            {"$toDouble": {"$ifNull": ["$Group_Cost", 0]}},
+                            {"$toDouble": {"$ifNull": ["$LTA", 0]}}
+                        ]
+                    }
+                }
+            
             pipeline_brand = [
                 brand_match_stage,
                 {
-                    "$group": {
-                        "_id": "$Brand",
-                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                        # CRITICAL: Include Gross_Sales (default metric for comparisons)
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                    }
+                    "$group": brand_group_stage
                 },
                 {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
-                {"$sort": {"Gross_Sales": -1}},  # Sort by Gross_Sales (default metric) instead of Revenue
+                {"$sort": {"Revenue": -1}},  # Sort by Revenue (which contains gSales/Gross Sales) - default metric
                 {"$limit": brand_limit}
             ]
             brand_results = await db.business_data.aggregate(pipeline_brand).to_list(brand_limit)
@@ -729,7 +783,7 @@ async def get_comprehensive_data_context(
                     if brand and brand.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
                         profit = safe_float(item.get("Gross_Profit", 0))
-                        gross_sales = safe_float(item.get("Gross_Sales", revenue))  # Fallback to revenue
+                        gross_sales = safe_float(item.get("Revenue", revenue))  # Revenue contains gSales (Gross Sales)
                         units = safe_float(item.get("Units", 0))
                         if revenue > 0:
                             margin = (profit / revenue) * 100
@@ -806,19 +860,31 @@ async def get_comprehensive_data_context(
         
         # Category breakdown
         if "category" in user_msg_lower or is_comparison:
+            # Build category aggregation group stage
+            category_group_stage = {
+                "_id": "$Category",
+                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
+            }
+            # Add operational expense if requested
+            if is_operational_expense:
+                category_group_stage["Operational_Expense"] = {
+                    "$sum": {
+                        "$add": [
+                            {"$toDouble": {"$ifNull": ["$Group_Cost", 0]}},
+                            {"$toDouble": {"$ifNull": ["$LTA", 0]}}
+                        ]
+                    }
+                }
+            
             pipeline_category = [
                 match_stage,
                 {
-                    "$group": {
-                        "_id": "$Category",
-                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                        # CRITICAL: Include Gross_Sales
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                    }
+                    "$group": category_group_stage
                 },
-                {"$sort": {"Gross_Sales": -1}}
+                {"$sort": {"Revenue": -1}}  # Sort by Revenue (which contains gSales/Gross Sales)
             ]
             category_results = await db.business_data.aggregate(pipeline_category).to_list(20)
             if category_results:
@@ -828,7 +894,7 @@ async def get_comprehensive_data_context(
                     if category and category.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
                         profit = safe_float(item.get("Gross_Profit", 0))
-                        gross_sales = safe_float(item.get("Gross_Sales", revenue))
+                        gross_sales = safe_float(item.get("Revenue", revenue))  # Revenue contains gSales (Gross Sales)
                         units = safe_float(item.get("Units", 0))
                         if revenue > 0:
                             margin = (profit / revenue) * 100
@@ -839,20 +905,32 @@ async def get_comprehensive_data_context(
         # Customer breakdown
         # CRITICAL: Show customer breakdown when customer is mentioned, comparison query, or Customer filter exists
         if "customer" in user_msg_lower or is_comparison or query.get('Customer'):
+            # Build customer aggregation group stage
+            customer_group_stage = {
+                "_id": "$Customer",
+                "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},  # Revenue contains gSales (Gross Sales) data
+            }
+            # Add operational expense if requested
+            if is_operational_expense:
+                customer_group_stage["Operational_Expense"] = {
+                    "$sum": {
+                        "$add": [
+                            {"$toDouble": {"$ifNull": ["$Group_Cost", 0]}},
+                            {"$toDouble": {"$ifNull": ["$LTA", 0]}}
+                        ]
+                    }
+                }
+            
             pipeline_customer = [
                 match_stage,
                 {
-                    "$group": {
-                        "_id": "$Customer",
-                        "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
-                        "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                        "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
-                        # CRITICAL: Include Gross_Sales
-                        "Gross_Sales": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Sales", "$Revenue", 0]}}},
-                    }
+                    "$group": customer_group_stage
                 },
                 {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
-                {"$sort": {"Gross_Sales": -1}}
+                {"$sort": {"Revenue": -1}}  # Sort by Revenue (which contains gSales/Gross Sales)
             ]
             customer_results = await db.business_data.aggregate(pipeline_customer).to_list(20)
             logger.info(f"📊 Data context - Customer results count: {len(customer_results)}")
@@ -863,7 +941,7 @@ async def get_comprehensive_data_context(
                     if customer and customer.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
                         profit = safe_float(item.get("Gross_Profit", 0))
-                        gross_sales = safe_float(item.get("Gross_Sales", revenue))
+                        gross_sales = safe_float(item.get("Revenue", revenue))  # Revenue contains gSales (Gross Sales)
                         units = safe_float(item.get("Units", 0))
                         if revenue > 0:
                             margin = (profit / revenue) * 100

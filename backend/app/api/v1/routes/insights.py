@@ -1,13 +1,15 @@
 """
 Routes for Insights Chat
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
 from app.core.dependencies import get_current_user
 from app.models.insights import InsightsChatRequest, InsightsChatResponse
 from app.services.insights_service import InsightsService
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,4 +34,59 @@ async def insights_chat(
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing view insights chat: {str(e)}")
+
+@router.post("/insights/chat/stream")
+async def insights_chat_stream(
+    request: InsightsChatRequest,
+    email: str = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    think: bool = Query(False, description="Enable thinking mode for supported models")
+):
+    """
+    Streaming version of insights chat
+    Returns Server-Sent Events (SSE) stream
+    """
+    try:
+        service = InsightsService(db)
+        
+        async def generate_stream():
+            try:
+                # Process chat and get streaming response
+                async for chunk in service.process_chat_stream(request, think=think):
+                    # Format as SSE and yield immediately (no buffering)
+                    chunk_json = json.dumps(chunk)
+                    # Yield immediately to ensure streaming
+                    yield f"data: {chunk_json}\n\n"
+                    # Force flush (though FastAPI should handle this)
+                    import sys
+                    if hasattr(sys.stdout, 'flush'):
+                        sys.stdout.flush()
+            except Exception as e:
+                logger.error(f"Streaming error: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                error_chunk = {
+                    "type": "error",
+                    "data": f"Error: {str(e)}"
+                }
+                yield f"data: {json.dumps(error_chunk)}\n\n"
+            finally:
+                # Send done signal
+                yield f"data: {json.dumps({'type': 'done', 'data': ''})}\n\n"
+        
+        return StreamingResponse(
+            generate_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Disable buffering in Nginx
+                "Content-Type": "text/event-stream; charset=utf-8"
+            }
+        )
+    except Exception as e:
+        logger.error(f"View Insights Chat Stream error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Error processing stream: {str(e)}")
 

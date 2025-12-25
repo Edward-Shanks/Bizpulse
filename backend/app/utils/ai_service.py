@@ -3,7 +3,7 @@ AI Service utilities
 Unified interface for all LLM providers (Perplexity, Ollama, vLLM)
 """
 import logging
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, AsyncGenerator
 from app.utils.llm_providers.factory import get_llm_provider
 
 logger = logging.getLogger(__name__)
@@ -137,4 +137,50 @@ async def query_ollama(
         custom_system_message=custom_system_message,
         provider_name="ollama"
     )
+
+async def stream_llm(
+    prompt: str,
+    conversation_history: Optional[List[Dict]] = None,
+    custom_system_message: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 4000,
+    provider_name: Optional[str] = None,
+    think: bool = False,
+    **kwargs
+) -> AsyncGenerator[Dict[str, str], None]:
+    """
+    Stream LLM response (unified interface for all providers)
+    
+    Yields dictionaries with:
+    - "type": "thinking" or "content" or "done"
+    - "data": the actual text chunk
+    """
+    try:
+        provider = get_llm_provider(provider_name)
+        provider_name_actual = provider.get_provider_name()
+        
+        logger.info("=" * 80)
+        logger.info(f"🔄 STREAMING LLM PROVIDER: {provider_name_actual.upper()}")
+        logger.info(f"📍 Provider Type: {provider_name_actual}")
+        logger.info(f"💭 Think Mode: {think}")
+        logger.info("=" * 80)
+        
+        async for chunk in provider.stream(
+            prompt=prompt,
+            conversation_history=conversation_history,
+            custom_system_message=custom_system_message,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            think=think,
+            **kwargs
+        ):
+            yield chunk
+            
+    except Exception as e:
+        logger.error(f"Error streaming LLM: {str(e)}")
+        # Yield error as content
+        yield {
+            "type": "error",
+            "data": f"Error: {str(e)}"
+        }
 

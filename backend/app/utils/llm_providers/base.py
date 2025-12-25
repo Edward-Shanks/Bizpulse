@@ -42,8 +42,9 @@ class LLMProvider(ABC):
         custom_system_message: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 4000,
+        think: bool = False,
         **kwargs
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Dict[str, str], None]:
         """
         Stream response from LLM
         
