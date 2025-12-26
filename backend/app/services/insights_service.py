@@ -1164,6 +1164,15 @@ class InsightsService:
                 # Optionally keep only the very last exchange for minimal context
                 # But for now, use empty to ensure fresh analysis
             
+            # CRITICAL: Generate pivot table BEFORE building prompt so we can reference it
+            # Get pivot table data for visualization - make it relevant to the question
+            pivot_table = await self._generate_pivot_table(request, query, user_msg_lower, chart_title_lower)
+            
+            # Log pivot table for debugging
+            if pivot_table and len(pivot_table) > 0:
+                logger.info(f"📊 Pivot table generated with {len(pivot_table)} rows - will be included in LLM prompt")
+                logger.info(f"📊 First pivot row keys: {list(pivot_table[0].keys())}")
+            
             # Build comprehensive prompt
             chart_context = f"Chart: {request.chart_title}\n" if request.chart_title else ""
             
@@ -1348,9 +1357,74 @@ class InsightsService:
                 intent_context += f"Q1/Q2/Q3/Q4 queries filter by months (e.g., Q1 = January + February + March). "
                 intent_context += f"If the data shows zero values, it means no data exists for those specific months/business/years, NOT that quarters don't exist.\n"
             
+            # CRITICAL: Add note about pivot table data if available
+            pivot_table_note = ""
+            if pivot_table and len(pivot_table) > 0:
+                # Get the dimension type from first row
+                first_row = pivot_table[0]
+                dimension_type = None
+                dimension_key = None
+                if "Brand" in first_row:
+                    dimension_type = "brand"
+                    dimension_key = "Brand"
+                elif "Category" in first_row:
+                    dimension_type = "category"
+                    dimension_key = "Category"
+                elif "Business" in first_row:
+                    dimension_type = "business"
+                    dimension_key = "Business"
+                elif "Customer" in first_row:
+                    dimension_type = "customer"
+                    dimension_key = "Customer"
+                elif "Channel" in first_row:
+                    dimension_type = "channel"
+                    dimension_key = "Channel"
+                elif "Year" in first_row:
+                    dimension_type = "year"
+                    dimension_key = "Year"
+                elif "Month_Name" in first_row:
+                    dimension_type = "month"
+                    dimension_key = "Month_Name"
+                
+                if dimension_type and dimension_key:
+                    # Format pivot table data for LLM in a clear, structured way
+                    pivot_data_text = "\n".join([
+                        f"  {i+1}. {row[dimension_key]}: Revenue €{row['Revenue']/1000000:.2f}M, Profit €{row['Gross_Profit']/1000000:.2f}M ({row.get('Margin_%', 0):.1f}% margin), Units {row['Units']:,.0f}"
+                        for i, row in enumerate(pivot_table[:min(len(pivot_table), 10)])  # Show first 10 in prompt
+                    ])
+                    
+                    pivot_table_note = (
+                        f"\n\n{'='*80}\n"
+                        f"⚠️ CRITICAL: PIVOT TABLE DATA AVAILABLE - YOU MUST USE THIS DATA\n"
+                        f"{'='*80}\n"
+                        f"A structured pivot table with {len(pivot_table)} {dimension_type}(s) has been generated.\n"
+                        f"This pivot table contains the EXACT answer to the user's question.\n"
+                        f"\n📊 PIVOT TABLE DATA (Top {min(len(pivot_table), 10)} {dimension_type}s):\n"
+                        f"{pivot_data_text}\n"
+                        f"\n{'='*80}\n"
+                        f"CRITICAL INSTRUCTIONS - YOU MUST FOLLOW THESE:\n"
+                        f"{'='*80}\n"
+                        f"1. START your response by listing the EXACT {dimension_type}s from the pivot table above.\n"
+                        f"   Example format: '1. [Name]: Revenue €X.XM, Profit €Y.YM (Z.Z% margin), Units N'\n"
+                        f"2. List ALL {dimension_type}s from the pivot table (up to the number requested by the user).\n"
+                        f"3. Use the EXACT names and numbers from the pivot table - do NOT use generic descriptions.\n"
+                        f"4. DO NOT say 'these 5 customers' or 'top customers' - use ACTUAL NAMES like 'Musgrave ROI', 'Dunnes ROI', etc.\n"
+                        f"5. DO NOT say 'data not available', 'no breakdown available', or 'I can only provide insights about business data'.\n"
+                        f"6. After listing the {dimension_type}s, provide insights and recommendations based on the specific data.\n"
+                        f"7. The pivot table will be displayed as charts/tables - your text should complement and explain this visual data.\n"
+                        f"\nEXAMPLE OF CORRECT RESPONSE FORMAT:\n"
+                        f"Top 5 Customers by Revenue:\n"
+                        f"1. Musgrave ROI: Revenue €86.78M, Profit €19.72M (22.73% margin), Units 3.6M\n"
+                        f"2. Dunnes ROI: Revenue €84.26M, Profit €22.33M (26.5% margin), Units 3.2M\n"
+                        f"... (continue with all 5)\n"
+                        f"\nThen provide insights based on these specific numbers.\n"
+                        f"{'='*80}\n\n"
+                    )
+            
             user_prompt = (
                 f"{chart_context}\n\n"
                 f"{intent_context}"
+                f"{pivot_table_note}"
                 f"BUSINESS DATA (USE ONLY THIS DATA - DO NOT USE ANY EXTERNAL KNOWLEDGE):\n"
                 f"{data_context}\n\n"
                 f"CRITICAL INSTRUCTION: The above 'Business Data' section contains ALL the information you should use to answer the user's question. "
@@ -1426,13 +1500,8 @@ class InsightsService:
                 logger.error(traceback.format_exc())
                 ai_response = f"I apologize, but I encountered an error while processing your request. Please try rephrasing your question or contact support if the issue persists. Error: {str(e)}"
             
-            # Get pivot table data for visualization - make it relevant to the question
-            pivot_table = await self._generate_pivot_table(request, query, user_msg_lower, chart_title_lower)
-            
-            # CRITICAL: Log pivot table for debugging
-            logger.info(f"📊 PIVOT TABLE GENERATED: {len(pivot_table)} rows")
-            if len(pivot_table) > 0:
-                logger.info(f"📊 First pivot row: {pivot_table[0]}")
+            # Pivot table was already generated before building the prompt (see line 1169)
+            # No need to regenerate it here
             else:
                 logger.warning(f"⚠️ WARNING: Pivot table is EMPTY! Message: '{request.message}', Chart: '{request.chart_title}'")
             
@@ -1595,8 +1664,147 @@ class InsightsService:
             logger.info(f"Pivot table generation - Message: {request.message}, Chart Title: {request.chart_title}")
             
             # Determine what data to show based on the question
-            # Check for brand questions FIRST (most common case)
-            if "brand" in user_msg_lower or "brand" in chart_title_lower:
+            # CRITICAL: Check questions in order of specificity to avoid conflicts
+            # Priority: Year comparisons > Category > Brand > Customer > Channel > Business > Trends
+            
+            # Check for year-over-year comparisons FIRST (highest priority)
+            # Pattern: "compare X in 2023 and 2024", "2023 vs 2024", "across years"
+            is_year_comparison = (
+                re.search(r'compare.*\d{4}.*\d{4}', user_msg_lower) is not None or
+                re.search(r'\d{4}.*and.*\d{4}', user_msg_lower) is not None or
+                re.search(r'\d{4}.*vs.*\d{4}', user_msg_lower) is not None or
+                re.search(r'across\s+years?', user_msg_lower) is not None or
+                (re.search(r'\d{4}', user_msg_lower) is not None and 'compare' in user_msg_lower and len(re.findall(r'\d{4}', user_msg_lower)) >= 2)
+            )
+            
+            if is_year_comparison:
+                logger.info("Detected YEAR COMPARISON question - generating year-based pivot table")
+                # User is comparing across years - show year-by-year breakdown
+                match_stage = {"$match": query} if query else {"$match": {}}
+                
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Year",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
+                    {"$sort": {"_id": 1}}  # Sort by year ascending
+                ]
+                
+                pivot_results = await self.db.business_data.aggregate(pipeline_pivot).to_list(10)
+                for item in pivot_results:
+                    year_value = item.get("_id", 0)
+                    # Handle both int and float year values
+                    if isinstance(year_value, float):
+                        year = int(year_value) if year_value > 0 else 0
+                    else:
+                        year = int(year_value) if year_value else 0
+                    
+                    if year > 2000 and year < 2100:  # Valid year range
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Year": year,  # Store as integer
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+                            logger.info(f"  Added year {year}: Revenue {revenue}")
+                
+                logger.info(f"📊 Final year comparison pivot table has {len(pivot_table)} years")
+            
+            # Check for category questions (before brand, as "category" might be in "brand category")
+            elif "category" in user_msg_lower or "categories" in user_msg_lower or "category" in chart_title_lower:
+                logger.info("Detected CATEGORY question - generating category-level pivot table")
+                # User asked about categories - show category-level aggregated data
+                match_stage = {"$match": query} if query else {"$match": {}}
+                
+                # Detect how many categories requested
+                category_limit = 15  # Default
+                message_numbers = re.findall(r'\b(\d+)\b', user_msg_lower)
+                if message_numbers:
+                    try:
+                        valid_numbers = [int(num) for num in message_numbers if 1 <= int(num) <= 50]
+                        if valid_numbers:
+                            category_limit = max(valid_numbers)
+                            logger.info(f"✅ Detected category limit from USER MESSAGE: {category_limit}")
+                    except:
+                        pass
+                
+                # If no number in message, check chart title
+                if category_limit == 15:
+                    chart_numbers = re.findall(r'\b(\d+)\b', chart_title_lower)
+                    if chart_numbers:
+                        try:
+                            valid_chart_numbers = [int(num) for num in chart_numbers if 1 <= int(num) <= 50]
+                            if valid_chart_numbers:
+                                category_limit = max(valid_chart_numbers)
+                                logger.info(f"✅ Detected category limit from CHART TITLE: {category_limit}")
+                        except:
+                            pass
+                
+                logger.info(f"Category pivot table: Final limit = {category_limit} for message: '{request.message}'")
+                
+                pipeline_pivot = [
+                    match_stage,
+                    {
+                        "$group": {
+                            "_id": "$Category",
+                            "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                            "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                        }
+                    },
+                    {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
+                    {"$sort": {"Revenue": -1}},
+                    {"$limit": category_limit + 5}  # Get extra to ensure we have enough after filtering
+                ]
+                
+                logger.info(f"📊 Category pipeline: {json.dumps(pipeline_pivot, default=str)[:300]}...")
+                
+                pivot_results = await self.db.business_data.aggregate(pipeline_pivot).to_list(category_limit + 5)
+                logger.info(f"📊 Category pivot results count: {len(pivot_results)} (will show top {category_limit})")
+                
+                categories_added = 0
+                for item in pivot_results:
+                    if categories_added >= category_limit:
+                        logger.info(f"✅ Reached requested limit of {category_limit} categories, stopping")
+                        break
+                    category_name = str(item.get("_id", ""))
+                    if category_name and category_name.lower() not in ["unknown", "none", "", "null"]:
+                        revenue = safe_float(item.get("Revenue", 0))
+                        if revenue > 0:
+                            pivot_row = {
+                                "Category": category_name,
+                                "Revenue": revenue,
+                                "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
+                                "Units": safe_float(item.get("Units", 0))
+                            }
+                            if revenue > 0:
+                                pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
+                            else:
+                                pivot_row["Margin_%"] = 0.0
+                            pivot_table.append(pivot_row)
+                            categories_added += 1
+                            logger.info(f"  Added category {categories_added}/{category_limit}: {category_name} - Revenue: {revenue}")
+                            if len(pivot_table) >= category_limit:
+                                logger.info(f"Category pivot table: Reached limit of {category_limit}, stopping")
+                                break
+                
+                logger.info(f"📊 Final category pivot table has {len(pivot_table)} categories")
+            
+            # Check for brand questions (after category to avoid conflicts)
+            elif "brand" in user_msg_lower or "brand" in chart_title_lower:
                 logger.info("Detected BRAND question - generating brand-level pivot table")
                 logger.info(f"🔍 Query being used for brand pivot: {query}")
                 
@@ -1819,6 +2027,33 @@ class InsightsService:
                 logger.info("Detected CUSTOMER question - generating customer-level pivot table")
                 # User asked about customers - show customer-level aggregated data
                 match_stage = {"$match": query} if query else {"$match": {}}
+                
+                # Detect how many customers requested
+                customer_limit = 15  # Default
+                message_numbers = re.findall(r'\b(\d+)\b', user_msg_lower)
+                if message_numbers:
+                    try:
+                        valid_numbers = [int(num) for num in message_numbers if 1 <= int(num) <= 50]
+                        if valid_numbers:
+                            customer_limit = max(valid_numbers)
+                            logger.info(f"✅ Detected customer limit from USER MESSAGE: {customer_limit}")
+                    except:
+                        pass
+                
+                # If no number in message, check chart title
+                if customer_limit == 15:
+                    chart_numbers = re.findall(r'\b(\d+)\b', chart_title_lower)
+                    if chart_numbers:
+                        try:
+                            valid_chart_numbers = [int(num) for num in chart_numbers if 1 <= int(num) <= 50]
+                            if valid_chart_numbers:
+                                customer_limit = max(valid_chart_numbers)
+                                logger.info(f"✅ Detected customer limit from CHART TITLE: {customer_limit}")
+                        except:
+                            pass
+                
+                logger.info(f"Customer pivot table: Final limit = {customer_limit} for message: '{request.message}'")
+                
                 pipeline_pivot = [
                     match_stage,
                     {
@@ -1829,11 +2064,18 @@ class InsightsService:
                             "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
+                    {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
                     {"$sort": {"Revenue": -1}},
-                    {"$limit": 15}
+                    {"$limit": customer_limit + 5}  # Get extra to ensure we have enough after filtering
                 ]
-                pivot_results = await self.db.business_data.aggregate(pipeline_pivot).to_list(15)
+                pivot_results = await self.db.business_data.aggregate(pipeline_pivot).to_list(customer_limit + 5)
+                logger.info(f"📊 Customer pivot results count: {len(pivot_results)} (will show top {customer_limit})")
+                
+                customers_added = 0
                 for item in pivot_results:
+                    if customers_added >= customer_limit:
+                        logger.info(f"✅ Reached requested limit of {customer_limit} customers, stopping")
+                        break
                     customer_name = str(item.get("_id", ""))
                     if customer_name and customer_name.lower() not in ["unknown", "none", "", "null"]:
                         revenue = safe_float(item.get("Revenue", 0))
@@ -1849,6 +2091,13 @@ class InsightsService:
                             else:
                                 pivot_row["Margin_%"] = 0.0
                             pivot_table.append(pivot_row)
+                            customers_added += 1
+                            logger.info(f"  Added customer {customers_added}/{customer_limit}: {customer_name} - Revenue: {revenue}")
+                            if len(pivot_table) >= customer_limit:
+                                logger.info(f"Customer pivot table: Reached limit of {customer_limit}, stopping")
+                                break
+                
+                logger.info(f"📊 Final customer pivot table has {len(pivot_table)} customers")
             
             elif "category" in user_msg_lower or "category" in chart_title_lower:
                 logger.info("Detected CATEGORY question - generating category-level pivot table")
@@ -1885,7 +2134,9 @@ class InsightsService:
                                 pivot_row["Margin_%"] = 0.0
                             pivot_table.append(pivot_row)
             
-            elif "channel" in user_msg_lower or "sales" in user_msg_lower or "channel" in chart_title_lower:
+            elif ("channel" in user_msg_lower or "channels" in user_msg_lower or "channel" in chart_title_lower) and not is_year_comparison:
+                # CRITICAL: Only detect channel if NOT a year comparison
+                # Don't use "sales" as a trigger - it's too broad and catches year comparison questions
                 logger.info("Detected CHANNEL question - generating channel-level pivot table")
                 # User asked about channels or sales - show channel-level aggregated data
                 match_stage = {"$match": query} if query else {"$match": {}}

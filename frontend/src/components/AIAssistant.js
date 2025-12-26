@@ -428,10 +428,11 @@ const AIAssistant = () => {
                         {typeof msg.content === 'string' ? msg.content : String(msg.content || '')}
                       </ReactMarkdown>
                       
-                      {/* Show pivot table if available for this message */}
-                      {msg.pivot_table && Array.isArray(msg.pivot_table) && msg.pivot_table.length > 0 && (
+                      {/* Show pivot table if available for this message - only show for the last message to avoid duplicates */}
+                      {msg.pivot_table && Array.isArray(msg.pivot_table) && msg.pivot_table.length > 0 && idx === messages.length - 1 && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
-                          <AIDataVisuals pivot={msg.pivot_table} key={`pivot-${idx}-${msg.pivot_table.length}`} />
+                          <h4 className="text-sm font-semibold mb-3 text-gray-800">Visuals from AI data</h4>
+                          <AIDataVisuals pivot={msg.pivot_table} key={`pivot-msg-${idx}-${msg.pivot_table.length}`} />
                         </div>
                       )}
                       
@@ -469,20 +470,7 @@ const AIAssistant = () => {
               </div>
             ))}
 
-            {/* Visualization from AI data - Show for the most recent AI message with pivot data */}
-            {lastPivot && Array.isArray(lastPivot) && lastPivot.length > 0 && messages.length > 0 && (
-              <div className="mb-6" key={`pivot-container-${pivotKey}-${lastPivot.length}`}>
-                <div className="bg-white rounded-lg border border-gray-200 p-4">
-                  <h4 className="text-sm font-semibold mb-3 text-gray-800">Visuals from AI data</h4>
-                  {lastPivot[0] && (
-                    <AIDataVisuals 
-                      pivot={lastPivot} 
-                      key={`pivot-${pivotKey}-${lastPivot.length}-${lastPivot[0].Brand || lastPivot[0].Category || lastPivot[0].Customer || 'default'}-${lastPivot[0].Revenue || 0}`} 
-                    />
-                  )}
-                </div>
-              </div>
-            )}
+            {/* REMOVED: Duplicate pivot table rendering - now rendered inside the message itself */}
 
             {loading && (
               <div className="flex justify-start mb-4">
@@ -633,17 +621,30 @@ const AIDataVisuals = ({ pivot }) => {
           position: chartType === 'pie' ? 'right' : 'top'
         },
         tooltip: {
+          enabled: true,
           callbacks: {
             label: (ctx) => {
-              const value = ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed;
-              if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
-                return `${ctx.dataset.label}: €${(value / 1000000).toFixed(2)}M`;
-              } else if (datasetLabel === 'Units') {
-                return `${ctx.dataset.label}: ${value.toLocaleString()}`;
-              } else if (datasetLabel === 'Margin_%') {
-                return `${ctx.dataset.label}: ${value.toFixed(2)}%`;
+              // CRITICAL: Validate ctx exists and has required properties
+              if (!ctx || ctx.dataset === null || ctx.datasetIndex === undefined) {
+                return '';
               }
-              return `${ctx.dataset.label}: ${value}`;
+              
+              try {
+                const value = ctx.parsed && (ctx.parsed.y !== undefined ? ctx.parsed.y : ctx.parsed) || 0;
+                const label = ctx.dataset?.label || datasetLabel || 'Value';
+                
+                if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
+                  return `${label}: €${(value / 1000000).toFixed(2)}M`;
+                } else if (datasetLabel === 'Units') {
+                  return `${label}: ${value.toLocaleString()}`;
+                } else if (datasetLabel === 'Margin_%') {
+                  return `${label}: ${value.toFixed(2)}%`;
+                }
+                return `${label}: ${value}`;
+              } catch (error) {
+                console.error('Tooltip error:', error);
+                return '';
+              }
             }
           }
         }

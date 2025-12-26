@@ -859,7 +859,15 @@ async def get_comprehensive_data_context(
                             context_parts.append(f"  {channel}: Revenue {format_currency(revenue)}, Profit {format_currency(profit)} ({margin:.1f}% margin)")
         
         # Category breakdown
-        if "category" in user_msg_lower or is_comparison:
+        # CRITICAL: Include category breakdown if user asks about categories OR if it's a comparison
+        # Also check for "top X categories", "all categories", etc.
+        is_asking_for_categories = (
+            "category" in user_msg_lower or 
+            "categories" in user_msg_lower or
+            re.search(r'top\s+\d+\s+categories?', user_msg_lower) is not None or
+            re.search(r'all\s+categories?', user_msg_lower) is not None
+        )
+        if is_asking_for_categories or is_comparison:
             # Build category aggregation group stage
             category_group_stage = {
                 "_id": "$Category",
