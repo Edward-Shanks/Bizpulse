@@ -1389,7 +1389,7 @@ class InsightsService:
                 if dimension_type and dimension_key:
                     # Format pivot table data for LLM in a clear, structured way
                     pivot_data_text = "\n".join([
-                        f"  {i+1}. {row[dimension_key]}: Revenue €{row['Revenue']/1000000:.2f}M, Profit €{row['Gross_Profit']/1000000:.2f}M ({row.get('Margin_%', 0):.1f}% margin), Units {row['Units']:,.0f}"
+                        f"  {i+1}. {row[dimension_key]}: Revenue €{row['Revenue']/1000000:.2f}M, Profit €{row['Gross_Profit']/1000000:.2f}M ({row.get('Margin_%', 0):.1f}% margin), Cases {row['Cases']:,.0f}"
                         for i, row in enumerate(pivot_table[:min(len(pivot_table), 10)])  # Show first 10 in prompt
                     ])
                     
@@ -1517,7 +1517,7 @@ class InsightsService:
             # Build response data
             response_data = {
                 "pivot_table": pivot_table,
-                "columns": ["Revenue", "Gross_Profit", "Units"],
+                "columns": ["Revenue", "Gross_Profit", "Cases"],
                 "filters": query,
                 "is_trend_query": "trend" in (request.message or "").lower(),
                 "is_loser_query": any(word in (request.message or "").lower() for word in ["worst", "lowest", "loser", "least"]),
@@ -1630,7 +1630,7 @@ class InsightsService:
                 "type": "metadata",
                 "data": {
                     "pivot_table": pivot_table,
-                    "columns": ["Revenue", "Gross_Profit", "Units"],
+                    "columns": ["Revenue", "Gross_Profit", "Cases"],
                     "filters": query,
                     "is_trend_query": "trend" in user_msg_lower,
                     "is_loser_query": any(word in user_msg_lower for word in ["worst", "lowest", "loser", "least"]),
@@ -1689,7 +1689,7 @@ class InsightsService:
                             "_id": "$Year",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
@@ -1712,7 +1712,7 @@ class InsightsService:
                                 "Year": year,  # Store as integer
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -1762,7 +1762,7 @@ class InsightsService:
                             "_id": "$Category",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
@@ -1788,7 +1788,7 @@ class InsightsService:
                                 "Category": category_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -1882,7 +1882,7 @@ class InsightsService:
                             "_id": "$Brand",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
@@ -1910,7 +1910,7 @@ class InsightsService:
                                 "Brand": brand_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -1945,7 +1945,7 @@ class InsightsService:
                                 "_id": "$Month_Name",
                                 "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                                 "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                                "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                             }
                         },
                         {"$sort": {"_id": 1}}
@@ -1960,7 +1960,7 @@ class InsightsService:
                                     "Month_Name": month_name,
                                     "Revenue": revenue,
                                     "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                    "Units": safe_float(item.get("Units", 0))
+                                    "Cases": safe_float(item.get("Cases", 0))
                                 }
                                 pivot_table.append(pivot_row)
                 elif "month" in user_msg_lower or "monthly" in user_msg_lower:
@@ -1971,7 +1971,7 @@ class InsightsService:
                                 "_id": "$Month_Name",
                                 "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                                 "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                                "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                             }
                         },
                         {"$sort": {"_id": 1}}
@@ -1986,7 +1986,7 @@ class InsightsService:
                                     "Month_Name": month_name,
                                     "Revenue": revenue,
                                     "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                    "Units": safe_float(item.get("Units", 0))
+                                    "Cases": safe_float(item.get("Cases", 0))
                                 }
                                 pivot_table.append(pivot_row)
                 else:
@@ -1998,7 +1998,7 @@ class InsightsService:
                                 "_id": "$Year",
                                 "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                                 "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                                "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                                "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                             }
                         },
                         {"$sort": {"_id": 1}}
@@ -2019,7 +2019,7 @@ class InsightsService:
                                     "Year": year,  # Store as integer, not formatted
                                     "Revenue": revenue,
                                     "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                    "Units": safe_float(item.get("Units", 0))
+                                    "Cases": safe_float(item.get("Cases", 0))
                                 }
                                 pivot_table.append(pivot_row)
             
@@ -2061,7 +2061,7 @@ class InsightsService:
                             "_id": "$Customer",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
@@ -2084,7 +2084,7 @@ class InsightsService:
                                 "Customer": customer_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -2110,7 +2110,7 @@ class InsightsService:
                             "_id": "$Category",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$sort": {"Revenue": -1}},
@@ -2126,7 +2126,7 @@ class InsightsService:
                                 "Category": category_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -2147,7 +2147,7 @@ class InsightsService:
                             "_id": "$Channel",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$sort": {"Revenue": -1}},
@@ -2163,7 +2163,7 @@ class InsightsService:
                                 "Channel": channel_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -2181,7 +2181,7 @@ class InsightsService:
                             "_id": "$Business",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$sort": {"Revenue": -1}},
@@ -2197,7 +2197,7 @@ class InsightsService:
                                 "Business": business_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
@@ -2231,7 +2231,7 @@ class InsightsService:
                             "_id": "$Brand",
                             "Revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
                             "Gross_Profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
-                            "Units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
+                            "Cases": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}},
                         }
                     },
                     {"$match": {"_id": {"$nin": [None, "", "Unknown", "null", "None"]}}},
@@ -2248,7 +2248,7 @@ class InsightsService:
                                 "Brand": brand_name,
                                 "Revenue": revenue,
                                 "Gross_Profit": safe_float(item.get("Gross_Profit", 0)),
-                                "Units": safe_float(item.get("Units", 0))
+                                "Cases": safe_float(item.get("Cases", 0))
                             }
                             if revenue > 0:
                                 pivot_row["Margin_%"] = round((pivot_row["Gross_Profit"] / revenue * 100), 2)
