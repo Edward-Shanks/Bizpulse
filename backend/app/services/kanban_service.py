@@ -298,7 +298,7 @@ Return ONLY valid JSON array, no additional text.
 """
             
             try:
-                logger.info("🤖 Calling Perplexity AI to generate recommendations...")
+                logger.info("🤖 Calling LLM to generate recommendations...")
                 ai_response = await query_llm(ai_prompt)
                 
                 if not ai_response or len(ai_response.strip()) < 10:
@@ -580,7 +580,8 @@ Return ONLY the JSON array. No markdown, no code blocks, no explanations.
 """
         
         try:
-            ai_response = await query_perplexity(ai_prompt)
+            logger.info("🤖 Calling LLM to generate goals...")
+            ai_response = await query_llm(ai_prompt)
             if not ai_response:
                 raise HTTPException(status_code=500, detail="AI service returned empty response")
             

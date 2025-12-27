@@ -633,7 +633,7 @@ const Kanban = () => {
 
                 return (
                   <div 
-                    key={`recommendation-${initiative.id || idx}`} 
+                    key={`recommendation-${initiative.id || 'no-id'}-${idx}`} 
                     className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
                     style={{
                       background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -784,7 +784,7 @@ const Kanban = () => {
 
                 return (
                   <div 
-                    key={`live-${initiative.id || idx}`} 
+                    key={`live-${initiative.id || 'no-id'}-${idx}`} 
                     className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
                     style={{
                       background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -942,7 +942,7 @@ const Kanban = () => {
 
                     return (
                       <div 
-                        key={`past-${initiative.id || `past-${initiative.title}-${idx}`}`} 
+                        key={`past-${initiative.id || 'no-id'}-${idx}`} 
                         className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow opacity-75"
                         style={{
                           background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
