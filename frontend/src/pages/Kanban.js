@@ -626,14 +626,14 @@ const Kanban = () => {
                   </div>
                 </div>
               ) : (
-                initiatives.recommended.map((initiative) => {
+                initiatives.recommended.map((initiative, idx) => {
                 const categoryInfo = getCategoryColor(initiative.category);
                 const typeInfo = getTypeColor(initiative.type);
                 const TypeIcon = typeInfo.icon;
 
                 return (
                   <div 
-                    key={initiative.id} 
+                    key={`recommendation-${initiative.id || idx}`} 
                     className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
                     style={{
                       background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -777,14 +777,14 @@ const Kanban = () => {
                     </div>
                   </div>
                 ) : (
-                  initiatives.live.map((initiative) => {
+                  initiatives.live.map((initiative, idx) => {
                 const categoryInfo = getCategoryColor(initiative.category);
                 const typeInfo = getTypeColor(initiative.type);
                 const TypeIcon = typeInfo.icon;
 
                 return (
                   <div 
-                    key={initiative.id} 
+                    key={`live-${initiative.id || idx}`} 
                     className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
                     style={{
                       background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
@@ -935,14 +935,14 @@ const Kanban = () => {
                     </div>
                   </div>
                 ) : (
-                  initiatives.past.map((initiative) => {
+                  initiatives.past.map((initiative, idx) => {
                     const categoryInfo = getCategoryColor(initiative.category);
                     const typeInfo = getTypeColor(initiative.type);
                     const TypeIcon = typeInfo.icon;
 
                     return (
                       <div 
-                        key={`past-${initiative.id || initiative.title}`} 
+                        key={`past-${initiative.id || `past-${initiative.title}-${idx}`}`} 
                         className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow opacity-75"
                         style={{
                           background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',

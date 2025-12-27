@@ -1388,8 +1388,10 @@ class InsightsService:
                 
                 if dimension_type and dimension_key:
                     # Format pivot table data for LLM in a clear, structured way
+                    # CRITICAL: Use K for values < 1M, M for values >= 1M
+                    from app.utils.helpers import format_currency
                     pivot_data_text = "\n".join([
-                        f"  {i+1}. {row[dimension_key]}: Revenue €{row['Revenue']/1000000:.2f}M, Profit €{row['Gross_Profit']/1000000:.2f}M ({row.get('Margin_%', 0):.1f}% margin), Cases {row['Cases']:,.0f}"
+                        f"  {i+1}. {row[dimension_key]}: Revenue {format_currency(row['Revenue'])}, Profit {format_currency(row['Gross_Profit'])} ({row.get('Margin_%', 0):.1f}% margin), Cases {row['Cases']:,.0f}"
                         for i, row in enumerate(pivot_table[:min(len(pivot_table), 10)])  # Show first 10 in prompt
                     ])
                     

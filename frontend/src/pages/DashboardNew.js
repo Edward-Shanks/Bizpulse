@@ -419,7 +419,7 @@ const Dashboard = () => {
         Month_Name: item?.Month_Name ?? item?.['Month Name'],
         Revenue: item?.Revenue ?? 0,
         Gross_Profit: item?.Gross_Profit ?? 0,
-        Units: item?.Units ?? 0,
+        Cases: item?.Cases ?? 0,
       }))
       .filter(item => !!item.Month_Name)
       .sort((a,b) => monthOrder.indexOf(a.Month_Name) - monthOrder.indexOf(b.Month_Name));
@@ -465,8 +465,8 @@ const Dashboard = () => {
     if (previousPeriod && previousPeriod.Gross_Profit > 0) {
       profitGrowth = ((currentPeriod.Gross_Profit - previousPeriod.Gross_Profit) / previousPeriod.Gross_Profit) * 100;
     }
-    if (previousPeriod && previousPeriod.Units > 0) {
-      unitsGrowth = ((currentPeriod.Units - previousPeriod.Units) / previousPeriod.Units) * 100;
+    if (previousPeriod && previousPeriod.Cases > 0) {
+      unitsGrowth = ((currentPeriod.Cases - previousPeriod.Cases) / previousPeriod.Cases) * 100;
     }
   }
   
@@ -1072,8 +1072,8 @@ const Dashboard = () => {
             title="Business vs Cases" 
             chartName="businessCases"
             renderChart={({ businessData: chartBusinessData }) => {
-              // Sort by Units descending (largest first)
-              const sortedData = [...chartBusinessData].sort((a, b) => (b.Units || 0) - (a.Units || 0));
+              // Sort by Cases descending (largest first)
+              const sortedData = [...chartBusinessData].sort((a, b) => (b.Cases || 0) - (a.Cases || 0));
               return (
               <div className="h-80">
                 {sortedData.length > 0 ? (
@@ -1083,7 +1083,7 @@ const Dashboard = () => {
                       labels: sortedData.map(item => item.Business),
                       datasets: [{
                         label: 'Cases',
-                        data: sortedData.map(item => item.Units),
+                        data: sortedData.map(item => item.Cases),
                         backgroundColor: colorsWithOpacity,
                         borderRadius: 8
                       }]

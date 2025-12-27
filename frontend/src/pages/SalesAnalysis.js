@@ -386,7 +386,7 @@ const SalesAnalysis = () => {
   const totalRevenue =
     data?.total_revenue ?? yearlyData.reduce((sum, item) => sum + (item.Revenue || 0), 0);
   const totalUnits =
-    data?.total_units ?? yearlyData.reduce((sum, item) => sum + (item.Units || 0), 0);
+    data?.total_units ?? yearlyData.reduce((sum, item) => sum + (item.Cases || 0), 0);
   const totalProfit =
     data?.total_profit ?? yearlyData.reduce((sum, item) => sum + (item.Gross_Profit || 0), 0);
   const avgPrice = totalUnits > 0 ? totalRevenue / totalUnits : 0;

@@ -27,12 +27,13 @@ def safe_float(value: Any) -> float:
 
 def format_currency(value: float) -> str:
     """
-    Format currency value with M (millions) or k (thousands) suffix
+    Format currency value with M (millions) or K (thousands) suffix
+    CRITICAL: Values < 1M should show as K, not as 0.XXM (e.g., €20K not €0.02M)
     """
     if abs(value) >= 1_000_000:
-        return f"€{(value / 1_000_000):.1f}M"
+        return f"€{(value / 1_000_000):.2f}M"
     elif abs(value) >= 1_000:
-        return f"€{(value / 1_000):.1f}k"
+        return f"€{(value / 1_000):.0f}K"
     else:
         return f"€{value:,.0f}"
 

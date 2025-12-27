@@ -46,7 +46,7 @@ class AnalyticsService:
                     "_id": "$Year",
                     "Revenue": {"$sum": {"$toDouble": "$Revenue"}},
                     "Gross_Profit": {"$sum": {"$toDouble": "$Gross_Profit"}},
-                    "Units": {"$sum": {"$toDouble": "$Units"}}
+                    "Cases": {"$sum": {"$toDouble": "$Units"}}
                 }
             }
         ]
@@ -58,7 +58,7 @@ class AnalyticsService:
                 "Year": int(item['_id']) if item['_id'] else 0,
                 "Revenue": safe_float(item.get('Revenue', 0)),
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
-                "Units": safe_float(item.get('Units', 0))
+                "Cases": safe_float(item.get('Cases', 0))
             })
         # Sort by Year in ascending order (2023, 2024, 2025)
         yearly_list = sort_by_year(yearly_list, "Year")
@@ -71,7 +71,7 @@ class AnalyticsService:
                     "_id": "$Business",
                     "Revenue": {"$sum": {"$toDouble": "$Revenue"}},
                     "Gross_Profit": {"$sum": {"$toDouble": "$Gross_Profit"}},
-                    "Units": {"$sum": {"$toDouble": "$Units"}}
+                    "Cases": {"$sum": {"$toDouble": "$Units"}}
                 }
             }
         ]
@@ -83,7 +83,7 @@ class AnalyticsService:
                 "Business": str(item['_id']) if item['_id'] else "Unknown",
                 "Revenue": safe_float(item.get('Revenue', 0)),
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
-                "Units": safe_float(item.get('Units', 0))
+                "Cases": safe_float(item.get('Cases', 0))
             })
         # Sort by Revenue in descending order (largest first)
         business_list = sort_by_metric(business_list, "Revenue", reverse=True)
@@ -105,7 +105,7 @@ class AnalyticsService:
                     "_id": "$Month_Name",
                     "Revenue": {"$sum": {"$toDouble": "$Revenue"}},
                     "Gross_Profit": {"$sum": {"$toDouble": "$Gross_Profit"}},
-                    "Units": {"$sum": {"$toDouble": "$Units"}}
+                    "Cases": {"$sum": {"$toDouble": "$Units"}}
                 }
             }
         ]
@@ -117,7 +117,7 @@ class AnalyticsService:
                 "Month_Name": str(item['_id']) if item['_id'] else "Unknown",
                 "Revenue": safe_float(item.get('Revenue', 0)),
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
-                "Units": safe_float(item.get('Units', 0))
+                "Cases": safe_float(item.get('Cases', 0))
             })
         # Sort by Month_Name in chronological order (Jan, Feb, Mar, ...)
         monthly_list = sort_by_month(monthly_list, "Month_Name")
@@ -130,7 +130,7 @@ class AnalyticsService:
                     "_id": "$Channel",
                     "Revenue": {"$sum": {"$toDouble": "$Revenue"}},
                     "Gross_Profit": {"$sum": {"$toDouble": "$Gross_Profit"}},
-                    "Units": {"$sum": {"$toDouble": "$Units"}}
+                    "Cases": {"$sum": {"$toDouble": "$Units"}}
                 }
             }
         ]
@@ -142,7 +142,7 @@ class AnalyticsService:
                 "Channel": str(item['_id']) if item['_id'] else "Unknown",
                 "Revenue": safe_float(item.get('Revenue', 0)),
                 "Gross_Profit": safe_float(item.get('Gross_Profit', 0)),
-                "Units": safe_float(item.get('Units', 0))
+                "Cases": safe_float(item.get('Cases', 0))
             })
         # Sort by Revenue in descending order (largest first)
         channel_list = sort_by_metric(channel_list, "Revenue", reverse=True)

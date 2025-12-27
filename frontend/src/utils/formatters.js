@@ -1,13 +1,14 @@
 // Format number to thousands with 'k' suffix
+// CRITICAL: Values < 1M should show as K, not as 0.XXM
 export const formatNumber = (value) => {
   if (!value && value !== 0) return '€0';
   
   const num = parseFloat(value);
   
   if (num >= 1000000) {
-    return `€${(num / 1000000).toFixed(1)}M`;
+    return `€${(num / 1000000).toFixed(2)}M`;
   } else if (num >= 1000) {
-    return `€${(num / 1000).toFixed(1)}k`;
+    return `€${(num / 1000).toFixed(0)}K`;
   }
   return `€${num.toFixed(0)}`;
 };
@@ -33,6 +34,7 @@ export const formatCurrency = (value) => {
 };
 
 // For chart tooltips
+// CRITICAL: Values < 1M should show as K, not as 0.XXM
 export const formatChartValue = (value) => {
   if (!value && value !== 0) return '€0';
   
@@ -41,7 +43,7 @@ export const formatChartValue = (value) => {
   if (num >= 1000000) {
     return `€${(num / 1000000).toFixed(2)}M`;
   } else if (num >= 1000) {
-    return `€${(num / 1000).toFixed(1)}k`;
+    return `€${(num / 1000).toFixed(0)}K`;
   }
   return `€${num.toFixed(0)}`;
 };

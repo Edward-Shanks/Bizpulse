@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import axios from 'axios';
 import { useAuth, API } from '@/App';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,8 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingState, setLoadingState] = useState('thinking'); // Progressive loading states
+  const loadingIntervalRef = useRef(null); // Store interval ID in ref for cleanup
   const [lastPivot, setLastPivot] = useState([]);
   const [pivotKey, setPivotKey] = useState(0); // Key to force re-render when pivot data changes
   const [streamingMessage, setStreamingMessage] = useState('');
@@ -29,6 +31,16 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   const [dynamicFollowUps, setDynamicFollowUps] = useState([]);
   const [sessionId, setSessionId] = useState(`insight-${Date.now()}`);
   const [isContextCleared, setIsContextCleared] = useState(false);
+  
+  // Progressive loading states dictionary
+  const loadingStates = [
+    'thinking',
+    'analyzing your question',
+    'processing data',
+    'generating insights',
+    'preparing response',
+    'finalizing answer'
+  ];
 
   if (!isOpen) return null;
 
@@ -151,6 +163,23 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    setLoadingState('thinking');
+    
+    // Start progressive loading states
+    let loadingStateIndex = 0;
+    const intervalId = setInterval(() => {
+      loadingStateIndex = loadingStateIndex + 1;
+      // CRITICAL: Stop at the last state - don't loop back to "thinking"
+      if (loadingStateIndex >= loadingStates.length) {
+        // Reached the last state - stop rotation and clear interval
+        clearInterval(intervalId);
+        loadingIntervalRef.current = null;
+        setLoadingState(loadingStates[loadingStates.length - 1]); // Keep showing last state
+        return;
+      }
+      setLoadingState(loadingStates[loadingStateIndex]);
+    }, 11000); // Change state every 11 seconds to allow user to read each state without repetition
+    loadingIntervalRef.current = intervalId; // Store in ref for cleanup
 
     try {
       // Build conversation history from previous messages
@@ -295,6 +324,15 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                       const chunkText = data.data || '';
                       fullResponse += chunkText;
                       
+                      // CRITICAL: Stop loading states immediately when first content arrives
+                      if (loadingIntervalRef.current && fullResponse.length === chunkText.length) {
+                        // First chunk received - stop loading states immediately
+                        clearInterval(loadingIntervalRef.current);
+                        loadingIntervalRef.current = null;
+                        setLoading(false);
+                        setLoadingState('thinking');
+                      }
+                      
                       // Update message in real-time (this triggers re-render)
                       setMessages((prev) => 
                         prev.map(msg => 
@@ -342,12 +380,16 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                         )
                       );
                     } else if (data.type === 'error') {
-                      // Handle error chunk - show error message to user
+                      // Handle error chunk - show user-friendly error message
                       console.error('Streaming error received:', data.data);
                       setLoading(false);
+                      
+                      // Show user-friendly message (never show technical error details)
+                      const userFriendlyMessage = 'I apologize, but I encountered an issue processing your request. Please try rephrasing your question or try again in a moment.';
+                      
                       const errorMessage = {
                         role: 'ai',
-                        content: `Error: ${data.data || 'An error occurred while processing your request. Please try again.'}`,
+                        content: userFriendlyMessage,
                         messageId: Date.now()
                       };
                       setMessages((prev) => {
@@ -366,11 +408,20 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
           }
           
           // Streaming complete - metadata already handled in the loop
+          if (loadingIntervalRef.current) {
+            clearInterval(loadingIntervalRef.current);
+            loadingIntervalRef.current = null;
+          }
           setLoading(false);
+          setLoadingState('thinking');
           return;
           
         } catch (error) {
           console.error('Streaming error, falling back:', error);
+          if (loadingIntervalRef.current) {
+            clearInterval(loadingIntervalRef.current);
+            loadingIntervalRef.current = null;
+          }
           // Remove the streaming message and fallback to non-streaming
           setMessages((prev) => prev.filter(msg => msg.messageId !== aiMessageId));
           useStreaming = false;
@@ -383,6 +434,14 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         const response = await axios.post(endpoint, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        
+        // CRITICAL: Stop loading states immediately when response is received
+        if (loadingIntervalRef.current) {
+          clearInterval(loadingIntervalRef.current);
+          loadingIntervalRef.current = null;
+        }
+        setLoading(false);
+        setLoadingState('thinking');
 
         // Check if question needs clarification
         const needsClarification = response.data?.needs_clarification || false;
@@ -415,10 +474,39 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
           }
         }
         
+        // CRITICAL: Stop loading states immediately when response is received
+        if (loadingIntervalRef.current) {
+          clearInterval(loadingIntervalRef.current);
+          loadingIntervalRef.current = null;
+        }
+        setLoading(false);
+        setLoadingState('thinking');
+        
         if (needsClarification) {
           // Question needs clarification - show suggested questions
-          setLoading(false);
-          const clarificationResponse = response.data?.response || 'I want to make sure I understand your question correctly. Could you please select one of these clarified versions, or rewrite your question?';
+          let clarificationResponse = response.data?.response || 'I want to make sure I understand your question correctly. Could you please select one of these clarified versions, or rewrite your question?';
+          
+          // CRITICAL: Sanitize clarification response to remove technical error details
+          const technicalErrorPatterns = [
+            /503.*Ollama/i,
+            /Ollama service not available/i,
+            /localhost:\d+/i,
+            /Error:\s*\d+:/i,
+            /HTTP.*error/i,
+            /Connection.*refused/i,
+            /Service.*unavailable/i,
+            /^\d{3}:/, // Status codes like "503:"
+            /Ollama|Perplexity|vLLM/i, // LLM provider names
+            /http:\/\/localhost/i,
+            /http:\/\/\d+\.\d+\.\d+\.\d+/i // IP addresses
+          ];
+          
+          const containsTechnicalError = technicalErrorPatterns.some(pattern => pattern.test(clarificationResponse));
+          if (containsTechnicalError) {
+            console.error('Technical error detected in clarification response, sanitizing:', clarificationResponse);
+            clarificationResponse = 'I want to make sure I understand your question correctly. Could you please select one of these clarified versions, or rewrite your question?';
+          }
+          
           const clarificationMessage = {
             role: 'ai',
             content: clarificationResponse,
@@ -446,6 +534,29 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
           } else {
             fullResponse = String(fullResponse || 'No response');
           }
+        }
+        
+        // CRITICAL: Sanitize response to remove technical error details
+        // Check if response contains technical error information (status codes, service names, URLs, etc.)
+        const technicalErrorPatterns = [
+          /503.*Ollama/i,
+          /Ollama service not available/i,
+          /localhost:\d+/i,
+          /Error:\s*\d+:/i,
+          /HTTP.*error/i,
+          /Connection.*refused/i,
+          /Service.*unavailable/i,
+          /^\d{3}:/, // Status codes like "503:"
+          /Ollama|Perplexity|vLLM/i, // LLM provider names
+          /http:\/\/localhost/i,
+          /http:\/\/\d+\.\d+\.\d+\.\d+/i // IP addresses
+        ];
+        
+        const containsTechnicalError = technicalErrorPatterns.some(pattern => pattern.test(fullResponse));
+        if (containsTechnicalError) {
+          // Replace technical error with user-friendly message
+          console.error('Technical error detected in response, sanitizing:', fullResponse);
+          fullResponse = 'I apologize, but I encountered an issue processing your request. Please try rephrasing your question or try again in a moment.';
         }
         // CRITICAL: Extract pivot table from response
         // Response structure: response.data = InsightsChatResponse { response, data: { pivot_table, ... } }
@@ -503,7 +614,12 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         }
         
         // Start streaming the message word by word
+        if (loadingIntervalRef.current) {
+          clearInterval(loadingIntervalRef.current);
+          loadingIntervalRef.current = null;
+        }
         setLoading(false);
+        setLoadingState('thinking');
         // Reset context cleared flag after sending first message after clear
         if (isContextCleared) {
           setIsContextCleared(false);
@@ -525,18 +641,40 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         });
       } // End of if (!useStreaming) block
     } catch (error) {
+      // Log technical error details to console for debugging
       console.error('InsightModal API Error:', error);
       console.error('Error details:', error.response?.data || error.message);
-      toast.error('AI Assistant is unavailable');
-      setLoading(false);
-      // Ensure error message content is always a string
-      let errorContent = error.response?.data?.detail || error.message || 'Sorry, I am currently unavailable. Please try again later.';
-      if (typeof errorContent !== 'string') {
-        errorContent = String(errorContent || 'Sorry, I am currently unavailable. Please try again later.');
+      console.error('Error status:', error.response?.status);
+      console.error('Error response:', error.response);
+      
+      // Show user-friendly error message (never show technical details)
+      toast.error('AI Assistant is temporarily unavailable. Please try again in a moment.');
+      // CRITICAL: Stop loading states immediately on error
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
       }
+      setLoading(false);
+      setLoadingState('thinking');
+      setLoadingState('thinking');
+      
+      // Determine user-friendly message based on error type
+      let userFriendlyMessage = 'I apologize, but I encountered an issue processing your request. Please try rephrasing your question or try again in a moment.';
+      
+      if (error.response?.status === 503) {
+        userFriendlyMessage = 'The AI service is temporarily unavailable. Please try again in a few moments.';
+      } else if (error.response?.status === 500) {
+        userFriendlyMessage = 'I encountered an internal error. Please try rephrasing your question or contact support if the issue persists.';
+      } else if (error.response?.status === 404) {
+        userFriendlyMessage = 'The requested service could not be found. Please try again or contact support.';
+      } else if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error')) {
+        userFriendlyMessage = 'Unable to connect to the AI service. Please check your connection and try again.';
+      }
+      
       const errorMessage = {
         role: 'ai',
-        content: errorContent
+        content: userFriendlyMessage,
+        messageId: Date.now()
       };
       setMessages((prev) => [...prev, errorMessage]);
     }
@@ -854,7 +992,9 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                         <div className="w-2 h-2 bg-amber-600 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }} />
                         <div className="w-2 h-2 bg-amber-600 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }} />
                       </div>
-                      <span className="text-amber-700 font-medium text-sm">Thinking...</span>
+                      <span className="text-amber-700 font-medium text-sm capitalize">
+                        {loadingState}...
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1015,13 +1155,15 @@ const AIDataVisuals = ({ pivot }) => {
                 const v = ctx.parsed;
                 const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
                 const percentage = ((v / total) * 100).toFixed(1);
-                if (Math.abs(v) >= 1_000_000) return `${ctx.label}: €${(v/1_000_000).toFixed(1)}M (${percentage}%)`;
-                if (Math.abs(v) >= 1_000) return `${ctx.label}: €${(v/1_000).toFixed(1)}k (${percentage}%)`;
+                // CRITICAL: Use K (uppercase) for values < 1M, M for values >= 1M
+                if (Math.abs(v) >= 1_000_000) return `${ctx.label}: €${(v/1_000_000).toFixed(2)}M (${percentage}%)`;
+                if (Math.abs(v) >= 1_000) return `${ctx.label}: €${(v/1_000).toFixed(0)}K (${percentage}%)`;
                 return `${ctx.label}: €${v.toLocaleString()} (${percentage}%)`;
               } else {
                 const v = ctx.parsed.y;
-                if (Math.abs(v) >= 1_000_000) return `${ctx.dataset.label}: €${(v/1_000_000).toFixed(1)}M`;
-                if (Math.abs(v) >= 1_000) return `${ctx.dataset.label}: €${(v/1_000).toFixed(1)}k`;
+                // CRITICAL: Use K (uppercase) for values < 1M, M for values >= 1M
+                if (Math.abs(v) >= 1_000_000) return `${ctx.dataset.label}: €${(v/1_000_000).toFixed(2)}M`;
+                if (Math.abs(v) >= 1_000) return `${ctx.dataset.label}: €${(v/1_000).toFixed(0)}K`;
                 return `${ctx.dataset.label}: €${v.toLocaleString()}`;
               }
             },
@@ -1037,9 +1179,10 @@ const AIDataVisuals = ({ pivot }) => {
           beginAtZero: true,
           ticks: {
             callback: (v) => {
-              if (Math.abs(v) >= 1_000_000) return `€${(v/1_000_000).toFixed(1)}M`;
-              if (Math.abs(v) >= 1_000) return `€${(v/1_000).toFixed(1)}k`;
-              return `€${v}`;
+              // CRITICAL: Use K (uppercase) for values < 1M, M for values >= 1M
+              if (Math.abs(v) >= 1_000_000) return `€${(v/1_000_000).toFixed(2)}M`;
+              if (Math.abs(v) >= 1_000) return `€${(v/1_000).toFixed(0)}K`;
+              return `€${v.toLocaleString()}`;
             },
           },
         },
@@ -1079,11 +1222,11 @@ const AIDataVisuals = ({ pivot }) => {
                               // Year column - show as integer, no formatting
                               return num.toString();
                             } else if (k.includes('Revenue') || k.includes('Profit') || k.includes('Gross')) {
-                              // Currency columns
+                              // Currency columns - CRITICAL: Use K (uppercase) for values < 1M, M for values >= 1M
                               if (Math.abs(num) >= 1_000_000) {
-                                return `€${(num/1_000_000).toFixed(1)}M`;
+                                return `€${(num/1_000_000).toFixed(2)}M`;
                               } else if (Math.abs(num) >= 1_000) {
-                                return `€${(num/1_000).toFixed(1)}k`;
+                                return `€${(num/1_000).toFixed(0)}K`;
                               } else {
                                 return `€${num.toLocaleString('en-US')}`;
                               }

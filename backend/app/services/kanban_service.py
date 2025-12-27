@@ -10,7 +10,7 @@ from app.models.kanban import (
     GoalRequest, GoalResponse, GenerateGoalsRequest, UpdateGoalRequest,
     AcceptCampaignRequest
 )
-from app.utils.ai_service import query_perplexity
+from app.utils.ai_service import query_llm
 from datetime import datetime, timezone
 import pandas as pd
 import json
@@ -185,19 +185,19 @@ class KanbanService:
             if df.empty:
                 raise HTTPException(status_code=404, detail="No data available in database")
             
-            required_columns = ['Revenue', 'Gross_Profit', 'Units', 'Year', 'Business', 'Channel', 'Customer', 'Brand']
+            required_columns = ['Revenue', 'Gross_Profit', 'Cases', 'Year', 'Business', 'Channel', 'Customer', 'Brand']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 raise HTTPException(status_code=500, detail=f"Missing required columns: {missing_columns}")
             
             total_revenue = float(df['Revenue'].sum()) if not df.empty else 0
             total_profit = float(df['Gross_Profit'].sum()) if not df.empty else 0
-            total_units = float(df['Units'].sum()) if not df.empty else 0
+            total_units = float(df['Cases'].sum()) if not df.empty else 0
             
             yearly_data = df.groupby('Year').agg({
                 'Revenue': 'sum',
                 'Gross_Profit': 'sum',
-                'Units': 'sum'
+                'Cases': 'sum'
             }).reset_index()
             
             business_perf = df.groupby('Business').agg({
@@ -299,7 +299,7 @@ Return ONLY valid JSON array, no additional text.
             
             try:
                 logger.info("🤖 Calling Perplexity AI to generate recommendations...")
-                ai_response = await query_perplexity(ai_prompt)
+                ai_response = await query_llm(ai_prompt)
                 
                 if not ai_response or len(ai_response.strip()) < 10:
                     logger.error("❌ AI service returned empty or invalid response")

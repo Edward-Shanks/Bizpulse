@@ -54,156 +54,53 @@ def convert_to_native_types(obj):
         else:
             return str(obj)
 
-async def query_perplexity(prompt, conversation_history=None):
-    """Query Perplexity API with proper error handling and retry logic"""
-    if not PPLX_API_KEY1:
-        return "API key not configured. Please set PPLX_API_KEY1 environment variable."
-    
-    url = "https://api.perplexity.ai/chat/completions"
-    headers = {"Authorization": f"Bearer {PPLX_API_KEY1}", "Content-Type": "application/json"}
-    
-    system_message = (
-        "You are Vector AI, a friendly customer intelligence analyst for ThriveBrands, "
-        "assisting with actionable insights from Shopify customer data. "
-        "Analyze the provided data and deliver a detailed, confident answer in a conversational tone. "
-        "All monetary values are in Euros (€) or the currency shown in the data. "
-        "State results definitively, e.g., 'After analyzing the customer data, [answer].' "
-        "Include trends, growth rates (%), and percentages where relevant. "
-        "For customer behavior questions, identify patterns with specific numbers. "
-        "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
-        "Use conversation history for context in follow-ups. "
-        "Keep it engaging and provide comprehensive analysis. "
-        "At the end of your response, include a section with 3-5 numbered recommendations, each on a new line starting with a number."
-    )
-    
-    messages = [{"role": "system", "content": system_message}]
-    
-    # Add conversation history if provided
-    if conversation_history:
-        # Validate and clean conversation history
-        valid_roles = {"system", "user", "assistant"}
-        for msg in conversation_history:
-            if isinstance(msg, dict) and "role" in msg and "content" in msg:
-                role = msg.get("role", "user")
-                # Ensure role is valid
-                if role not in valid_roles:
-                    logger.warning(f"Invalid role '{role}', defaulting to 'user'")
-                    role = "user"
-                
-                # Ensure content is a string and not too long
-                content = str(msg.get("content", ""))
-                if len(content) > 10000:  # Limit content length
-                    content = content[:10000] + "... [truncated]"
-                
-                # Only add non-empty messages
-                if content.strip():
-                    messages.append({
-                        "role": role,
-                        "content": content
+async def query_llm(prompt, conversation_history=None):
+    """Query local LLM (Ollama) using the unified ai_service interface"""
+    try:
+        # Import the unified query_llm function
+        from app.utils.ai_service import query_llm as unified_query_llm
+        
+        system_message = (
+            "You are Vector AI, a friendly customer intelligence analyst for ThriveBrands, "
+            "assisting with actionable insights from Shopify customer data. "
+            "Analyze the provided data and deliver a detailed, confident answer in a conversational tone. "
+            "All monetary values are in Euros (€) or the currency shown in the data. "
+            "State results definitively, e.g., 'After analyzing the customer data, [answer].' "
+            "Include trends, growth rates (%), and percentages where relevant. "
+            "For customer behavior questions, identify patterns with specific numbers. "
+            "Always provide 3-5 specific, actionable recommendations with clear 'why' and 'how' for each. "
+            "Use conversation history for context in follow-ups. "
+            "Keep it engaging and provide comprehensive analysis. "
+            "At the end of your response, include a section with 3-5 numbered recommendations, each on a new line starting with a number."
+        )
+        
+        # Convert conversation_history to the format expected by query_llm
+        formatted_history = []
+        if conversation_history:
+            for msg in conversation_history:
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    formatted_history.append({
+                        "role": msg.get("role", "user"),
+                        "content": str(msg.get("content", ""))[:10000]  # Limit content length
                     })
-    
-    # Add current prompt (limit length to avoid 400 errors)
-    prompt_str = str(prompt)
-    if len(prompt_str) > 15000:  # Limit prompt length
-        logger.warning(f"Prompt too long ({len(prompt_str)} chars), truncating to 15000")
-        prompt_str = prompt_str[:15000] + "... [truncated]"
-    
-    messages.append({"role": "user", "content": prompt_str})
-    
-    # Validate total payload size (Perplexity has limits)
-    payload = {
-        "model": "sonar-pro",
-        "messages": messages,
-        "max_tokens": 2000,
-        "temperature": 0.7
-    }
-    
-    # Check payload size
-    payload_json = json.dumps(payload)
-    payload_size = len(payload_json)
-    if payload_size > 200000:  # ~200KB limit (conservative)
-        logger.warning(f"Payload too large ({payload_size} bytes), truncating conversation history")
-        # Keep only system message and current prompt, remove old conversation history
-        messages = [messages[0], messages[-1]]  # System + current user message
-        payload["messages"] = messages
-        payload_json = json.dumps(payload)
-        logger.info(f"Reduced payload to {len(payload_json)} bytes")
-    
-    # Retry logic with exponential backoff
-    max_retries = 3
-    retry_delay = 1
-    
-    for attempt in range(max_retries):
-        try:
-            def make_request():
-                response = requests.post(url, headers=headers, json=payload, timeout=60)
-                response.raise_for_status()
-                result = response.json()
-                if 'choices' not in result or len(result['choices']) == 0:
-                    raise ValueError("Invalid response format from Perplexity API")
-                return result['choices'][0]['message']['content']
-            
-            # Run the synchronous request in a thread pool
-            result = await asyncio.to_thread(make_request)
-            logger.info(f"✅ Perplexity API call successful on attempt {attempt + 1}")
-            return result
-            
-        except requests.exceptions.HTTPError as e:
-            error_detail = ""
-            if e.response is not None:
-                try:
-                    error_detail = e.response.json()
-                except:
-                    error_detail = e.response.text
-                status_code = e.response.status_code
-                
-                if status_code == 400:
-                    logger.error(f"❌ Perplexity API 400 Bad Request")
-                    logger.error(f"Error details: {error_detail}")
-                    logger.error(f"Payload messages count: {len(messages)}")
-                    logger.error(f"Total payload size: {len(json.dumps(payload))} bytes")
-                    # Don't retry 400 errors (bad request)
-                    error_msg = str(error_detail)
-                    if isinstance(error_detail, dict):
-                        error_msg = error_detail.get("message", str(error_detail))
-                    return f"I apologize, but I encountered an error processing your request. Please try rephrasing your question or contact support if the issue persists. Error: {error_msg[:200]}"
-                elif status_code == 429:
-                    # Rate limit - retry
-                    if attempt < max_retries - 1:
-                        logger.warning(f"⚠️ Rate limit hit, retrying in {retry_delay}s...")
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2
-                        continue
-                elif status_code >= 500:
-                    # Server error - retry
-                    if attempt < max_retries - 1:
-                        logger.warning(f"⚠️ Server error {status_code}, retrying in {retry_delay}s...")
-                        await asyncio.sleep(retry_delay)
-                        retry_delay *= 2
-                        continue
-            else:
-                logger.error(f"❌ Perplexity API HTTP error: {str(e)}")
-                return f"Error querying AI: {str(e)}"
-            
-        except requests.exceptions.Timeout as e:
-            logger.warning(f"⚠️ Perplexity API timeout on attempt {attempt + 1}/{max_retries}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2
-                continue
-            else:
-                logger.error(f"❌ Perplexity API timeout after {max_retries} attempts")
-                return "I apologize, but the AI service is taking too long to respond. Please try again."
-                
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"⚠️ Perplexity API request error on attempt {attempt + 1}/{max_retries}: {str(e)}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-                retry_delay *= 2
-                continue
-            else:
-                logger.error(f"❌ Perplexity API request failed after {max_retries} attempts: {str(e)}")
-                return f"Error querying AI: {str(e)}"
+        
+        # Call the unified LLM service
+        result = await unified_query_llm(
+            prompt=str(prompt)[:15000],  # Limit prompt length
+            conversation_history=formatted_history,
+            custom_system_message=system_message,
+            temperature=0.7,
+            max_tokens=2000
+        )
+        
+        logger.info(f"✅ Local LLM call successful")
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Local LLM error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return f"I apologize, but I encountered an error processing your request. Please try again or contact support if the issue persists. Error: {str(e)[:200]}"
                 
         except (KeyError, ValueError) as e:
             logger.error(f"❌ Perplexity API response parsing error: {str(e)}")
@@ -311,7 +208,7 @@ Important:
 - Return ONLY valid JSON, no additional text"""
 
     try:
-        response = await query_perplexity(prompt, None)
+        response = await query_llm(prompt, None)
         # Extract JSON from response (might have markdown code blocks)
         json_match = re.search(r'\{.*\}', response, re.DOTALL)
         if json_match:
@@ -759,7 +656,7 @@ Please provide:
 Be specific, use exact numbers from the data provided, and provide actionable insights based on THIS question."""
 
         # Query AI
-        response_text = await query_perplexity(full_prompt, conv_history if conv_history else None)
+        response_text = await query_llm(full_prompt, conv_history if conv_history else None)
         
         # Generate recommendations and follow-up questions
         context_summary = {

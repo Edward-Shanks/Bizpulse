@@ -504,13 +504,13 @@ const CustomerAnalysis = () => {
         };
       }
       case 'unitsByChannel': {
-        const unitsSorted = [...channelData].sort((a, b) => (b?.Units || 0) - (a?.Units || 0));
+        const unitsSorted = [...channelData].sort((a, b) => (b?.Cases || 0) - (a?.Cases || 0));
         const topUnitsChannel = unitsSorted[0] || {};
         return {
           insights: [
             {
               type: 'positive',
-              text: `${topUnitsChannel?.Channel || 'Leading channel'} leads volume with ${formatUnits(topUnitsChannel?.Units || 0)} cases.`,
+              text: `${topUnitsChannel?.Channel || 'Leading channel'} leads volume with ${formatUnits(topUnitsChannel?.Cases || 0)} cases.`,
             },
             {
               type: 'attention',
@@ -521,7 +521,7 @@ const CustomerAnalysis = () => {
             'Use AI to identify cross-sell opportunities in high-volume channels.',
             'Align inventory planning with channel-specific demand trends.',
           ],
-          context: { ...safeContext, metric: 'channel_units' },
+          context: { ...safeContext, metric: 'channel_cases' },
         };
       }
       default:

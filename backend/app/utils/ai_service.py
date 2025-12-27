@@ -69,40 +69,13 @@ async def query_llm(
             
             return response
         except Exception as provider_error:
-            # If Ollama fails and we're using Ollama, try Perplexity as fallback
-            if provider_name_actual == "ollama":
-                logger.warning("=" * 80)
-                logger.warning(f"⚠️  OLLAMA FAILED: {str(provider_error)}")
-                logger.warning(f"🔄 FALLING BACK TO PERPLEXITY")
-                logger.warning("=" * 80)
-                
-                try:
-                    # Get Perplexity provider as fallback
-                    fallback_provider = get_llm_provider("perplexity")
-                    if fallback_provider.is_available():
-                        logger.info("🔍 PERPLEXITY: Using as fallback provider")
-                        response = await fallback_provider.generate(
-                            prompt=prompt,
-                            conversation_history=conversation_history,
-                            custom_system_message=custom_system_message,
-                            temperature=temperature,
-                            max_tokens=max_tokens,
-                            **kwargs
-                        )
-                        logger.info("=" * 80)
-                        logger.info(f"✅ LLM RESPONSE RECEIVED from PERPLEXITY (fallback)")
-                        logger.info(f"📝 Response Length: {len(response)} characters")
-                        logger.info("=" * 80)
-                        return response
-                    else:
-                        logger.error("❌ PERPLEXITY: Not available as fallback (API key missing)")
-                        raise provider_error  # Re-raise original error
-                except Exception as fallback_error:
-                    logger.error(f"❌ PERPLEXITY FALLBACK ALSO FAILED: {str(fallback_error)}")
-                    raise provider_error  # Re-raise original Ollama error
-            else:
-                # If not Ollama, just raise the original error
-                raise provider_error
+            # No automatic fallback - just raise the error
+            # Users can manually switch LLM provider via LLM_PROVIDER environment variable
+            logger.error("=" * 80)
+            logger.error(f"❌ LLM PROVIDER FAILED: {str(provider_error)}")
+            logger.error(f"💡 To switch providers, set LLM_PROVIDER environment variable to 'ollama', 'perplexity', or 'vllm'")
+            logger.error("=" * 80)
+            raise provider_error
     except Exception as e:
         logger.error(f"Error querying LLM: {str(e)}")
         raise

@@ -16,12 +16,24 @@ const AIAssistant = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingState, setLoadingState] = useState('thinking'); // Progressive loading states
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isContextCleared, setIsContextCleared] = useState(false);
   const [lastPivot, setLastPivot] = useState([]);
   const [pivotKey, setPivotKey] = useState(0);
   const scrollRef = useRef(null);
   const sessionId = useRef(`session-${Date.now()}`);
+  const loadingIntervalRef = useRef(null); // Store interval ID in ref for cleanup
+  
+  // Progressive loading states dictionary
+  const loadingStates = [
+    'thinking',
+    'analyzing your question',
+    'processing data',
+    'generating insights',
+    'preparing response',
+    'finalizing answer'
+  ];
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -65,6 +77,23 @@ const AIAssistant = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    setLoadingState('thinking');
+    
+    // Start progressive loading states
+    let loadingStateIndex = 0;
+    const intervalId = setInterval(() => {
+      loadingStateIndex = loadingStateIndex + 1;
+      // CRITICAL: Stop at the last state - don't loop back to "thinking"
+      if (loadingStateIndex >= loadingStates.length) {
+        // Reached the last state - stop rotation and clear interval
+        clearInterval(intervalId);
+        loadingIntervalRef.current = null;
+        setLoadingState(loadingStates[loadingStates.length - 1]); // Keep showing last state
+        return;
+      }
+      setLoadingState(loadingStates[loadingStateIndex]);
+    }, 11000); // Change state every 11 seconds to allow user to read each state without repetition
+    loadingIntervalRef.current = intervalId; // Store in ref for cleanup
 
     try {
       // Build conversation history from previous messages
@@ -141,7 +170,18 @@ const AIAssistant = () => {
                     const data = JSON.parse(line.slice(6));
                     
                     if (data.type === 'content') {
-                      fullResponse += data.data || '';
+                      const chunkText = data.data || '';
+                      fullResponse += chunkText;
+                      
+                      // CRITICAL: Stop loading states immediately when first content arrives
+                      if (loadingIntervalRef.current && fullResponse.length === chunkText.length) {
+                        // First chunk received - stop loading states immediately
+                        clearInterval(loadingIntervalRef.current);
+                        loadingIntervalRef.current = null;
+                        setLoading(false);
+                        setLoadingState('thinking');
+                      }
+                      
                       setMessages((prev) => 
                         prev.map(msg => 
                           msg.messageId === aiMessageId 
@@ -157,7 +197,12 @@ const AIAssistant = () => {
                             : msg
                         )
                       );
+                      if (loadingIntervalRef.current) {
+                        clearInterval(loadingIntervalRef.current);
+                        loadingIntervalRef.current = null;
+                      }
                       setLoading(false);
+                      setLoadingState('thinking');
                       return;
                     } else if (data.type === 'done') {
                       setMessages((prev) => 
@@ -167,7 +212,12 @@ const AIAssistant = () => {
                             : msg
                         )
                       );
+                      if (loadingIntervalRef.current) {
+                        clearInterval(loadingIntervalRef.current);
+                        loadingIntervalRef.current = null;
+                      }
                       setLoading(false);
+                      setLoadingState('thinking');
                       return;
                     }
                   } catch (e) {
@@ -178,10 +228,22 @@ const AIAssistant = () => {
             }
           }
           
+          if (loadingIntervalRef.current) {
+            clearInterval(loadingIntervalRef.current);
+            loadingIntervalRef.current = null;
+          }
           setLoading(false);
+          setLoadingState('thinking');
           return;
         } catch (error) {
           console.error('🔄 AIAssistant STREAMING: Error, falling back:', error);
+          // CRITICAL: Stop loading states immediately on error
+          if (loadingIntervalRef.current) {
+            clearInterval(loadingIntervalRef.current);
+            loadingIntervalRef.current = null;
+          }
+          setLoading(false);
+          setLoadingState('thinking');
           useStreaming = false;
         }
       }
@@ -190,6 +252,14 @@ const AIAssistant = () => {
       const response = await axios.post(`${API}/insights/chat`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      
+      // CRITICAL: Stop loading states immediately when response is received
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
+      }
+      setLoading(false);
+      setLoadingState('thinking');
 
       // Check if question needs clarification
       const needsClarification = response.data?.needs_clarification || false;
@@ -220,9 +290,40 @@ const AIAssistant = () => {
         }
       }
       
-      const fullResponse = response.data?.response || 'No response';
+      let fullResponse = response.data?.response || 'No response';
       // Ensure content is always a string
-      const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
+      if (typeof fullResponse !== 'string') {
+        if (fullResponse && typeof fullResponse === 'object') {
+          fullResponse = JSON.stringify(fullResponse);
+        } else {
+          fullResponse = String(fullResponse || 'No response');
+        }
+      }
+      
+      // CRITICAL: Sanitize response to remove technical error details
+      // Check if response contains technical error information (status codes, service names, URLs, etc.)
+      const technicalErrorPatterns = [
+        /503.*Ollama/i,
+        /Ollama service not available/i,
+        /localhost:\d+/i,
+        /Error:\s*\d+:/i,
+        /HTTP.*error/i,
+        /Connection.*refused/i,
+        /Service.*unavailable/i,
+        /^\d{3}:/, // Status codes like "503:"
+        /Ollama|Perplexity|vLLM/i, // LLM provider names
+        /http:\/\/localhost/i,
+        /http:\/\/\d+\.\d+\.\d+\.\d+/i // IP addresses
+      ];
+      
+      const containsTechnicalError = technicalErrorPatterns.some(pattern => pattern.test(fullResponse));
+      if (containsTechnicalError) {
+        // Replace technical error with user-friendly message
+        console.error('Technical error detected in response, sanitizing:', fullResponse);
+        fullResponse = 'I apologize, but I encountered an issue processing your request. Please try rephrasing your question or try again in a moment.';
+      }
+      
+      const safeContent = fullResponse;
       
       // CRITICAL: Extract pivot table from response
       // Response structure: response.data = InsightsChatResponse { response, data: { pivot_table, ... } }
@@ -278,7 +379,22 @@ const AIAssistant = () => {
       // Simulate streaming for better UX
       streamMessage(fullResponse, () => setStreamingMessage(''));
     } catch (error) {
-      toast.error('AI Assistant is unavailable');
+      // Log technical error details to console for debugging
+      console.error('AIAssistant API Error:', error);
+      console.error('Error details:', error.response?.data || error.message);
+      console.error('Error status:', error.response?.status);
+      
+      // Show user-friendly error message (never show technical details)
+      toast.error('AI Assistant is temporarily unavailable. Please try again in a moment.');
+      
+      // CRITICAL: Stop loading states immediately on error
+      if (loadingIntervalRef.current) {
+        clearInterval(loadingIntervalRef.current);
+        loadingIntervalRef.current = null;
+      }
+      setLoading(false);
+      setLoadingState('thinking');
+      
       const errorMessage = {
         role: 'ai',
         content: 'Sorry, I am currently unavailable. Please try again later.'
@@ -476,7 +592,9 @@ const AIAssistant = () => {
               <div className="flex justify-start mb-4">
                 <div className="bg-white px-4 py-3 rounded-2xl border border-gray-200 flex items-center gap-3">
                   <div className="w-8 h-8 border-4 border-amber-600 border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-sm text-gray-700 font-medium">Thinking...</span>
+                    <span className="text-sm text-gray-700 font-medium capitalize">
+                      {loadingState}...
+                    </span>
                 </div>
               </div>
             )}
@@ -634,8 +752,15 @@ const AIDataVisuals = ({ pivot }) => {
                 const label = ctx.dataset?.label || datasetLabel || 'Value';
                 
                 if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
-                  return `${label}: €${(value / 1000000).toFixed(2)}M`;
-                } else if (datasetLabel === 'Units') {
+                  // CRITICAL: Use K for values < 1M, M for values >= 1M
+                  if (Math.abs(value) >= 1_000_000) {
+                    return `${label}: €${(value / 1_000_000).toFixed(2)}M`;
+                  } else if (Math.abs(value) >= 1_000) {
+                    return `${label}: €${(value / 1_000).toFixed(0)}K`;
+                  } else {
+                    return `${label}: €${value.toLocaleString()}`;
+                  }
+                } else if (datasetLabel === 'Units' || datasetLabel === 'Cases') {
                   return `${label}: ${value.toLocaleString()}`;
                 } else if (datasetLabel === 'Margin_%') {
                   return `${label}: ${value.toFixed(2)}%`;
@@ -658,7 +783,14 @@ const AIDataVisuals = ({ pivot }) => {
           ticks: {
             callback: (value) => {
               if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
-                return `€${(value / 1000000).toFixed(1)}M`;
+                // CRITICAL: Use K for values < 1M, M for values >= 1M
+                if (Math.abs(value) >= 1_000_000) {
+                  return `€${(value / 1_000_000).toFixed(2)}M`;
+                } else if (Math.abs(value) >= 1_000) {
+                  return `€${(value / 1_000).toFixed(0)}K`;
+                } else {
+                  return `€${value.toLocaleString()}`;
+                }
               }
               return value.toLocaleString();
             }
@@ -672,7 +804,14 @@ const AIDataVisuals = ({ pivot }) => {
           ticks: {
             callback: (value) => {
               if (datasetLabel === 'Revenue' || datasetLabel === 'Gross_Profit') {
-                return `€${(value / 1000000).toFixed(1)}M`;
+                // CRITICAL: Use K for values < 1M, M for values >= 1M
+                if (Math.abs(value) >= 1_000_000) {
+                  return `€${(value / 1_000_000).toFixed(2)}M`;
+                } else if (Math.abs(value) >= 1_000) {
+                  return `€${(value / 1_000).toFixed(0)}K`;
+                } else {
+                  return `€${value.toLocaleString()}`;
+                }
               }
               return value.toLocaleString();
             }
@@ -690,9 +829,28 @@ const AIDataVisuals = ({ pivot }) => {
     return pivot.map((row, idx) => {
       const rowData = { ...row };
       // Format numbers for display
-      if (rowData.Revenue) rowData.Revenue = `€${(rowData.Revenue / 1000000).toFixed(2)}M`;
-      if (rowData.Gross_Profit) rowData.Gross_Profit = `€${(rowData.Gross_Profit / 1000000).toFixed(2)}M`;
-      if (rowData.Units) rowData.Units = rowData.Units.toLocaleString();
+      // CRITICAL: Use K for values < 1M, M for values >= 1M
+      if (rowData.Revenue) {
+        const rev = Number(rowData.Revenue);
+        rowData.Revenue = Math.abs(rev) >= 1_000_000 
+          ? `€${(rev / 1_000_000).toFixed(2)}M` 
+          : Math.abs(rev) >= 1_000 
+            ? `€${(rev / 1_000).toFixed(0)}K` 
+            : `€${rev.toLocaleString()}`;
+      }
+      if (rowData.Gross_Profit) {
+        const profit = Number(rowData.Gross_Profit);
+        rowData.Gross_Profit = Math.abs(profit) >= 1_000_000 
+          ? `€${(profit / 1_000_000).toFixed(2)}M` 
+          : Math.abs(profit) >= 1_000 
+            ? `€${(profit / 1_000).toFixed(0)}K` 
+            : `€${profit.toLocaleString()}`;
+      }
+      if (rowData.Units || rowData.Cases) {
+        const units = Number(rowData.Units || rowData.Cases);
+        rowData.Units = rowData.Units ? units.toLocaleString() : rowData.Units;
+        rowData.Cases = rowData.Cases ? units.toLocaleString() : rowData.Cases;
+      }
       if (rowData['Margin_%']) rowData['Margin_%'] = `${rowData['Margin_%']}%`;
       return rowData;
     });
