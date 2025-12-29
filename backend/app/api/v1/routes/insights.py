@@ -23,6 +23,9 @@ async def insights_chat(
     """
     MongoDB-based View Insights Chatbot for all screens
     Supports: Business Compass, Brands, Customers, Categories, Sales Analysis
+    
+    CRITICAL: This endpoint is fully async and should handle parallel requests.
+    If responses are sequential, check Ollama server configuration for concurrent request handling.
     """
     try:
         service = InsightsService(db)

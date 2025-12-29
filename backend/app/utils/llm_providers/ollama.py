@@ -21,7 +21,14 @@ class OllamaProvider(LLMProvider):
         self.model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct")  # Use your existing model
         self.fallback_model = os.getenv("OLLAMA_FALLBACK_MODEL", "llama3:70b")
         self.timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
-        self.client = httpx.AsyncClient(timeout=self.timeout)
+        # CRITICAL: Configure AsyncClient with limits for true parallelism
+        # This allows multiple concurrent requests to Ollama
+        self.client = httpx.AsyncClient(
+            timeout=self.timeout,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100)
+            # Note: http2=True removed - requires 'h2' package: pip install httpx[http2]
+            # HTTP/1.1 with connection pooling is sufficient for concurrency
+        )
         self.is_remote = "localhost" not in self.base_url and "127.0.0.1" not in self.base_url
         
         logger.info(f"Ollama provider initialized: {self.base_url}, model: {self.model}")
