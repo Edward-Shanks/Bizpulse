@@ -45,5 +45,14 @@ class UserResponse(BaseModel):
     role: Optional[str] = None
     status: str
 
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request model"""
+    token: str
+
+class RefreshTokenResponse(BaseModel):
+    """Refresh token response model"""
+    token: str
+    email: str
+
 
 

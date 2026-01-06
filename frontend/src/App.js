@@ -44,10 +44,9 @@ const AuthProvider = ({ children }) => {
         const payload = JSON.parse(atob(storedToken.split('.')[1]));
         const exp = payload.exp * 1000; // Convert to milliseconds
         if (exp < Date.now()) {
-          // Token expired
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          return null;
+          // Token expired - but don't remove it, we can try to refresh it
+          // Only remove if refresh fails
+          return storedToken; // Keep it for refresh attempt
         }
       } catch (e) {
         // Invalid token format
@@ -59,6 +58,29 @@ const AuthProvider = ({ children }) => {
     return storedToken;
   });
   const [user, setUser] = useState(localStorage.getItem('user'));
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshPromiseRef = React.useRef(null);
+
+  // Proactively refresh token if expired on app load
+  React.useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (storedToken) {
+      try {
+        const payload = JSON.parse(atob(storedToken.split('.')[1]));
+        const exp = payload.exp * 1000;
+        // If token expires in less than 5 minutes, refresh it proactively
+        const fiveMinutes = 5 * 60 * 1000;
+        if (exp < Date.now() + fiveMinutes) {
+          refreshToken().catch(() => {
+            // Refresh failed, user will be logged out
+          });
+        }
+      } catch (e) {
+        // Invalid token - will be handled by interceptor
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const login = (newToken, email) => {
     localStorage.setItem('token', newToken);
@@ -74,8 +96,98 @@ const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const refreshToken = async () => {
+    // If already refreshing, return the existing promise
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) {
+      throw new Error('No token to refresh');
+    }
+
+    setIsRefreshing(true);
+    const refreshPromise = axios
+      .post(`${API}/auth/refresh`, { token: currentToken })
+      .then((response) => {
+        const newToken = response.data.token;
+        const email = response.data.email;
+        login(newToken, email);
+        refreshPromiseRef.current = null;
+        setIsRefreshing(false);
+        return newToken;
+      })
+      .catch((error) => {
+        refreshPromiseRef.current = null;
+        setIsRefreshing(false);
+        // If refresh fails, logout user
+        logout();
+        // Redirect to login if we're in the browser
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        throw error;
+      });
+
+    refreshPromiseRef.current = refreshPromise;
+    return refreshPromise;
+  };
+
+  // Set up axios interceptor for automatic token refresh
+  React.useEffect(() => {
+    // Request interceptor - add token to all requests
+    const requestInterceptor = axios.interceptors.request.use(
+      (config) => {
+        const currentToken = localStorage.getItem('token');
+        if (currentToken && config.headers) {
+          config.headers.Authorization = `Bearer ${currentToken}`;
+        }
+        return config;
+      },
+      (error) => {
+        return Promise.reject(error);
+      }
+    );
+
+    // Response interceptor - handle 401 errors and refresh token
+    const responseInterceptor = axios.interceptors.response.use(
+      (response) => {
+        return response;
+      },
+      async (error) => {
+        const originalRequest = error.config;
+
+        // If error is 401 and we haven't already tried to refresh
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
+
+          try {
+            // Attempt to refresh the token
+            const newToken = await refreshToken();
+            
+            // Retry the original request with the new token
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return axios(originalRequest);
+          } catch (refreshError) {
+            // Refresh failed - user will be logged out by refreshToken
+            return Promise.reject(refreshError);
+          }
+        }
+
+        return Promise.reject(error);
+      }
+    );
+
+    // Cleanup interceptors on unmount
+    return () => {
+      axios.interceptors.request.eject(requestInterceptor);
+      axios.interceptors.response.eject(responseInterceptor);
+    };
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ token, user, login, logout, refreshToken, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );

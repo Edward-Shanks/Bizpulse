@@ -46,6 +46,57 @@ class AuthService:
         
         return LoginResponse(token=token, email=actual_email)
     
+    async def refresh_token(self, token: str) -> dict:
+        """Refresh an access token (allows expired tokens)"""
+        try:
+            # Decode token - allow expired tokens for refresh
+            try:
+                # First try to decode with expiration check
+                payload = jwt.decode(
+                    token,
+                    settings.JWT_SECRET,
+                    algorithms=[settings.JWT_ALGORITHM],
+                    options={"verify_exp": True}
+                )
+            except jwt.ExpiredSignatureError:
+                # Token is expired, but we allow refresh - decode without expiration check
+                payload = jwt.decode(
+                    token,
+                    settings.JWT_SECRET,
+                    algorithms=[settings.JWT_ALGORITHM],
+                    options={"verify_exp": False}
+                )
+            
+            email = payload.get("email")
+            if not email:
+                raise ValueError("Invalid token: missing email")
+            
+            # Verify user exists and is active
+            user_doc = await self.user_repo.find_by_email(email)
+            if not user_doc:
+                raise ValueError("User not found")
+            
+            if user_doc.get("status") != "active":
+                raise ValueError("User account is inactive")
+            
+            # Generate new token
+            new_token = jwt.encode(
+                {
+                    "email": email,
+                    "exp": datetime.now(timezone.utc).timestamp() + (settings.JWT_EXPIRATION_HOURS * 3600)
+                },
+                settings.JWT_SECRET,
+                algorithm=settings.JWT_ALGORITHM
+            )
+            
+            return {"token": new_token, "email": email}
+            
+        except jwt.InvalidTokenError as e:
+            raise ValueError(f"Invalid token: {str(e)}")
+        except Exception as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            raise ValueError(f"Token refresh failed: {str(e)}")
+    
     async def signup(self, request: SignupRequest, current_user_email: str) -> UserResponse:
         """Create a new user (development only)"""
         # Check if in development mode
