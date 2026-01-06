@@ -8,11 +8,51 @@ from app.core.database import get_database
 from app.core.dependencies import get_current_user
 from app.models.insights import InsightsChatRequest, InsightsChatResponse
 from app.services.insights_service import InsightsService
+from app.core.config import settings
+from app.utils.llm_providers.ollama import get_ollama_endpoint, _initialize_ollama_endpoints
 import logging
 import json
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+@router.get("/test/load-balancer")
+async def test_load_balancer():
+    """
+    Test endpoint to verify Ollama load balancing
+    Returns which endpoint would be selected for the next request
+    No authentication required for testing
+    """
+    try:
+        # Initialize if not already done
+        _initialize_ollama_endpoints()
+        
+        # Get next endpoint
+        selected_endpoint = get_ollama_endpoint()
+        
+        # Get configuration info
+        config_info = {
+            "ollama_base_url": settings.OLLAMA_BASE_URL,
+            "ollama_endpoints": settings.OLLAMA_ENDPOINTS,
+            "num_endpoints": len(settings.OLLAMA_ENDPOINTS) if settings.OLLAMA_ENDPOINTS else 0,
+            "selected_endpoint": selected_endpoint,
+            "port": selected_endpoint.split(':')[-1] if ':' in selected_endpoint else 'unknown'
+        }
+        
+        return {
+            "status": "success",
+            "message": "Load balancer test endpoint",
+            "config": config_info,
+            "note": "Call this endpoint multiple times to see round-robin distribution"
+        }
+    except Exception as e:
+        logger.error(f"Load balancer test error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "status": "error",
+            "error": str(e)
+        }
 
 @router.post("/insights/chat", response_model=InsightsChatResponse)
 async def insights_chat(

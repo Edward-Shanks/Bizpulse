@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Load Balancer Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .controls {
+            margin-bottom: 30px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 30px;
+        }
+        .result-item {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        .result-item.success {
+            border-left-color: #28a745;
+        }
+        .result-item.error {
+            border-left-color: #dc3545;
+        }
+        .stats {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e9ecef;
+            border-radius: 4px;
+        }
+        .stats h3 {
+            margin-top: 0;
+        }
+        .stat-item {
+            display: inline-block;
+            margin: 10px 20px 10px 0;
+            padding: 10px 15px;
+            background: white;
+            border-radius: 4px;
+            min-width: 150px;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .port-11434 { color: #007bff; }
+        .port-11435 { color: #28a745; }
+        .port-11436 { color: #ffc107; }
+        .port-11437 { color: #dc3545; }
+        .config-info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .config-info h3 {
+            margin-top: 0;
+        }
+        .endpoint-list {
+            list-style: none;
+            padding: 0;
+        }
+        .endpoint-list li {
+            padding: 5px 0;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Ollama Load Balancer Test</h1>
+        <p class="subtitle">Test round-robin distribution across multiple Ollama endpoints</p>
+        
+        <div class="config-info">
+            <h3>📋 Configuration</h3>
+            <div id="configDisplay">Loading configuration...</div>
+        </div>
+        
+        <div class="controls">
+            <button onclick="testSingle()">Test Single Request</button>
+            <button onclick="testMultiple(10)">Test 10 Requests</button>
+            <button onclick="testMultiple(20)">Test 20 Requests</button>
+            <button onclick="testConcurrent(4)">Test 4 Concurrent</button>
+            <button onclick="clearResults()">Clear Results</button>
+        </div>
+        
+        <div class="stats" id="stats" style="display: none;">
+            <h3>📊 Distribution Statistics</h3>
+            <div id="statsContent"></div>
+        </div>
+        
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        let results = [];
+        let config = null;
+
+        // Load configuration on page load
+        async function loadConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/test/load-balancer`);
+                const data = await response.json();
+                config = data.config;
+                
+                const configDisplay = document.getElementById('configDisplay');
+                configDisplay.innerHTML = `
+                    <strong>Base URL:</strong> ${config.ollama_base_url}<br>
+                    <strong>Number of Endpoints:</strong> ${config.num_endpoints}<br>
+                    <strong>Endpoints:</strong>
+                    <ul class="endpoint-list">
+                        ${(config.ollama_endpoints || []).map(ep => `<li>${ep}</li>`).join('')}
+                    </ul>
+                `;
+            } catch (error) {
+                document.getElementById('configDisplay').innerHTML = 
+                    `<span style="color: red;">Error loading config: ${error.message}</span>`;
+            }
+        }
+
+        async function testSingle() {
+            try {
+                const response = await fetch(`${API_BASE}/test/load-balancer`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const endpoint = data.config.selected_endpoint;
+                    const port = data.config.port;
+                    
+                    addResult({
+                        type: 'success',
+                        message: `Request selected endpoint: ${endpoint}`,
+                        port: port,
+                        timestamp: new Date().toLocaleTimeString()
+                    });
+                    
+                    updateStats();
+                } else {
+                    addResult({
+                        type: 'error',
+                        message: `Error: ${data.error || 'Unknown error'}`,
+                        timestamp: new Date().toLocaleTimeString()
+                    });
+                }
+            } catch (error) {
+                addResult({
+                    type: 'error',
+                    message: `Request failed: ${error.message}`,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            }
+        }
+
+        async function testMultiple(count) {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = `Testing ${count} requests...`;
+            
+            for (let i = 0; i < count; i++) {
+                await testSingle();
+                await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+            }
+            
+            button.disabled = false;
+            button.textContent = `Test ${count} Requests`;
+        }
+
+        async function testConcurrent(count) {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = `Testing ${count} concurrent requests...`;
+            
+            const promises = [];
+            for (let i = 0; i < count; i++) {
+                promises.push(fetch(`${API_BASE}/test/load-balancer`).then(r => r.json()));
+            }
+            
+            try {
+                const responses = await Promise.all(promises);
+                responses.forEach(data => {
+                    if (data.status === 'success') {
+                        const endpoint = data.config.selected_endpoint;
+                        const port = data.config.port;
+                        
+                        addResult({
+                            type: 'success',
+                            message: `Concurrent request selected: ${endpoint}`,
+                            port: port,
+                            timestamp: new Date().toLocaleTimeString()
+                        });
+                    }
+                });
+                updateStats();
+            } catch (error) {
+                addResult({
+                    type: 'error',
+                    message: `Concurrent test failed: ${error.message}`,
+                    timestamp: new Date().toLocaleTimeString()
+                });
+            }
+            
+            button.disabled = false;
+            button.textContent = `Test ${count} Concurrent`;
+        }
+
+        function addResult(result) {
+            results.push(result);
+            const resultsDiv = document.getElementById('results');
+            
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `result-item ${result.type}`;
+            
+            const portClass = result.port ? `port-${result.port}` : '';
+            resultDiv.innerHTML = `
+                <strong>${result.timestamp}</strong> - 
+                <span class="${portClass}">${result.message}</span>
+                ${result.port ? `<span style="float: right; font-weight: bold;" class="${portClass}">Port: ${result.port}</span>` : ''}
+            `;
+            
+            resultsDiv.insertBefore(resultDiv, resultsDiv.firstChild);
+            
+            // Keep only last 50 results
+            if (results.length > 50) {
+                results.shift();
+                if (resultsDiv.children.length > 50) {
+                    resultsDiv.removeChild(resultsDiv.lastChild);
+                }
+            }
+        }
+
+        function updateStats() {
+            const portCounts = {};
+            results.filter(r => r.port).forEach(r => {
+                portCounts[r.port] = (portCounts[r.port] || 0) + 1;
+            });
+            
+            const statsDiv = document.getElementById('stats');
+            const statsContent = document.getElementById('statsContent');
+            
+            if (Object.keys(portCounts).length > 0) {
+                statsDiv.style.display = 'block';
+                
+                const total = results.filter(r => r.port).length;
+                let html = '';
+                
+                for (const [port, count] of Object.entries(portCounts).sort()) {
+                    const percentage = ((count / total) * 100).toFixed(1);
+                    html += `
+                        <div class="stat-item">
+                            <div class="stat-label">Port ${port}</div>
+                            <div class="stat-value port-${port}">${count} (${percentage}%)</div>
+                        </div>
+                    `;
+                }
+                
+                html += `
+                    <div class="stat-item">
+                        <div class="stat-label">Total Requests</div>
+                        <div class="stat-value">${total}</div>
+                    </div>
+                `;
+                
+                statsContent.innerHTML = html;
+            }
+        }
+
+        function clearResults() {
+            results = [];
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('stats').style.display = 'none';
+        }
+
+        // Load config on page load
+        loadConfig();
+    </script>
+</body>
+</html>
+
+

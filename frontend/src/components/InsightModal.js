@@ -24,6 +24,11 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   const [loading, setLoading] = useState(false);
   const [loadingState, setLoadingState] = useState('thinking'); // Progressive loading states
   const loadingIntervalRef = useRef(null); // Store interval ID in ref for cleanup
+  const abortControllerRef = useRef(null); // Store AbortController for cancelling requests
+  const streamReaderRef = useRef(null); // Store stream reader for cancelling streaming
+  const axiosCancelTokenRef = useRef(null); // Store axios cancel token for cancelling requests
+  const streamMessageIntervalRef = useRef(null); // Store streamMessage interval for cleanup
+  const isContextClearedRef = useRef(false); // Track if context was cleared to prevent delayed updates
   const [lastPivot, setLastPivot] = useState([]);
   const [pivotKey, setPivotKey] = useState(0); // Key to force re-render when pivot data changes
   const [streamingMessage, setStreamingMessage] = useState('');
@@ -126,24 +131,56 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
 
   // Simulated streaming function to display text word by word
   const streamMessage = (fullText, onComplete) => {
+    // CRITICAL: Clear any existing stream interval first
+    if (streamMessageIntervalRef.current) {
+      clearInterval(streamMessageIntervalRef.current);
+      streamMessageIntervalRef.current = null;
+    }
+    
+    // CRITICAL: Don't start streaming if context was cleared
+    if (isContextClearedRef.current) {
+      setStreamingMessage('');
+      return;
+    }
+    
     const words = fullText.split(' ');
     let currentText = '';
     let wordIndex = 0;
 
     const streamInterval = setInterval(() => {
+      // CRITICAL: Check if context was cleared during streaming
+      if (isContextClearedRef.current) {
+        clearInterval(streamInterval);
+        streamMessageIntervalRef.current = null;
+        setStreamingMessage('');
+        return; // Don't call onComplete if context was cleared
+      }
+      
       if (wordIndex < words.length) {
         currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
         setStreamingMessage(currentText);
         wordIndex++;
       } else {
         clearInterval(streamInterval);
+        streamMessageIntervalRef.current = null;
         setStreamingMessage('');
-        onComplete();
+        // CRITICAL: Only call onComplete if context wasn't cleared
+        if (!isContextClearedRef.current) {
+          onComplete();
+        }
       }
     }, 30); // 30ms delay between words for smooth typing effect
+    
+    streamMessageIntervalRef.current = streamInterval; // Store for cleanup
   };
 
   const handleSendMessage = async (messageText = null) => {
+    // CRITICAL: Reset context cleared flag when starting new message
+    // This allows new messages to proceed normally
+    if (isContextCleared) {
+      isContextClearedRef.current = false;
+    }
+    
     // Ensure messageText is a string, not an event object
     let msgToSend;
     if (messageText && typeof messageText === 'string') {
@@ -239,6 +276,10 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       if (useStreaming) {
         console.log('🔄 STREAMING: Starting streaming request to:', endpoint);
         
+        // CRITICAL: Create new AbortController for this request
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
+        
         // Create AI message placeholder for streaming
         const aiMessageId = Date.now();
         const aiMessage = {
@@ -261,7 +302,8 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
               'Accept': 'text/event-stream',
               'Cache-Control': 'no-cache'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: signal // Add abort signal
           });
           
           console.log('🔄 STREAMING: Response received, status:', response.status, 'ok:', response.ok);
@@ -281,6 +323,7 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
           // Read streaming response (SSE format)
           console.log('🔄 STREAMING: Getting reader from response body...');
           const reader = response.body.getReader();
+          streamReaderRef.current = reader; // Store reader for cancellation
           const decoder = new TextDecoder();
           let buffer = '';
           let fullResponse = '';
@@ -289,6 +332,18 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
           console.log('🔄 STREAMING: Starting to read chunks...');
           
           while (true) {
+            // CRITICAL: Check if request was aborted
+            if (signal.aborted) {
+              console.log('🔄 STREAMING: Request aborted, stopping stream');
+              try {
+                reader.cancel();
+              } catch (e) {
+                // Reader may already be closed
+              }
+              streamReaderRef.current = null;
+              return; // Exit immediately
+            }
+            
             const { done, value } = await reader.read();
             
             if (done) {
@@ -431,9 +486,20 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
       
       // Non-streaming fallback (original code)
       if (!useStreaming) {
+        // CRITICAL: Create new AbortController for this request
+        abortControllerRef.current = new AbortController();
+        const cancelToken = axios.CancelToken.source();
+        axiosCancelTokenRef.current = cancelToken; // Store for cancellation
+        
         const response = await axios.post(endpoint, payload, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
+          cancelToken: cancelToken.token
         });
+        
+        // CRITICAL: Check if request was aborted after response
+        if (abortControllerRef.current?.signal.aborted) {
+          return; // Exit immediately, don't process response
+        }
         
         // CRITICAL: Stop loading states immediately when response is received
         if (loadingIntervalRef.current) {
@@ -623,22 +689,27 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
         // Reset context cleared flag after sending first message after clear
         if (isContextCleared) {
           setIsContextCleared(false);
+          isContextClearedRef.current = false; // Reset ref flag too
         }
-        streamMessage(fullResponse, () => {
-          // When streaming completes, add the full message to chat with pivot data
-          // Ensure content is always a string
-          const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
-          const aiMessage = { 
-            role: 'ai', 
-            content: safeContent,
-            pivot_table: pivotArray, // Store pivot data with this message
-            messageId: Date.now() // Unique ID for this message to force re-render
-          };
-          setMessages((prev) => [...prev, aiMessage]);
-          // CRITICAL: Update lastPivot AFTER message is added to ensure visualization updates
-          setLastPivot(pivotArray);
-          setPivotKey(prev => prev + 1);
-        });
+        
+        // CRITICAL: Don't start streaming if context was cleared
+        if (!isContextClearedRef.current) {
+          streamMessage(fullResponse, () => {
+            // CRITICAL: Only add message if context wasn't cleared
+            if (!isContextClearedRef.current) {
+              // When streaming completes, add the full message to chat with pivot data
+              // Ensure content is always a string
+              const safeContent = typeof fullResponse === 'string' ? fullResponse : String(fullResponse || 'No response');
+              const aiMessage = { 
+                role: 'ai', 
+                content: safeContent,
+                pivot_table: pivotArray, // Store pivot data with this message
+                messageId: Date.now() // Unique ID for this message to force re-render
+              };
+              setMessages((prev) => [...prev, aiMessage]);
+            }
+          });
+        }
       } // End of if (!useStreaming) block
     } catch (error) {
       // Log technical error details to console for debugging
@@ -687,7 +758,53 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
   };
 
   const handleClearContext = () => {
-    // Reset messages to initial state
+    // CRITICAL: Set flag immediately to prevent any delayed updates
+    isContextClearedRef.current = true;
+    
+    // CRITICAL: Cancel all ongoing requests immediately
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    // CRITICAL: Cancel axios requests if active
+    if (axiosCancelTokenRef.current) {
+      try {
+        axiosCancelTokenRef.current.cancel('Request cancelled: Context cleared');
+      } catch (e) {
+        // Cancel token may already be used
+      }
+      axiosCancelTokenRef.current = null;
+    }
+    
+    // CRITICAL: Cancel streaming reader if active
+    if (streamReaderRef.current) {
+      try {
+        streamReaderRef.current.cancel();
+      } catch (e) {
+        // Reader may already be closed
+      }
+      streamReaderRef.current = null;
+    }
+    
+    // CRITICAL: Clear streamMessage interval (typing animation)
+    if (streamMessageIntervalRef.current) {
+      clearInterval(streamMessageIntervalRef.current);
+      streamMessageIntervalRef.current = null;
+    }
+    
+    // CRITICAL: Clear all intervals
+    if (loadingIntervalRef.current) {
+      clearInterval(loadingIntervalRef.current);
+      loadingIntervalRef.current = null;
+    }
+    
+    // CRITICAL: Reset all loading states immediately
+    setLoading(false);
+    setLoadingState('thinking');
+    setStreamingMessage('');
+    
+    // CRITICAL: Reset messages to initial state immediately
     setMessages([
       {
         role: 'ai',

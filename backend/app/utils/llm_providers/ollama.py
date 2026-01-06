@@ -1,21 +1,61 @@
 """
 Ollama Provider (Local LLM on Mac Studio)
 Supports remote Ollama instances via SSH tunnel or direct network access
+Supports multiple Ollama instances for load balancing and parallel inference
 """
 import os
 import asyncio
 import httpx
 import logging
+import threading
 from typing import Optional, List, Dict, AsyncGenerator
 from fastapi import HTTPException
 from app.utils.llm_providers.base import LLMProvider
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Global variables for load balancing
+_ollama_endpoints: List[str] = []
+_endpoint_index: int = 0
+_endpoint_lock = threading.Lock()
+
+def _initialize_ollama_endpoints():
+    """Initialize the list of Ollama endpoints for load balancing"""
+    global _ollama_endpoints
+    
+    if settings.OLLAMA_ENDPOINTS and len(settings.OLLAMA_ENDPOINTS) > 0:
+        _ollama_endpoints = settings.OLLAMA_ENDPOINTS.copy()
+        logger.info(f"🔄 Load Balancer: Initialized with {len(_ollama_endpoints)} endpoints: {_ollama_endpoints}")
+    else:
+        # Fallback to single OLLAMA_BASE_URL
+        _ollama_endpoints = [settings.OLLAMA_BASE_URL]
+        logger.info(f"🔄 Load Balancer: Using single endpoint (OLLAMA_ENDPOINTS not configured): {settings.OLLAMA_BASE_URL}")
+
+def get_ollama_endpoint() -> str:
+    """
+    Get the next Ollama endpoint using round-robin load balancing
+    Thread-safe for concurrent requests
+    """
+    global _endpoint_index
+    
+    # Initialize if not done yet
+    if not _ollama_endpoints:
+        _initialize_ollama_endpoints()
+    
+    # Round-robin selection (thread-safe)
+    with _endpoint_lock:
+        endpoint = _ollama_endpoints[_endpoint_index]
+        _endpoint_index = (_endpoint_index + 1) % len(_ollama_endpoints)
+        return endpoint
+
 class OllamaProvider(LLMProvider):
-    """Ollama provider implementation for local LLM"""
+    """Ollama provider implementation for local LLM with load balancing support"""
     
     def __init__(self):
+        # Initialize load balancer endpoints
+        _initialize_ollama_endpoints()
+        
         # Configuration from environment
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct")  # Use your existing model
@@ -32,17 +72,23 @@ class OllamaProvider(LLMProvider):
         self.is_remote = "localhost" not in self.base_url and "127.0.0.1" not in self.base_url
         
         logger.info(f"Ollama provider initialized: {self.base_url}, model: {self.model}")
+        logger.info(f"Load balancer endpoints: {len(_ollama_endpoints)} configured")
     
     def get_provider_name(self) -> str:
         return "ollama"
     
     async def is_available(self) -> bool:
-        """Check if Ollama service is available"""
+        """Check if Ollama service is available (checks first endpoint)"""
+        target_url = get_ollama_endpoint()
+        return await self._check_endpoint_availability(target_url)
+    
+    async def _check_endpoint_availability(self, url: str) -> bool:
+        """Check if a specific Ollama endpoint is available"""
         try:
-            response = await self.client.get(f"{self.base_url}/api/tags", timeout=5.0)
+            response = await self.client.get(f"{url}/api/tags", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
-            logger.warning(f"Ollama health check failed: {str(e)}")
+            logger.warning(f"Ollama health check failed for {url}: {str(e)}")
             return False
     
     async def generate(
@@ -54,21 +100,24 @@ class OllamaProvider(LLMProvider):
         max_tokens: int = 4000,
         **kwargs
     ) -> str:
-        """Generate response using Ollama"""
+        """Generate response using Ollama with load balancing"""
+        # Get endpoint from load balancer
+        target_url = get_ollama_endpoint()
+        
         logger.info(f"🦙 OLLAMA: Starting generation request")
-        logger.info(f"🦙 OLLAMA: Base URL: {self.base_url}")
+        logger.info(f"🦙 OLLAMA: Selected endpoint: {target_url}")
         logger.info(f"🦙 OLLAMA: Model: {self.model}")
         logger.info(f"🦙 OLLAMA: Temperature: {temperature}, Max Tokens: {max_tokens}")
         
-        # Check availability
-        is_avail = await self.is_available()
+        # Check availability on selected endpoint
+        is_avail = await self._check_endpoint_availability(target_url)
         logger.info(f"🦙 OLLAMA: Service available: {is_avail}")
         
         if not is_avail:
-            logger.error(f"🦙 OLLAMA: Service not available at {self.base_url}")
+            logger.error(f"🦙 OLLAMA: Service not available at {target_url}")
             raise HTTPException(
                 status_code=503,
-                detail=f"Ollama service not available at {self.base_url}"
+                detail=f"Ollama service not available at {target_url}"
             )
         
         # Build messages
@@ -95,7 +144,7 @@ class OllamaProvider(LLMProvider):
         for attempt in range(max_retries):
             try:
                 response = await self.client.post(
-                    f"{self.base_url}/api/chat",
+                    f"{target_url}/api/chat",
                     json=payload
                 )
                 response.raise_for_status()
@@ -157,19 +206,23 @@ class OllamaProvider(LLMProvider):
         **kwargs
     ) -> AsyncGenerator[Dict[str, str], None]:
         """
-        Stream response from Ollama with support for thinking field
+        Stream response from Ollama with support for thinking field and load balancing
         
         Yields dictionaries with:
         - "type": "thinking" or "content"
         - "data": the actual text chunk
         """
+        # Get endpoint from load balancer
+        target_url = get_ollama_endpoint()
+        
         logger.info(f"🦙 OLLAMA: Starting streaming request")
+        logger.info(f"🦙 OLLAMA: Selected endpoint: {target_url}")
         logger.info(f"🦙 OLLAMA: Think mode: {think}")
         
-        if not await self.is_available():
+        if not await self._check_endpoint_availability(target_url):
             raise HTTPException(
                 status_code=503,
-                detail=f"Ollama service not available at {self.base_url}"
+                detail=f"Ollama service not available at {target_url}"
             )
         
         messages = []
@@ -213,11 +266,11 @@ class OllamaProvider(LLMProvider):
             previous_thinking = ""
             buffer = ""  # Buffer for incomplete JSON lines
             
-            logger.info(f"🦙 OLLAMA: Starting stream to {self.base_url}/api/chat")
+            logger.info(f"🦙 OLLAMA: Starting stream to {target_url}/api/chat")
             
             async with self.client.stream(
                 "POST",
-                f"{self.base_url}/api/chat",
+                f"{target_url}/api/chat",
                 json=payload,
                 timeout=self.timeout
             ) as response:

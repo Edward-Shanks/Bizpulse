@@ -51,6 +51,13 @@ class Settings:
     OLLAMA_TIMEOUT: int = int(os.getenv('OLLAMA_TIMEOUT', '120'))
     LLM_PROVIDER: str = os.getenv('LLM_PROVIDER', 'ollama')
     
+    # Ollama Multiple Instances Configuration (for parallel inference)
+    # Supports multiple Ollama instances running on different ports for load balancing
+    # Format: comma-separated URLs, e.g., "http://192.168.50.29:11434,http://192.168.50.29:11435,..."
+    # Must be set in .env file. If not set, falls back to single OLLAMA_BASE_URL
+    _ollama_endpoints_str = os.getenv('OLLAMA_ENDPOINTS', None)
+    OLLAMA_ENDPOINTS: List[str] = [url.strip() for url in _ollama_endpoints_str.split(',') if url.strip()] if _ollama_endpoints_str else []
+    
     @property
     def is_development(self) -> bool:
         """Check if running in development mode"""

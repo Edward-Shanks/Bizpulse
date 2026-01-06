@@ -24,6 +24,11 @@ const AIAssistant = () => {
   const scrollRef = useRef(null);
   const sessionId = useRef(`session-${Date.now()}`);
   const loadingIntervalRef = useRef(null); // Store interval ID in ref for cleanup
+  const abortControllerRef = useRef(null); // Store AbortController for cancelling requests
+  const streamReaderRef = useRef(null); // Store stream reader for cancelling streaming
+  const axiosCancelTokenRef = useRef(null); // Store axios cancel token for cancelling requests
+  const streamMessageIntervalRef = useRef(null); // Store streamMessage interval for cleanup
+  const isContextClearedRef = useRef(false); // Track if context was cleared to prevent delayed updates
   
   // Progressive loading states dictionary
   const loadingStates = [
@@ -43,24 +48,56 @@ const AIAssistant = () => {
 
   // Simulated streaming function to display text word by word
   const streamMessage = (fullText, onComplete) => {
+    // CRITICAL: Clear any existing stream interval first
+    if (streamMessageIntervalRef.current) {
+      clearInterval(streamMessageIntervalRef.current);
+      streamMessageIntervalRef.current = null;
+    }
+    
+    // CRITICAL: Don't start streaming if context was cleared
+    if (isContextClearedRef.current) {
+      setStreamingMessage('');
+      return;
+    }
+    
     const words = fullText.split(' ');
     let currentText = '';
     let wordIndex = 0;
 
     const streamInterval = setInterval(() => {
+      // CRITICAL: Check if context was cleared during streaming
+      if (isContextClearedRef.current) {
+        clearInterval(streamInterval);
+        streamMessageIntervalRef.current = null;
+        setStreamingMessage('');
+        return; // Don't call onComplete if context was cleared
+      }
+      
       if (wordIndex < words.length) {
         currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
         setStreamingMessage(currentText);
         wordIndex++;
       } else {
         clearInterval(streamInterval);
+        streamMessageIntervalRef.current = null;
         setStreamingMessage('');
-        onComplete();
+        // CRITICAL: Only call onComplete if context wasn't cleared
+        if (!isContextClearedRef.current) {
+          onComplete();
+        }
       }
     }, 30); // 30ms delay between words for smooth typing effect
+    
+    streamMessageIntervalRef.current = streamInterval; // Store for cleanup
   };
 
     const handleSendMessage = async (messageText = null) => {
+    // CRITICAL: Reset context cleared flag when starting new message
+    // This allows new messages to proceed normally
+    if (isContextCleared) {
+      isContextClearedRef.current = false;
+    }
+    
     // Ensure messageText is always a string, never an event object
     let msgToSend = null;
     if (messageText !== null && messageText !== undefined) {
@@ -123,6 +160,10 @@ const AIAssistant = () => {
         try {
           console.log('🔄 AIAssistant STREAMING: Starting streaming request');
           
+          // CRITICAL: Create new AbortController for this request
+          abortControllerRef.current = new AbortController();
+          const signal = abortControllerRef.current.signal;
+          
           // Create AI message placeholder
           const aiMessageId = Date.now();
           const aiMessage = {
@@ -141,7 +182,8 @@ const AIAssistant = () => {
               'Accept': 'text/event-stream',
               'Cache-Control': 'no-cache'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: signal // Add abort signal
           });
           
           if (!response.ok || !response.body) {
@@ -149,11 +191,24 @@ const AIAssistant = () => {
           }
           
           const reader = response.body.getReader();
+          streamReaderRef.current = reader; // Store reader for cancellation
           const decoder = new TextDecoder();
           let buffer = '';
           let fullResponse = '';
           
           while (true) {
+            // CRITICAL: Check if request was aborted
+            if (signal.aborted) {
+              console.log('🔄 AIAssistant STREAMING: Request aborted, stopping stream');
+              try {
+                reader.cancel();
+              } catch (e) {
+                // Reader may already be closed
+              }
+              streamReaderRef.current = null;
+              return; // Exit immediately
+            }
+            
             const { done, value } = await reader.read();
             if (done) break;
             
@@ -249,9 +304,20 @@ const AIAssistant = () => {
       }
       
       // Non-streaming fallback
+      // CRITICAL: Create new AbortController for this request
+      abortControllerRef.current = new AbortController();
+      const cancelToken = axios.CancelToken.source();
+      axiosCancelTokenRef.current = cancelToken; // Store for cancellation
+      
       const response = await axios.post(`${API}/insights/chat`, payload, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        cancelToken: cancelToken.token
       });
+      
+      // CRITICAL: Check if request was aborted after response
+      if (abortControllerRef.current?.signal.aborted) {
+        return; // Exit immediately, don't process response
+      }
       
       // CRITICAL: Stop loading states immediately when response is received
       if (loadingIntervalRef.current) {
@@ -374,10 +440,19 @@ const AIAssistant = () => {
       // Reset context cleared flag after sending first message after clear
       if (isContextCleared) {
         setIsContextCleared(false);
+        isContextClearedRef.current = false; // Reset ref flag too
       }
       
-      // Simulate streaming for better UX
-      streamMessage(fullResponse, () => setStreamingMessage(''));
+      // CRITICAL: Don't start streaming if context was cleared
+      if (!isContextClearedRef.current) {
+        // Simulate streaming for better UX
+        streamMessage(fullResponse, () => {
+          // CRITICAL: Only update if context wasn't cleared
+          if (!isContextClearedRef.current) {
+            setStreamingMessage('');
+          }
+        });
+      }
     } catch (error) {
       // Log technical error details to console for debugging
       console.error('AIAssistant API Error:', error);
@@ -413,12 +488,57 @@ const AIAssistant = () => {
   ];
 
   const handleClearContext = () => {
-    // Reset messages to empty array
+    // CRITICAL: Set flag immediately to prevent any delayed updates
+    isContextClearedRef.current = true;
+    
+    // CRITICAL: Cancel all ongoing requests immediately
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    
+    // CRITICAL: Cancel axios requests if active
+    if (axiosCancelTokenRef.current) {
+      try {
+        axiosCancelTokenRef.current.cancel('Request cancelled: Context cleared');
+      } catch (e) {
+        // Cancel token may already be used
+      }
+      axiosCancelTokenRef.current = null;
+    }
+    
+    // CRITICAL: Cancel streaming reader if active
+    if (streamReaderRef.current) {
+      try {
+        streamReaderRef.current.cancel();
+      } catch (e) {
+        // Reader may already be closed
+      }
+      streamReaderRef.current = null;
+    }
+    
+    // CRITICAL: Clear streamMessage interval (typing animation)
+    if (streamMessageIntervalRef.current) {
+      clearInterval(streamMessageIntervalRef.current);
+      streamMessageIntervalRef.current = null;
+    }
+    
+    // CRITICAL: Clear all intervals
+    if (loadingIntervalRef.current) {
+      clearInterval(loadingIntervalRef.current);
+      loadingIntervalRef.current = null;
+    }
+    
+    // CRITICAL: Reset all loading states immediately
+    setLoading(false);
+    setLoadingState('thinking');
+    setStreamingMessage('');
+    
+    // CRITICAL: Reset messages to empty array immediately
     setMessages([]);
+    
     // Create new session ID
     sessionId.current = `session-${Date.now()}`;
-    // Clear streaming message
-    setStreamingMessage('');
     // Set flag to ensure next message sends empty conversation history
     setIsContextCleared(true);
     // Show confirmation toast
