@@ -802,28 +802,44 @@ const AIAssistant = () => {
                 </button>
                 {showPreviousQuestions && (
                   <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
-                    {previousQuestions.map((q) => (
-                      <label
-                        key={q.id}
-                        className="flex items-start gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedQuestionId === q.id}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedQuestionId(q.id);
-                              setInput(q.question);
-                            } else {
-                              setSelectedQuestionId(null);
-                              setInput('');
-                            }
-                          }}
-                          className="mt-1"
-                        />
-                        <span className="text-xs text-gray-700 flex-1">{q.question}</span>
-                      </label>
-                    ))}
+                      {previousQuestions.map((q) => (
+                        <label
+                          key={q.id}
+                          className="flex items-start gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedQuestionId === q.id}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedQuestionId(q.id);
+                                // Append the selected question to existing text
+                                const currentText = input.trim();
+                                const questionText = q.question.trim();
+                                if (currentText) {
+                                  // Add space and append if there's existing text
+                                  setInput(`${currentText} ${questionText}`);
+                                } else {
+                                  // Just set the question if input is empty
+                                  setInput(questionText);
+                                }
+                              } else {
+                                setSelectedQuestionId(null);
+                                // Remove the appended question from input
+                                const currentText = input.trim();
+                                const questionText = q.question.trim();
+                                if (currentText.includes(questionText)) {
+                                  // Remove the question text, keeping the original text
+                                  const newText = currentText.replace(questionText, '').trim();
+                                  setInput(newText);
+                                }
+                              }
+                            }}
+                            className="mt-1"
+                          />
+                          <span className="text-xs text-gray-700 flex-1">{q.question}</span>
+                        </label>
+                      ))}
                   </div>
                 )}
               </div>
@@ -834,13 +850,10 @@ const AIAssistant = () => {
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
-                  // Clear selection if user types manually
-                  if (selectedQuestionId && e.target.value !== previousQuestions.find(q => q.id === selectedQuestionId)?.question) {
-                    setSelectedQuestionId(null);
-                  }
+                  // Don't clear selection when user types - allow them to edit the appended text
                 }}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder={selectedQuestionId ? "Selected previous question (edit if needed)..." : "Ask about your business data..."}
+                placeholder="Ask about your business data..."
                 disabled={loading}
                 className="flex-1 bg-white border-gray-300"
                 data-testid="ai-chat-input"

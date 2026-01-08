@@ -1228,10 +1228,26 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                             onChange={(e) => {
                               if (e.target.checked) {
                                 setSelectedQuestionId(q.id);
-                                setInput(q.question);
+                                // Append the selected question to existing text
+                                const currentText = input.trim();
+                                const questionText = q.question.trim();
+                                if (currentText) {
+                                  // Add space and append if there's existing text
+                                  setInput(`${currentText} ${questionText}`);
+                                } else {
+                                  // Just set the question if input is empty
+                                  setInput(questionText);
+                                }
                               } else {
                                 setSelectedQuestionId(null);
-                                setInput('');
+                                // Remove the appended question from input
+                                const currentText = input.trim();
+                                const questionText = q.question.trim();
+                                if (currentText.includes(questionText)) {
+                                  // Remove the question text, keeping the original text
+                                  const newText = currentText.replace(questionText, '').trim();
+                                  setInput(newText);
+                                }
                               }
                             }}
                             className="mt-1"
@@ -1249,10 +1265,7 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                   value={input}
                   onChange={(e) => {
                     setInput(e.target.value);
-                    // Clear selection if user types manually
-                    if (selectedQuestionId && e.target.value !== previousQuestions.find(q => q.id === selectedQuestionId)?.question) {
-                      setSelectedQuestionId(null);
-                    }
+                    // Don't clear selection when user types - allow them to edit the appended text
                   }}
                   onKeyPress={(e) => {
                     if (e.key === 'Enter' && !loading) {
@@ -1260,7 +1273,7 @@ const InsightModal = ({ isOpen, onClose, chartTitle, insights, recommendations, 
                       handleSendMessage();
                     }
                   }}
-                  placeholder={selectedQuestionId ? "Selected previous question (edit if needed)..." : "Ask about this chart..."}
+                  placeholder="Ask about this chart..."
                   disabled={loading}
                   className="flex-1"
                   data-testid="insight-chat-input"

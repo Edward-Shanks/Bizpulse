@@ -1087,9 +1087,27 @@ class InsightsService:
             
             logger.info(f"🔍 Current question intent: scope={current_intent['scope']}, entity={current_intent['entity_type']}, type={current_intent['question_type']}, top_number={current_intent['top_number']}")
             
-            # Check if previous question had different intent
+            # Check if this is a follow-up question (e.g., "write an email for this", "draft an email for this")
+            is_follow_up_question = False
+            follow_up_patterns = [
+                r'write\s+(an\s+)?(a\s+)?email\s+(for\s+)?(this|that)',
+                r'draft\s+(an\s+)?(a\s+)?email\s+(for\s+)?(this|that)',
+                r'email\s+(for\s+)?(this|that)',
+                r'summarize\s+(this|that)',
+                r'explain\s+(this|that)\s+(more|further|in\s+detail)',
+                r'tell\s+me\s+more\s+about\s+(this|that)',
+                r'what\s+about\s+(this|that)',
+                r'can\s+you\s+(write|draft|create|make)\s+(an\s+)?(a\s+)?(email|summary|report)\s+(for\s+)?(this|that)',
+            ]
+            for pattern in follow_up_patterns:
+                if re.search(pattern, user_msg_lower):
+                    is_follow_up_question = True
+                    logger.info(f"🔄✅ Detected FOLLOW-UP question: '{user_message[:50]}...' - Will use conversation history")
+                    break
+            
+            # Check if previous question had different intent (only if NOT a follow-up question)
             is_different_question = False
-            if request.conversation_history and len(request.conversation_history) > 0:
+            if request.conversation_history and len(request.conversation_history) > 0 and not is_follow_up_question:
                 # Get the last user question from conversation history
                 last_user_question = None
                 for msg in reversed(request.conversation_history):
@@ -1167,9 +1185,51 @@ class InsightsService:
                         logger.info(f"🔄✅ Detected different top number: previous='top {previous_intent['top_number']}', current='top {current_intent['top_number']}'")
             
             # Build conversation history for Perplexity
+            # CRITICAL: If this is a follow-up question, ALWAYS use conversation history
             # If this is a different question, don't use conversation history (or use minimal history)
             conversation_history = []
-            if request.conversation_history and not is_different_question:
+            follow_up_context_for_prompt = ""  # Store follow-up context to add to user_prompt
+            if is_follow_up_question:
+                # For follow-up questions, ALWAYS include conversation history
+                logger.info(f"🔄 FOLLOW-UP question detected - using FULL conversation history")
+                if request.conversation_history:
+                    for msg in request.conversation_history:
+                        role = msg.get("role", "user")
+                        content = msg.get("content", "")
+                        if role in ["user", "assistant"]:
+                            conversation_history.append({"role": role, "content": content})
+                # Also add explicit context about the previous question/response
+                if conversation_history and len(conversation_history) >= 2:
+                    last_user_msg = None
+                    last_assistant_msg = None
+                    for msg in reversed(conversation_history):
+                        if msg.get("role") == "assistant" and not last_assistant_msg:
+                            last_assistant_msg = msg.get("content", "")
+                        elif msg.get("role") == "user" and not last_user_msg:
+                            last_user_msg = msg.get("content", "")
+                            if last_assistant_msg:
+                                break
+                    
+                    if last_user_msg and last_assistant_msg:
+                        # Add explicit context to help LLM understand what "this" refers to
+                        # CRITICAL: This will be added to user_prompt, not just conversation_history
+                        follow_up_context_for_prompt = (
+                            f"\n\n{'='*80}\n"
+                            f"⚠️⚠️⚠️ CRITICAL CONTEXT: This is a FOLLOW-UP question ⚠️⚠️⚠️\n"
+                            f"{'='*80}\n"
+                            f"The user is asking about their PREVIOUS question and response:\n\n"
+                            f"PREVIOUS QUESTION: {last_user_msg}\n\n"
+                            f"PREVIOUS RESPONSE: {last_assistant_msg[:2000]}{'...' if len(last_assistant_msg) > 2000 else ''}\n\n"
+                            f"CURRENT QUESTION: {user_message}\n\n"
+                            f"⚠️⚠️⚠️ CRITICAL: When the user says 'this' or 'that', they are referring to the PREVIOUS QUESTION and RESPONSE above.\n"
+                            f"You MUST base your answer EXCLUSIVELY on the PREVIOUS QUESTION and RESPONSE context.\n"
+                            f"Do NOT use any other data or default to generic responses like 'top 10 brands'.\n"
+                            f"Your response MUST be about the PREVIOUS QUESTION and RESPONSE content.\n"
+                            f"{'='*80}\n\n"
+                        )
+                        logger.info(f"🔄 FOLLOW-UP context prepared: Previous Q: {last_user_msg[:50]}..., Previous A: {last_assistant_msg[:50]}...")
+            elif request.conversation_history and not is_different_question:
+                # Normal case: use conversation history if not a different question
                 for msg in request.conversation_history:
                     role = msg.get("role", "user")
                     content = msg.get("content", "")
@@ -1182,7 +1242,14 @@ class InsightsService:
             
             # CRITICAL: Generate pivot table BEFORE building prompt so we can reference it
             # Get pivot table data for visualization - make it relevant to the question
-            pivot_table = await self._generate_pivot_table(request, query, user_msg_lower, chart_title_lower)
+            # BUT: For follow-up questions, we should NOT generate a new pivot table that might override context
+            # Instead, we'll use the previous response's context
+            pivot_table = []
+            if not is_follow_up_question:
+                # Only generate pivot table for new questions, not follow-ups
+                pivot_table = await self._generate_pivot_table(request, query, user_msg_lower, chart_title_lower)
+            else:
+                logger.info(f"🔄 FOLLOW-UP question - skipping pivot table generation to preserve previous context")
             
             # Log pivot table for debugging
             if pivot_table and len(pivot_table) > 0:
@@ -1440,10 +1507,11 @@ class InsightsService:
                     )
             
             user_prompt = (
+                f"{follow_up_context_for_prompt}"  # CRITICAL: Add follow-up context FIRST if it exists
                 f"{previous_question_context}"
                 f"{chart_context}\n\n"
                 f"{intent_context}"
-                f"{pivot_table_note}"
+                f"{pivot_table_note if not is_follow_up_question else ''}"  # Skip pivot table note for follow-ups
                 f"BUSINESS DATA (USE ONLY THIS DATA - DO NOT USE ANY EXTERNAL KNOWLEDGE):\n"
                 f"{data_context}\n\n"
                 f"CRITICAL INSTRUCTION: The above 'Business Data' section contains ALL the information you should use to answer the user's question. "
@@ -1480,6 +1548,16 @@ class InsightsService:
                 f"Do NOT interpret the absence of Q1-specific breakdowns as 'data not available' - use the available aggregated data.\n"
                 f"\n\nUser Question: {request.message}"
             )
+            
+            # Add critical reminder for follow-up questions (outside f-string to avoid backslash issue)
+            if is_follow_up_question:
+                reminder = (
+                    "\n\n⚠️⚠️⚠️ CRITICAL REMINDER: This is a FOLLOW-UP question. "
+                    "You MUST base your response EXCLUSIVELY on the PREVIOUS QUESTION and RESPONSE shown at the top of this prompt. "
+                    "Do NOT use any pivot table data or default responses like 'top 10 brands'. "
+                    "Your response MUST be about the PREVIOUS QUESTION and RESPONSE content only. ⚠️⚠️⚠️"
+                )
+                user_prompt += reminder
             
             # CRITICAL: Add validation note for quarterly queries (as per ChatGPT recommendation)
             if detected_quarter_months and detected_years and detected_business:
@@ -1584,6 +1662,24 @@ class InsightsService:
             user_message = request.message or ""
             user_msg_lower = user_message.lower()
             
+            # Check if this is a follow-up question (e.g., "write an email for this", "draft an email for this")
+            is_follow_up_question = False
+            follow_up_patterns = [
+                r'write\s+(an\s+)?(a\s+)?email\s+(for\s+)?(this|that)',
+                r'draft\s+(an\s+)?(a\s+)?email\s+(for\s+)?(this|that)',
+                r'email\s+(for\s+)?(this|that)',
+                r'summarize\s+(this|that)',
+                r'explain\s+(this|that)\s+(more|further|in\s+detail)',
+                r'tell\s+me\s+more\s+about\s+(this|that)',
+                r'what\s+about\s+(this|that)',
+                r'can\s+you\s+(write|draft|create|make)\s+(an\s+)?(a\s+)?(email|summary|report)\s+(for\s+)?(this|that)',
+            ]
+            for pattern in follow_up_patterns:
+                if re.search(pattern, user_msg_lower):
+                    is_follow_up_question = True
+                    logger.info(f"🔄✅ STREAM: Detected FOLLOW-UP question: '{user_message[:50]}...' - Will use conversation history")
+                    break
+            
             # Skip clarification check for streaming (always proceed)
             # You can add clarification logic here if needed
             
@@ -1612,8 +1708,54 @@ class InsightsService:
             # Build user prompt
             user_prompt = user_message
             
-            # Get conversation history
-            conversation_history = request.conversation_history or []
+            # Get conversation history - CRITICAL: For follow-up questions, ALWAYS use conversation history
+            conversation_history = []
+            if is_follow_up_question:
+                # For follow-up questions, ALWAYS include conversation history
+                logger.info(f"🔄 STREAM: FOLLOW-UP question detected - using FULL conversation history")
+                if request.conversation_history:
+                    for msg in request.conversation_history:
+                        role = msg.get("role", "user")
+                        content = msg.get("content", "")
+                        if role in ["user", "assistant"]:
+                            conversation_history.append({"role": role, "content": content})
+                # Also add explicit context about the previous question/response
+                if conversation_history and len(conversation_history) >= 2:
+                    last_user_msg = None
+                    last_assistant_msg = None
+                    for msg in reversed(conversation_history):
+                        if msg.get("role") == "assistant" and not last_assistant_msg:
+                            last_assistant_msg = msg.get("content", "")
+                        elif msg.get("role") == "user" and not last_user_msg:
+                            last_user_msg = msg.get("content", "")
+                            if last_assistant_msg:
+                                break
+                    
+                    if last_user_msg and last_assistant_msg:
+                        # Add explicit context to help LLM understand what "this" refers to
+                        # CRITICAL: This will be prepended to user_prompt
+                        follow_up_context = (
+                            f"\n\n{'='*80}\n"
+                            f"⚠️⚠️⚠️ CRITICAL CONTEXT: This is a FOLLOW-UP question ⚠️⚠️⚠️\n"
+                            f"{'='*80}\n"
+                            f"The user is asking about their PREVIOUS question and response:\n\n"
+                            f"PREVIOUS QUESTION: {last_user_msg}\n\n"
+                            f"PREVIOUS RESPONSE: {last_assistant_msg[:2000]}{'...' if len(last_assistant_msg) > 2000 else ''}\n\n"
+                            f"CURRENT QUESTION: {user_message}\n\n"
+                            f"⚠️⚠️⚠️ CRITICAL: When the user says 'this', 'that', or 'it', they are referring to the PREVIOUS QUESTION and RESPONSE above.\n"
+                            f"You MUST base your answer EXCLUSIVELY on the PREVIOUS QUESTION and RESPONSE context.\n"
+                            f"Do NOT use any other data or default to generic responses like 'top 10 brands'.\n"
+                            f"Your response MUST be about the PREVIOUS QUESTION and RESPONSE content.\n"
+                            f"Ignore any pivot table data or other context that might be provided below.\n"
+                            f"{'='*80}\n\n"
+                        )
+                        # Prepend this context to the user message
+                        user_prompt = follow_up_context + user_prompt
+                        logger.info(f"🔄 STREAM: FOLLOW-UP context added to prompt: Previous Q: {last_user_msg[:50]}..., Previous A: {last_assistant_msg[:50]}...")
+                        logger.info(f"🔄 STREAM: FOLLOW-UP context added to prompt: Previous Q: {last_user_msg[:50]}..., Previous A: {last_assistant_msg[:50]}...")
+            else:
+                # Normal case: use conversation history if available
+                conversation_history = request.conversation_history or []
             
             # Stream from LLM
             from app.utils.ai_service import stream_llm
