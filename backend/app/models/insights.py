@@ -38,6 +38,10 @@ class InsightsChatRequest(BaseModel):
         default_factory=list,
         description="Previous conversation messages for context"
     )
+    selected_previous_question_id: Optional[str] = Field(
+        None,
+        description="ID of a previous question if user is asking about it (follow-up question)"
+    )
 
 class InsightsChatResponse(BaseModel):
     """View Insights Chatbot response model"""

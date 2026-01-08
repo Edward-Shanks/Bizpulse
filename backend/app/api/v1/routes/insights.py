@@ -7,11 +7,14 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
 from app.core.dependencies import get_current_user
 from app.models.insights import InsightsChatRequest, InsightsChatResponse
+from app.models.user_questions import UserQuestion, UserQuestionRequest, UserQuestionResponse, PreviousQuestionsResponse
 from app.services.insights_service import InsightsService
 from app.core.config import settings
 from app.utils.llm_providers.ollama import get_ollama_endpoint, _initialize_ollama_endpoints
 import logging
 import json
+from datetime import datetime, timezone
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -132,4 +135,104 @@ async def insights_chat_stream(
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Error processing stream: {str(e)}")
+
+@router.post("/user-questions", response_model=UserQuestionResponse)
+async def store_user_question(
+    request: UserQuestionRequest,
+    email: str = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Store a user question for future reference"""
+    try:
+        question = UserQuestion(
+            user_email=email,
+            question=request.question,
+            chatbot_type=request.chatbot_type,
+            chart_title=request.chart_title,
+            context=request.context or {},
+            response=request.response
+        )
+        
+        question_dict = question.model_dump()
+        question_dict['timestamp'] = question_dict['timestamp'].isoformat()
+        
+        await db.user_questions.insert_one(question_dict)
+        
+        return UserQuestionResponse(
+            id=question.id,
+            question=question.question,
+            chatbot_type=question.chatbot_type,
+            chart_title=question.chart_title,
+            timestamp=question_dict['timestamp'],
+            usage_count=0
+        )
+    except Exception as e:
+        logger.error(f"Error storing user question: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error storing question: {str(e)}")
+
+@router.get("/user-questions", response_model=PreviousQuestionsResponse)
+async def get_user_questions(
+    chatbot_type: str = Query(..., description="Type of chatbot: 'view_insights' or 'vector_deep_ai'"),
+    chart_title: Optional[str] = Query(None, description="Filter by chart title"),
+    limit: int = Query(20, description="Maximum number of questions to return"),
+    email: str = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Get previous questions asked by the user"""
+    try:
+        query = {
+            "user_email": email,
+            "chatbot_type": chatbot_type
+        }
+        
+        if chart_title:
+            query["chart_title"] = chart_title
+        
+        # Get questions sorted by most recent, then by usage count
+        cursor = db.user_questions.find(query).sort([
+            ("timestamp", -1),
+            ("usage_count", -1)
+        ]).limit(limit)
+        
+        questions = await cursor.to_list(length=limit)
+        
+        question_responses = [
+            UserQuestionResponse(
+                id=q["id"],
+                question=q["question"],
+                chatbot_type=q["chatbot_type"],
+                chart_title=q.get("chart_title"),
+                timestamp=q["timestamp"] if isinstance(q["timestamp"], str) else q["timestamp"].isoformat(),
+                usage_count=q.get("usage_count", 0)
+            )
+            for q in questions
+        ]
+        
+        return PreviousQuestionsResponse(questions=question_responses)
+    except Exception as e:
+        logger.error(f"Error retrieving user questions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving questions: {str(e)}")
+
+@router.post("/user-questions/{question_id}/use")
+async def increment_question_usage(
+    question_id: str,
+    email: str = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Increment usage count when a previous question is reused"""
+    try:
+        result = await db.user_questions.update_one(
+            {"id": question_id, "user_email": email},
+            {"$inc": {"usage_count": 1}}
+        )
+        
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Question not found")
+        
+        return {"status": "success", "message": "Usage count incremented"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error incrementing question usage: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating question: {str(e)}")
 

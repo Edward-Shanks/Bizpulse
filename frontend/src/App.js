@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import '@/App.css';
@@ -60,43 +60,23 @@ const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(localStorage.getItem('user'));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshPromiseRef = React.useRef(null);
+  const refreshTokenRef = React.useRef(null);
 
-  // Proactively refresh token if expired on app load
-  React.useEffect(() => {
-    const storedToken = localStorage.getItem('token');
-    if (storedToken) {
-      try {
-        const payload = JSON.parse(atob(storedToken.split('.')[1]));
-        const exp = payload.exp * 1000;
-        // If token expires in less than 5 minutes, refresh it proactively
-        const fiveMinutes = 5 * 60 * 1000;
-        if (exp < Date.now() + fiveMinutes) {
-          refreshToken().catch(() => {
-            // Refresh failed, user will be logged out
-          });
-        }
-      } catch (e) {
-        // Invalid token - will be handled by interceptor
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const login = (newToken, email) => {
+  const login = React.useCallback((newToken, email) => {
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', email);
     setToken(newToken);
     setUser(email);
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = React.useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setToken(null);
     setUser(null);
-  };
+  }, []);
 
-  const refreshToken = async () => {
+  const refreshToken = React.useCallback(async () => {
     // If already refreshing, return the existing promise
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
@@ -132,7 +112,12 @@ const AuthProvider = ({ children }) => {
 
     refreshPromiseRef.current = refreshPromise;
     return refreshPromise;
-  };
+  }, [login, logout]);
+
+  // Store refreshToken in ref so interceptors can access it
+  React.useEffect(() => {
+    refreshTokenRef.current = refreshToken;
+  }, [refreshToken]);
 
   // Set up axios interceptor for automatic token refresh
   React.useEffect(() => {
@@ -163,12 +148,14 @@ const AuthProvider = ({ children }) => {
           originalRequest._retry = true;
 
           try {
-            // Attempt to refresh the token
-            const newToken = await refreshToken();
-            
-            // Retry the original request with the new token
-            originalRequest.headers.Authorization = `Bearer ${newToken}`;
-            return axios(originalRequest);
+            // Attempt to refresh the token using ref
+            if (refreshTokenRef.current) {
+              const newToken = await refreshTokenRef.current();
+              
+              // Retry the original request with the new token
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return axios(originalRequest);
+            }
           } catch (refreshError) {
             // Refresh failed - user will be logged out by refreshToken
             return Promise.reject(refreshError);
@@ -184,7 +171,28 @@ const AuthProvider = ({ children }) => {
       axios.interceptors.request.eject(requestInterceptor);
       axios.interceptors.response.eject(responseInterceptor);
     };
-  }, []);
+  }, []); // Empty deps - interceptors only set up once
+
+  // Proactively refresh token if expired on app load
+  // This runs after refreshToken and interceptors are set up
+  React.useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (storedToken) {
+      try {
+        const payload = JSON.parse(atob(storedToken.split('.')[1]));
+        const exp = payload.exp * 1000;
+        // If token expires in less than 5 minutes, refresh it proactively
+        const fiveMinutes = 5 * 60 * 1000;
+        if (exp < Date.now() + fiveMinutes) {
+          refreshToken().catch(() => {
+            // Refresh failed, user will be logged out
+          });
+        }
+      } catch (e) {
+        // Invalid token - will be handled by interceptor
+      }
+    }
+  }, [refreshToken]);
 
   return (
     <AuthContext.Provider value={{ token, user, login, logout, refreshToken, isAuthenticated: !!token }}>

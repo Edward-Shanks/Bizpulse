@@ -194,6 +194,22 @@ class InsightsService:
             
             user_message = request.message or ""
             
+            # If user selected a previous question, retrieve it and add context
+            previous_question_context = ""
+            if request.selected_previous_question_id:
+                try:
+                    previous_q = await self.db.user_questions.find_one({"id": request.selected_previous_question_id})
+                    if previous_q:
+                        previous_question_context = f"\n\nCONTEXT: The user is asking a follow-up question about a previous question they asked.\n"
+                        previous_question_context += f"Previous Question: {previous_q.get('question', '')}\n"
+                        previous_question_context += f"Previous Response: {previous_q.get('response', '')[:500]}\n"
+                        previous_question_context += f"Current Question: {user_message}\n"
+                        previous_question_context += "Please provide a response that builds on the previous question and answer, addressing the current question in that context."
+                        logger.info(f"📝 Using previous question context: {previous_q.get('question', '')[:50]}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Error retrieving previous question: {str(e)}")
+                    # Continue without previous question context
+            
             # STEP 1: Check if question needs clarification
             is_clear, suggested_questions = await self._check_question_clarity(user_message, request.chart_title)
             
@@ -1424,6 +1440,7 @@ class InsightsService:
                     )
             
             user_prompt = (
+                f"{previous_question_context}"
                 f"{chart_context}\n\n"
                 f"{intent_context}"
                 f"{pivot_table_note}"

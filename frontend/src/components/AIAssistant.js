@@ -4,7 +4,7 @@ import { API, useAuth } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, X, Send, Sparkles, RotateCcw, ArrowRight } from 'lucide-react';
+import { Bot, X, Send, Sparkles, RotateCcw, ArrowRight, History, CheckSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,6 +29,9 @@ const AIAssistant = () => {
   const axiosCancelTokenRef = useRef(null); // Store axios cancel token for cancelling requests
   const streamMessageIntervalRef = useRef(null); // Store streamMessage interval for cleanup
   const isContextClearedRef = useRef(false); // Track if context was cleared to prevent delayed updates
+  const [previousQuestions, setPreviousQuestions] = useState([]);
+  const [selectedQuestionId, setSelectedQuestionId] = useState(null);
+  const [showPreviousQuestions, setShowPreviousQuestions] = useState(false);
   
   // Progressive loading states dictionary
   const loadingStates = [
@@ -45,6 +48,45 @@ const AIAssistant = () => {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  // Fetch previous questions when component mounts or opens
+  useEffect(() => {
+    if (isOpen && token) {
+      fetchPreviousQuestions();
+    }
+  }, [isOpen, token]);
+
+  const fetchPreviousQuestions = async () => {
+    try {
+      const response = await axios.get(`${API}/user-questions`, {
+        params: {
+          chatbot_type: 'vector_deep_ai',
+          limit: 10
+        },
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setPreviousQuestions(response.data.questions || []);
+    } catch (error) {
+      console.error('Error fetching previous questions:', error);
+    }
+  };
+
+  const storeQuestion = async (question, response) => {
+    try {
+      await axios.post(`${API}/user-questions`, {
+        question: question,
+        chatbot_type: 'vector_deep_ai',
+        chart_title: null,
+        context: {},
+        response: response
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchPreviousQuestions();
+    } catch (error) {
+      console.error('Error storing question:', error);
+    }
+  };
 
   // Simulated streaming function to display text word by word
   const streamMessage = (fullText, onComplete) => {
@@ -149,7 +191,8 @@ const AIAssistant = () => {
         chart_title: 'General Business Intelligence Query',
         context: {},
         session_id: sessionId.current,
-        conversation_history: conversationHistory
+        conversation_history: conversationHistory,
+        selected_previous_question_id: selectedQuestionId || null
       };
 
       // CRITICAL: Use non-streaming endpoint when streaming is disabled
@@ -424,6 +467,18 @@ const AIAssistant = () => {
       } else {
         console.warn('⚠️ AIAssistant - No pivot data received!');
         setLastPivot([]);
+      }
+      
+      // Store the question and response for future reference
+      if (selectedQuestionId) {
+        // Increment usage count for selected previous question
+        axios.post(`${API}/user-questions/${selectedQuestionId}/use`, {}, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(error => console.error('Error incrementing question usage:', error));
+        setSelectedQuestionId(null); // Reset selection
+      } else {
+        // Store new question
+        storeQuestion(msgToSend, safeContent);
       }
       
       const aiMessage = { 
@@ -735,12 +790,57 @@ const AIAssistant = () => {
 
           {/* Input */}
           <div className="p-4 border-t bg-white rounded-b-2xl">
+            {/* Previous Questions Section */}
+            {previousQuestions.length > 0 && (
+              <div className="mb-3">
+                <button
+                  onClick={() => setShowPreviousQuestions(!showPreviousQuestions)}
+                  className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 mb-2"
+                >
+                  <History className="w-4 h-4" />
+                  <span>Previous Questions ({previousQuestions.length})</span>
+                </button>
+                {showPreviousQuestions && (
+                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
+                    {previousQuestions.map((q) => (
+                      <label
+                        key={q.id}
+                        className="flex items-start gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedQuestionId === q.id}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedQuestionId(q.id);
+                              setInput(q.question);
+                            } else {
+                              setSelectedQuestionId(null);
+                              setInput('');
+                            }
+                          }}
+                          className="mt-1"
+                        />
+                        <span className="text-xs text-gray-700 flex-1">{q.question}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
             <div className="flex gap-2">
               <Input
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  // Clear selection if user types manually
+                  if (selectedQuestionId && e.target.value !== previousQuestions.find(q => q.id === selectedQuestionId)?.question) {
+                    setSelectedQuestionId(null);
+                  }
+                }}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ask about your business data..."
+                placeholder={selectedQuestionId ? "Selected previous question (edit if needed)..." : "Ask about your business data..."}
                 disabled={loading}
                 className="flex-1 bg-white border-gray-300"
                 data-testid="ai-chat-input"
@@ -758,6 +858,12 @@ const AIAssistant = () => {
                 <Send className="w-5 h-5" />
               </Button>
             </div>
+            {selectedQuestionId && (
+              <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                <CheckSquare className="w-3 h-3" />
+                Asking about a previous question
+              </p>
+            )}
           </div>
         </div>
       )}
