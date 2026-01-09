@@ -35,19 +35,28 @@ const Signup = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!token) {
+    
+    // In development mode, allow signup without authentication
+    // In production, this route won't be available anyway
+    const isDev = process.env.NODE_ENV === 'development' || process.env.REACT_APP_ENVIRONMENT === 'development';
+    
+    if (!isDev && !token) {
       toast.error('Please login first to create users');
       return;
     }
 
     setLoading(true);
     try {
+      const headers = {};
+      // Only add auth header if token exists (for production compatibility)
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+      
       const response = await axios.post(
         `${API}/auth/signup`,
         formData,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+        { headers }
       );
       toast.success(`User ${response.data.name} created successfully!`);
       setFormData({
@@ -73,7 +82,7 @@ const Signup = () => {
   };
 
   // Check if in development mode
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev = process.env.NODE_ENV === 'development' || process.env.REACT_APP_ENVIRONMENT === 'development';
 
   if (!isDev) {
     return (

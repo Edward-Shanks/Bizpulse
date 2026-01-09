@@ -97,11 +97,14 @@ class AuthService:
             logger.error(f"Token refresh error: {str(e)}")
             raise ValueError(f"Token refresh failed: {str(e)}")
     
-    async def signup(self, request: SignupRequest, current_user_email: str) -> UserResponse:
+    async def signup(self, request: SignupRequest, current_user_email: str = None) -> UserResponse:
         """Create a new user (development only)"""
         # Check if in development mode
         if not settings.is_development:
             raise ValueError("Signup is only available in development mode")
+        
+        # In development mode, authentication is optional
+        # If current_user_email is None, we still allow signup
         
         # Check if user already exists
         if await self.user_repo.user_exists(request.email):
@@ -130,6 +133,49 @@ class AuthService:
             role=user_dict.get('role'),
             status=user_dict['status']
         )
+    
+    async def forgot_password(self, email: str) -> dict:
+        """Handle forgot password request - send email if user exists"""
+        email_lower = email.lower().strip()
+        user_doc = await self.user_repo.find_by_email(email_lower)
+        
+        if not user_doc:
+            # Don't reveal if user exists or not for security
+            # But in dev mode, we can be more helpful
+            if settings.is_development:
+                raise ValueError("User not found. Please check the email address.")
+            else:
+                # In production, always return success to prevent email enumeration
+                return {"message": "If the email exists, a password reset link has been sent."}
+        
+        # Send password reset email
+        from app.utils.email_service import send_password_reset_email
+        await send_password_reset_email(email_lower)
+        
+        return {"message": "Password reset email sent. Please check your inbox."}
+    
+    async def change_password(self, email: str, new_password: str) -> dict:
+        """Change user password (development only)"""
+        if not settings.is_development:
+            raise ValueError("Password change is only available in development mode")
+        
+        email_lower = email.lower().strip()
+        user_doc = await self.user_repo.find_by_email(email_lower)
+        
+        if not user_doc:
+            raise ValueError("User not found")
+        
+        # Hash new password
+        password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        # Update password
+        await self.user_repo.db.users.update_one(
+            {"email": email_lower},
+            {"$set": {"password_hash": password_hash}}
+        )
+        
+        logger.info(f"Password changed for user: {email_lower}")
+        return {"message": f"Password changed successfully for {email_lower}"}
     
     async def create_default_admin_user(self) -> None:
         """Create default admin user if it doesn't exist"""

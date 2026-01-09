@@ -54,5 +54,42 @@ class RefreshTokenResponse(BaseModel):
     token: str
     email: str
 
+class ForgotPasswordRequest(BaseModel):
+    """Forgot password request model"""
+    email: str
+
+class ForgotPasswordResponse(BaseModel):
+    """Forgot password response model"""
+    message: str
+
+class ChangePasswordRequest(BaseModel):
+    """Change password request model"""
+    email: str
+    new_password: str
+
+class ChangePasswordResponse(BaseModel):
+    """Change password response model"""
+    message: str
+
+class UserListResponse(BaseModel):
+    """User list response model"""
+    users: list[dict]
+
+class UpdateUserRequest(BaseModel):
+    """Update user request model"""
+    name: Optional[str] = None
+    department: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+
+class UpdateUserResponse(BaseModel):
+    """Update user response model"""
+    message: str
+    user: dict
+
+class DeleteUserResponse(BaseModel):
+    """Delete user response model"""
+    message: str
+
 
 

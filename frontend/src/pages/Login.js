@@ -197,7 +197,14 @@ const Login = () => {
                   Remember me
                 </Label>
               </div>
-              <a href="#" className="text-sm text-gray-600 hover:text-gray-900">
+              <a 
+                href="/forgot-password" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  navigate('/forgot-password');
+                }}
+                className="text-sm text-gray-600 hover:text-gray-900"
+              >
                 Forgot password?
               </a>
             </div>

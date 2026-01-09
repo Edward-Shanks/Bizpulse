@@ -18,10 +18,48 @@ import RootCauseAnalysis from '@/pages/RootCauseAnalysis';
 import ChartInsight from '@/pages/ChartInsight';
 import Kanban from '@/pages/Kanban';
 import Signup from '@/pages/Signup';
+import ForgotPassword from '@/pages/ForgotPassword';
+import UserManagement from '@/pages/UserManagement';
 import { Toaster } from '@/components/ui/sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 export const API = `${BACKEND_URL}/api`;
+
+// Check if in development mode
+// Note: NODE_ENV is set by Create React App build scripts, not from .env
+// We check multiple conditions to ensure development mode is detected
+// ALWAYS enable on localhost for easier development
+const isDevelopment = (() => {
+  // Primary check: REACT_APP_ENVIRONMENT from .env
+  if (process.env.REACT_APP_ENVIRONMENT === 'development') {
+    return true;
+  }
+  // Secondary check: NODE_ENV (set automatically by npm start)
+  if (process.env.NODE_ENV === 'development') {
+    return true;
+  }
+  // Fallback: ALWAYS enable on localhost (most reliable for development)
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
+      return true;
+    }
+  }
+  return false;
+})();
+
+// Debug log - always show in console
+console.log('🔧 Environment Check:');
+console.log('  NODE_ENV:', process.env.NODE_ENV);
+console.log('  REACT_APP_ENVIRONMENT:', process.env.REACT_APP_ENVIRONMENT);
+console.log('  Hostname:', typeof window !== 'undefined' ? window.location.hostname : 'N/A');
+console.log('  isDevelopment:', isDevelopment);
+if (isDevelopment) {
+  console.log('✅ Development mode - Signup and User Management routes ENABLED');
+  console.log('   Access: /signup and /user-management');
+} else {
+  console.log('❌ Production mode - Signup and User Management routes DISABLED');
+}
 
 // Auth Context
 export const AuthContext = React.createContext(null);
@@ -213,14 +251,23 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/login-variations" element={<LoginVariations />} />
-          <Route
-            path="/signup"
-            element={
-              <PrivateRoute>
-                <Signup />
-              </PrivateRoute>
-            }
-          />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          {isDevelopment && (
+            <Route
+              path="/signup"
+              element={<Signup />}
+            />
+          )}
+          {isDevelopment && (
+            <Route
+              path="/user-management"
+              element={
+                <PrivateRoute>
+                  <UserManagement />
+                </PrivateRoute>
+              }
+            />
+          )}
           <Route
             path="/"
             element={
