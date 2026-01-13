@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/App';
+import { useTheme } from '@/contexts/ThemeContext';
 import { 
   LayoutDashboard, 
   Users, 
@@ -20,15 +21,27 @@ import {
   TrendingUp,
   AlertCircle,
   Trello,
-  BarChart3
+  BarChart3,
+  Moon,
+  Sun,
+  LogOut
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import AIAssistant from '@/components/AIAssistant';
 
 const Layout = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [businessCompassOpen, setBusinessCompassOpen] = React.useState(true); // Always open by default
 
@@ -64,9 +77,9 @@ const Layout = ({ children }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className={`min-h-screen ${theme === 'dark' ? 'dark bg-gray-900' : 'bg-gray-50'}`}>
       {/* Top Header */}
-      <header className="h-16 fixed top-0 left-0 right-0 z-50" style={{ background: '#184464' }}>
+      <header className={`h-16 fixed top-0 left-0 right-0 z-50 ${theme === 'dark' ? 'bg-gray-950 border-b border-gray-800' : ''}`} style={theme === 'dark' ? { background: '#030712' } : { background: '#184464' }}>
         <div className="h-full px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
@@ -83,16 +96,45 @@ const Layout = ({ children }) => {
           </div>
           
           <div className="flex items-center gap-3">
-            <button className="relative p-2 hover:bg-blue-700 rounded-lg transition">
+            <button className={`relative p-2 rounded-lg transition ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-blue-700'}`}>
               <Bell className="w-5 h-5 text-white" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
-            <button className="p-2 hover:bg-blue-700 rounded-lg transition">
-              <Settings className="w-5 h-5 text-white" />
-            </button>
+            
+            {/* Settings Dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`p-2 rounded-lg transition ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-blue-700'}`}>
+                  <Settings className="w-5 h-5 text-white" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Settings</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={toggleTheme} className="cursor-pointer">
+                  {theme === 'light' ? (
+                    <>
+                      <Moon className="mr-2 h-4 w-4" />
+                      <span>Dark Theme</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sun className="mr-2 h-4 w-4" />
+                      <span>Light Theme</span>
+                    </>
+                  )}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout} className="cursor-pointer text-red-600 focus:text-red-600">
+                  <LogOut className="mr-2 h-4 w-4" />
+                  <span>Logout</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
             <button 
-              onClick={logout}
-              className="p-2 hover:bg-blue-700 rounded-lg transition"
+              className={`p-2 rounded-lg transition ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-blue-700'}`}
+              title="User Profile"
             >
               <User className="w-5 h-5 text-white" />
             </button>
@@ -103,7 +145,11 @@ const Layout = ({ children }) => {
       <div className="flex pt-16">
         {/* Sidebar */}
         <aside 
-          className={`fixed left-0 top-16 bottom-0 bg-white border-r border-gray-200 transition-all duration-300 ${
+          className={`fixed left-0 top-16 bottom-0 border-r transition-all duration-300 ${
+            theme === 'dark' 
+              ? 'bg-gray-800 border-gray-700' 
+              : 'bg-white border-gray-200'
+          } ${
             sidebarCollapsed ? 'w-20' : 'w-64'
           }`}
         >
@@ -123,7 +169,9 @@ const Layout = ({ children }) => {
             {/* Navigation Title */}
             {!sidebarCollapsed && (
               <div className="px-4 py-4">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                <h3 className={`text-xs font-semibold uppercase tracking-wider ${
+                  theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                }`}>
                   Navigation
                 </h3>
               </div>
@@ -145,8 +193,12 @@ const Layout = ({ children }) => {
                     <div
                       className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all ${
                         isItemActive || isParentActive
-                          ? 'bg-amber-50 text-amber-900 font-medium'
-                          : 'text-gray-700 hover:bg-gray-50'
+                          ? theme === 'dark'
+                            ? 'bg-amber-900/30 text-amber-300 font-medium'
+                            : 'bg-amber-50 text-amber-900 font-medium'
+                          : theme === 'dark'
+                            ? 'text-gray-300 hover:bg-gray-700'
+                            : 'text-gray-700 hover:bg-gray-50'
                       }`}
                       style={(isItemActive || isParentActive) ? { borderLeft: '3px solid #f59e0b' } : {}}
                     >
@@ -166,7 +218,11 @@ const Layout = ({ children }) => {
                         className="flex items-center gap-3 flex-1 text-left"
                       >
                         <Icon 
-                          className={`w-5 h-5 flex-shrink-0 ${isItemActive || isParentActive ? 'text-amber-600' : 'text-gray-500'}`} 
+                          className={`w-5 h-5 flex-shrink-0 ${
+                            isItemActive || isParentActive 
+                              ? 'text-amber-600' 
+                              : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                          }`} 
                         />
                         {!sidebarCollapsed && (
                           <span className="text-sm">{item.label}</span>
@@ -207,13 +263,21 @@ const Layout = ({ children }) => {
                               onClick={() => navigate(subItem.path)}
                               className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
                                 isSubActive
-                                  ? 'bg-amber-50 text-amber-900 font-medium'
-                                  : 'text-gray-600 hover:bg-gray-50'
+                                  ? theme === 'dark'
+                                    ? 'bg-amber-900/30 text-amber-300 font-medium'
+                                    : 'bg-amber-50 text-amber-900 font-medium'
+                                  : theme === 'dark'
+                                    ? 'text-gray-400 hover:bg-gray-700'
+                                    : 'text-gray-600 hover:bg-gray-50'
                               }`}
                               style={isSubActive ? { borderLeft: '3px solid #f59e0b' } : {}}
                             >
                               <SubIcon 
-                                className={`w-4 h-4 flex-shrink-0 ${isSubActive ? 'text-amber-600' : 'text-gray-400'}`} 
+                                className={`w-4 h-4 flex-shrink-0 ${
+                                  isSubActive 
+                                    ? 'text-amber-600' 
+                                    : theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                                }`} 
                               />
                               <span className="text-sm">{subItem.label}</span>
                             </button>
@@ -228,8 +292,14 @@ const Layout = ({ children }) => {
 
             {/* Footer */}
             {!sidebarCollapsed && (
-              <div className="p-4 border-t border-gray-200">
-                <p className="text-xs text-gray-500 text-center">BeaconIQ by Vector AI Studio</p>
+              <div className={`p-4 border-t ${
+                theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+              }`}>
+                <p className={`text-xs text-center ${
+                  theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  BeaconIQ by Vector AI Studio
+                </p>
               </div>
             )}
           </div>
@@ -239,9 +309,9 @@ const Layout = ({ children }) => {
         <main 
           className={`flex-1 transition-all duration-300 ${
             sidebarCollapsed ? 'ml-20' : 'ml-64'
-          }`}
+          } ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}
         >
-          <div className="p-8">
+          <div className={`p-8 ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : ''}`}>
             {children || <Outlet />}
           </div>
         </main>

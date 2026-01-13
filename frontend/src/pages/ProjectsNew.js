@@ -16,9 +16,11 @@ import GoalFormModal from '@/components/GoalFormModal';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
 import { toast } from 'sonner';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const ProjectsNew = () => {
   const { token } = useAuth();
+  const { theme } = useTheme();
   const [activeSection, setActiveSection] = useState('top-projects');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ const ProjectsNew = () => {
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading projects...</p>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading projects...</p>
           </div>
         </div>
       </Layout>
@@ -61,7 +63,7 @@ const ProjectsNew = () => {
     return (
       <Layout>
         <div className="text-center py-12">
-          <p className="text-gray-600">No data available</p>
+          <p className="text-gray-600 dark:text-gray-400">No data available</p>
         </div>
       </Layout>
     );
@@ -439,10 +441,10 @@ const ProjectsNew = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
               Projects & Planning
             </h1>
-            <p className="text-gray-600 text-sm mt-1">Manage projects, strategic plans, and campaigns</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Manage projects, strategic plans, and campaigns</p>
           </div>
           <Button
             className="text-white"
@@ -455,11 +457,17 @@ const ProjectsNew = () => {
 
         {/* Section Navigation */}
         <div 
-          className="rounded-[10px] p-1"
-          style={{
-            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-            border: '1px solid rgba(0, 0, 0, 0.1)'
-          }}
+          className="rounded-[10px] p-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+          style={theme === 'dark' 
+            ? {
+                background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }
+            : {
+                background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                border: '1px solid rgba(0, 0, 0, 0.1)'
+              }
+          }
         >
           <div className="flex gap-1">
             <button
@@ -467,7 +475,7 @@ const ProjectsNew = () => {
               className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeSection === 'top-projects'
                   ? 'text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
               style={activeSection === 'top-projects' ? { background: '#184464' } : {}}
             >

@@ -5,6 +5,7 @@ import InsightModal from '@/components/InsightModal';
 import { formatNumber } from '@/utils/formatters';
 import staticData from '@/data/staticData';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/contexts/ThemeContext';
 import { 
   Plus, CheckCircle2, Clock, AlertCircle, AlertTriangle,
   Sparkles, Calendar, Users, Target, TrendingUp, Euro, Package,
@@ -19,6 +20,7 @@ import { toast } from 'sonner';
 
 const StrategicDeployment = () => {
   const { token } = useAuth();
+  const { theme } = useTheme();
   const [activeSection, setActiveSection] = useState('business-planner');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -337,10 +339,21 @@ const StrategicDeployment = () => {
         try {
           const goalsByDept = {};
           for (const dept of departments) {
-            const response = await axios.get(`${API}/goals/by-department/${dept}`, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            goalsByDept[dept] = response.data || [];
+            try {
+              const response = await axios.get(`${API}/goals/by-department/${dept}`, {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              goalsByDept[dept] = response.data || [];
+            } catch (deptError) {
+              // Silently handle 404s - endpoint may not exist yet
+              if (deptError.response?.status === 404) {
+                goalsByDept[dept] = [];
+              } else {
+                // Only log non-404 errors
+                console.warn(`Failed to load goals for ${dept}:`, deptError.message);
+              }
+              goalsByDept[dept] = [];
+            }
           }
           
           setCorporateGoals(prev => ({
@@ -352,7 +365,10 @@ const StrategicDeployment = () => {
             }))
           }));
         } catch (error) {
-          console.error('Failed to load corporate goals:', error);
+          // Silently handle errors - endpoint may not be implemented yet
+          if (error.response?.status !== 404) {
+            console.warn('Failed to load corporate goals:', error.message);
+          }
         }
       };
       loadCorporateGoalsAsync();
@@ -421,7 +437,7 @@ const StrategicDeployment = () => {
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading strategy deployment...</p>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading strategy deployment...</p>
           </div>
         </div>
       </Layout>
@@ -432,7 +448,7 @@ const StrategicDeployment = () => {
     return (
       <Layout>
         <div className="text-center py-12">
-          <p className="text-gray-600">No data available</p>
+          <p className="text-gray-600 dark:text-gray-400">No data available</p>
         </div>
       </Layout>
     );
@@ -483,7 +499,7 @@ const StrategicDeployment = () => {
                 <h3 className="text-xl font-bold text-gray-900 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
                   {plan.planName}
                 </h3>
-                <p className="text-sm text-gray-600">Period: {plan.period}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">Period: {plan.period}</p>
               </div>
               <div className="px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600">
                 <p className="text-xs text-white font-semibold">Expected Revenue</p>
@@ -509,16 +525,16 @@ const StrategicDeployment = () => {
 
             {/* Initiatives */}
             <div className="mb-6">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Strategic Initiatives</h4>
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Strategic Initiatives</h4>
               <div className="space-y-3">
                 {plan.initiatives.map((initiative, idx) => {
                   const priorityInfo = getPriorityColor(initiative.priority);
                   const statusInfo = getStatusColor(initiative.status);
                   
                   return (
-                    <div key={idx} className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+                    <div key={idx} className="p-4 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                       <div className="flex items-start justify-between mb-2">
-                        <h5 className="text-sm font-semibold text-gray-900">{initiative.name}</h5>
+                        <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{initiative.name}</h5>
                         <div className="flex gap-2">
                           <span 
                             className="px-2 py-1 rounded-full text-xs font-semibold"
@@ -536,12 +552,12 @@ const StrategicDeployment = () => {
                       </div>
                       <div className="grid grid-cols-2 gap-4 text-xs">
                         <div>
-                          <span className="text-gray-600">Budget: </span>
-                          <span className="font-semibold text-gray-900">{formatNumber(initiative.budget)}</span>
+                          <span className="text-gray-600 dark:text-gray-400">Budget: </span>
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">{formatNumber(initiative.budget)}</span>
                         </div>
                         <div>
-                          <span className="text-gray-600">Expected Revenue: </span>
-                          <span className="font-semibold text-gray-900">{formatNumber(initiative.revenue)}</span>
+                          <span className="text-gray-600 dark:text-gray-400">Expected Revenue: </span>
+                          <span className="font-semibold text-gray-900 dark:text-gray-100">{formatNumber(initiative.revenue)}</span>
                         </div>
                       </div>
                     </div>
@@ -552,7 +568,7 @@ const StrategicDeployment = () => {
 
             {/* Milestones Timeline */}
             <div className="mb-6">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Key Milestones</h4>
+              <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Key Milestones</h4>
               <div className="space-y-3">
                 {plan.milestones.map((milestone, idx) => {
                   const statusInfo = getStatusColor(milestone.status);
@@ -570,8 +586,8 @@ const StrategicDeployment = () => {
                       </div>
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
-                          <h5 className="text-sm font-semibold text-gray-900">{milestone.name}</h5>
-                          <span className="text-xs text-gray-600">{milestone.date}</span>
+                          <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100">{milestone.name}</h5>
+                          <span className="text-xs text-gray-600 dark:text-gray-400">{milestone.date}</span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div
@@ -731,7 +747,7 @@ const StrategicDeployment = () => {
             }}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
                 Campaign Performance (€ k)
               </h3>
               <Button
@@ -781,7 +797,7 @@ const StrategicDeployment = () => {
             }}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
                 ROI by Campaign
               </h3>
               <Button
@@ -827,7 +843,7 @@ const StrategicDeployment = () => {
             }}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
                 Conversion Rate Analysis (%)
               </h3>
               <Button
@@ -870,7 +886,7 @@ const StrategicDeployment = () => {
 
         {/* Campaign Cards */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4" style={{ fontFamily: 'Space Grotesk' }}>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4" style={{ fontFamily: 'Space Grotesk' }}>
             Campaign Details
           </h3>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -1026,7 +1042,7 @@ const StrategicDeployment = () => {
               className={`px-6 py-3 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
                 selectedQuarterId === quarter.id
                   ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md'
-                  : 'bg-white text-gray-700 border border-gray-200 hover:border-amber-300'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-amber-300 dark:hover:border-amber-500'
               }`}
             >
               {quarter.quarter}
@@ -1570,10 +1586,10 @@ const StrategicDeployment = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
               Strategy Deployment
             </h1>
-            <p className="text-gray-600 text-sm mt-1">Manage strategic plans, campaigns, and goals</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Manage strategic plans, campaigns, and goals</p>
           </div>
           {activeSection === 'goals-management' && (
             <Button

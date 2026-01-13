@@ -6,6 +6,7 @@ import InsightModal from '@/components/InsightModal';
 import { formatNumber, formatUnits } from '@/utils/formatters';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
+import { useTheme } from '@/contexts/ThemeContext';
 import { 
   TrendingUp, TrendingDown, Euro, Package, 
   Users, Target, Activity, Lightbulb 
@@ -13,6 +14,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 
 const Dashboard = () => {
+  const { theme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(null);
@@ -362,7 +364,7 @@ const Dashboard = () => {
           {/* KPI Cards Skeleton */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white rounded-lg border border-gray-200 p-5">
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
                 <Skeleton className="h-4 w-24 mb-3" />
                 <Skeleton className="h-10 w-32 mb-2" />
                 <Skeleton className="h-3 w-full" />
@@ -373,7 +375,7 @@ const Dashboard = () => {
           {/* Charts Grid Skeleton */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white rounded-lg border border-gray-200 p-5">
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-5">
                 <div className="flex items-center justify-between mb-4">
                   <Skeleton className="h-6 w-40" />
                   <Skeleton className="h-8 w-32 rounded" />
@@ -396,7 +398,7 @@ const Dashboard = () => {
     return (
       <Layout>
         <div className="text-center py-12">
-          <p className="text-gray-600">No data available</p>
+          <p className="text-gray-600 dark:text-gray-400">No data available</p>
         </div>
       </Layout>
     );
@@ -528,7 +530,7 @@ const Dashboard = () => {
         </div>
         
         {/* Chart Filters - Show merged filter values (individual overrides global) */}
-        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
           <select
             value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
             onChange={async (e) => {
@@ -541,7 +543,7 @@ const Dashboard = () => {
                 await handleChartFilterChange(chartName, 'years', [Number(value)]);
               }
             }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
           >
             <option value="all">All Years</option>
             {filters?.years?.map(year => (
@@ -561,7 +563,7 @@ const Dashboard = () => {
                 await handleChartFilterChange(chartName, 'months', [value]);
               }
             }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
           >
             <option value="all">All Months</option>
             {filters?.months?.map(month => (
@@ -581,7 +583,7 @@ const Dashboard = () => {
                 await handleChartFilterChange(chartName, 'businesses', [value]);
               }
             }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
           >
             <option value="all">All Businesses</option>
             {filters?.businesses?.map(business => (
@@ -607,8 +609,8 @@ const Dashboard = () => {
         {/* Header */}
         <div className="flex justify-between items-start">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Business Compass</h1>
-            <p className="text-gray-600">Comprehensive business analytics and performance metrics</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Business Compass</h1>
+            <p className="text-gray-600 dark:text-gray-400">Comprehensive business analytics and performance metrics</p>
           </div>
           
           {/* Data Source Indicator - Only in development */}
@@ -653,16 +655,22 @@ const Dashboard = () => {
 
         {/* Overall Page Filters */}
         <div 
-        className="rounded-lg p-5"
-        style={{
-          background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-          border: '1px solid rgba(0, 0, 0, 0.1)'
-        }}
+        className="rounded-lg p-5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+        style={theme === 'dark' 
+          ? {
+              background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }
+          : {
+              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+              border: '1px solid rgba(0, 0, 0, 0.1)'
+            }
+        }
       >
           <div className="flex justify-between items-center mb-3">
-            <h3 className="text-sm font-semibold text-gray-700">Global Filters</h3>
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Global Filters</h3>
             {isDevelopment && (
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-gray-500 dark:text-gray-400">
                 {filters ? (
                   <div>
                     <div>Loaded: {Object.keys(filters).length} filter types</div>
@@ -754,16 +762,22 @@ const Dashboard = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
           <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <Euro className="w-4 h-4 text-blue-600" />
-              <span className="text-xs text-gray-600">Total Sales</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Total Sales</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{formatNumber(totalRevenue)}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{formatNumber(totalRevenue)}</p>
             <p className={`text-xs flex items-center gap-1 ${revenueGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {revenueGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {Math.abs(revenueGrowth).toFixed(1)}%
@@ -772,16 +786,22 @@ const Dashboard = () => {
 
           <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="w-4 h-4 text-green-600" />
-              <span className="text-xs text-gray-600">Gross Profit</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Gross Profit</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{formatNumber(totalProfit)}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{formatNumber(totalProfit)}</p>
             <p className={`text-xs flex items-center gap-1 ${profitGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {profitGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {Math.abs(profitGrowth).toFixed(1)}%
@@ -790,16 +810,22 @@ const Dashboard = () => {
 
           <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <Package className="w-4 h-4 text-purple-600" />
-              <span className="text-xs text-gray-600">Cases Sold</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Cases Sold</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{formatUnits(totalUnits)}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{formatUnits(totalUnits)}</p>
             <p className={`text-xs flex items-center gap-1 ${unitsGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {unitsGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {Math.abs(unitsGrowth).toFixed(1)}%
@@ -808,32 +834,44 @@ const Dashboard = () => {
 
           <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <Activity className="w-4 h-4 text-orange-600" />
-              <span className="text-xs text-gray-600">Avg. Margin</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Avg. Margin</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{avgMargin.toFixed(1)}%</p>
-            <p className="text-xs text-gray-500">Current</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{avgMargin.toFixed(1)}%</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Current</p>
           </div>
 
           {/* YoY Growth Card - Commented out per user request */}
           {/* <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp className="w-4 h-4 text-blue-600" />
-              <span className="text-xs text-gray-600">YoY Growth</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">YoY Growth</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{yoyGrowth.toFixed(1)}%</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{yoyGrowth.toFixed(1)}%</p>
             <p className={`text-xs flex items-center gap-1 ${yoyGrowth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {yoyGrowth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {yoyGrowth >= 10 ? 'Strong' : yoyGrowth >= 5 ? 'Moderate' : yoyGrowth >= 0 ? 'Positive' : 'Declining'}
@@ -843,69 +881,87 @@ const Dashboard = () => {
           {/* New Customers Card - Commented out per user request */}
           {/* <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <Users className="w-4 h-4 text-green-600" />
               <span className="text-xs text-gray-600 whitespace-nowrap">New Customers</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{customerAcquisition > 0 ? customerAcquisition.toLocaleString() : 'N/A'}</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{customerAcquisition > 0 ? customerAcquisition.toLocaleString() : 'N/A'}</p>
             {customerAcquisition > 0 ? (
               <p className="text-xs text-green-600 flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
                 8.5%
               </p>
             ) : (
-              <p className="text-xs text-gray-500">Not available</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Not available</p>
             )}
           </div> */}
 
           {/* Market Share Card - Commented out per user request */}
           {/* <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <Target className="w-4 h-4 text-indigo-600" />
-              <span className="text-xs text-gray-600">Market Share</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Market Share</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{marketShare.toFixed(1)}%</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{marketShare.toFixed(1)}%</p>
             {marketShare > 0 ? (
               <p className="text-xs text-green-600 flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
                 {marketShare > 25.3 ? '+' : ''}{((marketShare - 25.3) / 25.3 * 100).toFixed(1)}%
               </p>
             ) : (
-              <p className="text-xs text-gray-500">From data</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">From data</p>
             )}
           </div> */}
 
           {/* Efficiency Card - Commented out per user request */}
           {/* <div 
             className="rounded-lg p-4"
-            style={{
-              background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-              border: '1px solid rgba(0, 0, 0, 0.1)'
-            }}
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
           >
             <div className="flex items-center gap-2 mb-2">
               <Activity className="w-4 h-4 text-emerald-600" />
-              <span className="text-xs text-gray-600">Efficiency</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Efficiency</span>
             </div>
-            <p className="text-xl font-bold text-gray-900 truncate">{operationalEfficiency.toFixed(1)}%</p>
+            <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{operationalEfficiency.toFixed(1)}%</p>
             {operationalEfficiency > 0 ? (
               <p className="text-xs text-green-600 flex items-center gap-1">
                 <TrendingUp className="w-3 h-3" />
                 {operationalEfficiency > 89 ? '+' : ''}{(operationalEfficiency - 89).toFixed(1)}%
               </p>
             ) : (
-              <p className="text-xs text-gray-500">Current</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Current</p>
             )}
           </div> */}
         </div>

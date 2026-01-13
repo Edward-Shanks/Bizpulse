@@ -59,13 +59,13 @@ const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange,
   return (
     <div className="relative" ref={dropdownRef}>
       {label && (
-        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
       )}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-white border border-gray-300 rounded-lg hover:border-gray-400 transition text-sm"
+        className="w-full flex items-center justify-between px-3 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:border-gray-400 dark:hover:border-gray-500 transition text-sm"
       >
-        <span className={`truncate ${selectedValues.length === 0 ? 'text-gray-500' : 'text-gray-900'}`}>
+        <span className={`truncate ${selectedValues.length === 0 ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
           {displayText}
         </span>
         <div className="flex items-center gap-1">
@@ -80,39 +80,39 @@ const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange,
               }}
               role="button"
               tabIndex={0}
-              className="p-0.5 hover:bg-gray-200 rounded transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-gray-400"
+              className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500"
               aria-label="Clear selection"
             >
-              <X className="w-4 h-4 text-gray-500" />
+              <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
             </div>
           )}
-          <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-4 h-4 text-gray-500 dark:text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
         </div>
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
+        <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-hidden flex flex-col">
           {/* Search Input */}
-          <div className="sticky top-0 bg-gray-50 border-b border-gray-200 p-2">
+          <div className="sticky top-0 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 p-2">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500" />
               <input
                 type="text"
                 placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500"
                 autoFocus
               />
             </div>
           </div>
           
           {/* Select All Button */}
-          <div className="sticky top-[41px] bg-gray-50 border-b border-gray-200 p-2">
+          <div className="sticky top-[41px] bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600 p-2">
             <button
               onClick={handleSelectAll}
-              className="w-full text-left px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 rounded transition"
+              className="w-full text-left px-3 py-1.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition"
             >
               {selectedValues.length === filteredOptions.length && filteredOptions.length > 0 ? '✓ Deselect All' : 'Select All'}
             </button>
@@ -124,19 +124,19 @@ const MultiSelectFilter = ({ label, options = [], selectedValues = [], onChange,
               filteredOptions.map((option) => (
                 <label
                   key={option}
-                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 rounded cursor-pointer transition"
+                  className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer transition"
                 >
                   <input
                     type="checkbox"
                     checked={selectedValues.includes(option)}
                     onChange={() => handleToggle(option)}
-                    className="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500"
+                    className="w-4 h-4 text-amber-600 border-gray-300 dark:border-gray-600 rounded focus:ring-amber-500 bg-white dark:bg-gray-800"
                   />
-                  <span className="text-sm text-gray-700">{option}</span>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">{option}</span>
                 </label>
               ))
             ) : (
-              <div className="px-3 py-2 text-sm text-gray-500 text-center">
+              <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 text-center">
                 No options found
               </div>
             )}

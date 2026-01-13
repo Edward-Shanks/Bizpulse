@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { formatNumber } from '@/utils/formatters';
+import { useTheme } from '@/contexts/ThemeContext';
 import CreateGoalsModal from '@/components/CreateGoalsModal';
 import GoalDetailModal from '@/components/GoalDetailModal';
+import MarketingStrategyModal from '@/components/MarketingStrategyModal';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
 import {
@@ -45,6 +47,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 const Kanban = () => {
   const { token } = useAuth();
+  const { theme } = useTheme();
   
   const [activeTab, setActiveTab] = useState('strategic-kanban');
   
@@ -69,6 +72,8 @@ const Kanban = () => {
   const [selectedCampaignForGoals, setSelectedCampaignForGoals] = useState(null);
   const [goalDetailModalOpen, setGoalDetailModalOpen] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState(null);
+  const [marketingStrategyModalOpen, setMarketingStrategyModalOpen] = useState(false);
+  const [selectedStrategyModule, setSelectedStrategyModule] = useState(null);
 
   // Load recommendations from MongoDB (does not generate new ones)
   useEffect(() => {
@@ -394,10 +399,10 @@ const Kanban = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
               Revenue Sentinel
             </h1>
-            <p className="text-gray-600 text-sm mt-1">
+            <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
               Manage strategic initiatives and marketing projects
             </p>
           </div>
@@ -429,7 +434,7 @@ const Kanban = () => {
               className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'strategic-kanban'
                   ? 'text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
               style={activeTab === 'strategic-kanban' ? { background: '#184464' } : {}}
             >
@@ -441,7 +446,7 @@ const Kanban = () => {
               className={`flex-1 px-4 py-3 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'marketing-strategy'
                   ? 'text-white shadow-md'
-                  : 'text-gray-600 hover:bg-gray-50'
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
               }`}
               style={activeTab === 'marketing-strategy' ? { background: '#184464' } : {}}
             >
@@ -622,7 +627,7 @@ const Kanban = () => {
               {initiatives.recommended.length === 0 ? (
                 <div className="professional-card p-5">
                   <div className="text-center py-8">
-                    <p className="text-gray-600">No recommendations available. Please check your data connection.</p>
+                    <p className="text-gray-600 dark:text-gray-400">No recommendations available. Please check your data connection.</p>
                   </div>
                 </div>
               ) : (
@@ -634,7 +639,7 @@ const Kanban = () => {
                 return (
                   <div 
                     key={`recommendation-${initiative.id || 'no-id'}-${idx}`} 
-                    className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
+                    className="rounded-[10px] border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
                     style={{
                       background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
                       border: '1px solid rgba(0, 0, 0, 0.1)'
@@ -642,10 +647,10 @@ const Kanban = () => {
                   >
                     {/* Header */}
                     <div className="mb-3">
-                      <h4 className="text-base font-semibold text-gray-900 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
+                      <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2" style={{ fontFamily: 'Space Grotesk' }}>
                         {initiative.title}
                       </h4>
-                      <p className="text-sm text-gray-600 leading-relaxed">
+                      <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                         {initiative.description}
                       </p>
                     </div>
@@ -655,7 +660,7 @@ const Kanban = () => {
                       <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-700">
                         System
                       </span>
-                      <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                         {categoryInfo.label}
                       </span>
                     </div>
@@ -676,7 +681,7 @@ const Kanban = () => {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <p className="text-xs text-gray-500 mb-1">Expected Impact</p>
-                          <p className="text-xl font-bold text-gray-900 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
+                          <p className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1" style={{ fontFamily: 'Space Grotesk' }}>
                             {formatNumber(initiative.impact?.value || 0)}
                           </p>
                           <p className="text-xs text-green-600 font-semibold">
@@ -684,7 +689,7 @@ const Kanban = () => {
                           </p>
                         </div>
                         <div className="text-right">
-                          <p className="text-xl font-bold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+                          <p className="text-xl font-bold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
                             {initiative.aiScore}%
                           </p>
                           <p className="text-xs text-gray-500">AI Score</p>
@@ -695,8 +700,8 @@ const Kanban = () => {
                     {/* Reasoning Section */}
                     {showReasoning === initiative.id && (
                       <div className="bg-blue-50 rounded-lg p-4 mt-3 border border-blue-200">
-                        <p className="text-sm font-semibold text-gray-900 mb-2">AI Reasoning</p>
-                        <p className="text-sm text-gray-700 leading-relaxed">{initiative.reasoning}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">AI Reasoning</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">{initiative.reasoning}</p>
                       </div>
                     )}
 
@@ -705,7 +710,7 @@ const Kanban = () => {
                       {initiative.channels.map((channel, idx) => (
                         <span
                           key={`channel-${initiative.id}-${idx}-${channel}`}
-                          className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700"
+                          className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                         >
                           {channel}
                         </span>
@@ -718,7 +723,7 @@ const Kanban = () => {
                         variant="outline"
                         size="sm"
                         onClick={() => setShowReasoning(showReasoning === initiative.id ? null : initiative.id)}
-                        className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 border-gray-300"
+                        className="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600"
                       >
                         <Sparkles className="w-4 h-4 mr-1" />
                         Reasoning
@@ -749,7 +754,7 @@ const Kanban = () => {
                 className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                   activeCampaignTab === 'live'
                     ? 'text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 style={activeCampaignTab === 'live' ? { background: '#184464' } : {}}
               >
@@ -760,7 +765,7 @@ const Kanban = () => {
                 className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
                   activeCampaignTab === 'past'
                     ? 'text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
                 style={activeCampaignTab === 'past' ? { background: '#184464' } : {}}
               >
@@ -773,7 +778,7 @@ const Kanban = () => {
                 initiatives.live.length === 0 ? (
                   <div className="professional-card p-5">
                     <div className="text-center py-8">
-                      <p className="text-gray-600">No live campaigns. Accept recommendations to add them here.</p>
+                      <p className="text-gray-600 dark:text-gray-400">No live campaigns. Accept recommendations to add them here.</p>
                     </div>
                   </div>
                 ) : (
@@ -785,7 +790,7 @@ const Kanban = () => {
                 return (
                   <div 
                     key={`live-${initiative.id || 'no-id'}-${idx}`} 
-                    className="rounded-[10px] border border-gray-200 p-5 hover:shadow-lg transition-shadow"
+                    className="rounded-[10px] border border-gray-200 dark:border-gray-700 p-5 hover:shadow-lg transition-shadow bg-white dark:bg-gray-800"
                     style={{
                       background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
                       border: '1px solid rgba(0, 0, 0, 0.1)'
@@ -793,7 +798,7 @@ const Kanban = () => {
                   >
                     {/* Header */}
                     <div className="mb-3">
-                      <h4 className="text-base font-semibold text-gray-900" style={{ fontFamily: 'Space Grotesk' }}>
+                      <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100" style={{ fontFamily: 'Space Grotesk' }}>
                         {initiative.title}
                       </h4>
                     </div>
@@ -803,7 +808,7 @@ const Kanban = () => {
                       <span className="px-2 py-1 rounded text-xs font-semibold bg-blue-100 text-blue-700">
                         System
                       </span>
-                      <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-100 text-gray-700">
+                      <span className="px-2 py-1 rounded text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                         {categoryInfo.label}
                       </span>
                     </div>
@@ -837,7 +842,7 @@ const Kanban = () => {
                       {(initiative.channels || []).map((channel, idx) => (
                         <span
                           key={`channel-live-${initiative.id}-${idx}-${channel}`}
-                          className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-700"
+                          className="px-2 py-1 rounded text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
                         >
                           {channel}
                         </span>
@@ -881,8 +886,8 @@ const Kanban = () => {
 
                     {/* Expanded Goals Section */}
                     {expandedCampaigns[initiative.id] && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <h5 className="text-sm font-semibold text-gray-900 mb-3">Campaign Goals</h5>
+                      <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <h5 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Campaign Goals</h5>
                         {campaignGoals[initiative.id]?.length > 0 ? (
                           <div className="space-y-3">
                             {campaignGoals[initiative.id].slice(-5).map((goal, goalIdx) => (
@@ -892,7 +897,7 @@ const Kanban = () => {
                                   setSelectedGoal(goal);
                                   setGoalDetailModalOpen(true);
                                 }}
-                                className="p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-gray-100 hover:border-indigo-300 transition"
+                                className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 transition"
                               >
                                 <div className="flex items-start justify-between">
                                   <div className="flex-1">
@@ -1051,6 +1056,10 @@ const Kanban = () => {
                       variant="outline"
                       size="sm"
                       className="w-full text-gray-700 border-gray-300"
+                      onClick={() => {
+                        setSelectedStrategyModule(module);
+                        setMarketingStrategyModalOpen(true);
+                      }}
                     >
                       <Eye className="w-4 h-4 mr-2" />
                       Configure
@@ -1320,6 +1329,15 @@ const Kanban = () => {
             }
             loadCorporateGoals();
           }}
+        />
+        <MarketingStrategyModal
+          isOpen={marketingStrategyModalOpen}
+          onClose={() => {
+            setMarketingStrategyModalOpen(false);
+            setSelectedStrategyModule(null);
+          }}
+          moduleId={selectedStrategyModule?.id}
+          moduleTitle={selectedStrategyModule?.title}
         />
       </div>
     </Layout>

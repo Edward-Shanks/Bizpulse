@@ -5,6 +5,7 @@ import ChartComponent from '@/components/ChartComponent';
 import { formatNumber } from '@/utils/formatters';
 import staticData from '@/data/staticData';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/contexts/ThemeContext';
 import { 
   AlertCircle, 
   TrendingDown, 
@@ -25,6 +26,7 @@ import {
 } from 'lucide-react';
 
 const RootCauseAnalysis = () => {
+  const { theme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(null);
@@ -48,7 +50,7 @@ const RootCauseAnalysis = () => {
         <div className="flex items-center justify-center h-96">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading root cause analysis...</p>
+            <p className="mt-4 text-gray-600 dark:text-gray-400">Loading root cause analysis...</p>
           </div>
         </div>
       </Layout>
@@ -175,10 +177,10 @@ const RootCauseAnalysis = () => {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
             Root Cause Analysis
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 dark:text-gray-400">
             Identify and resolve business performance issues
           </p>
         </div>
@@ -188,13 +190,19 @@ const RootCauseAnalysis = () => {
           <>
         {/* Multi-Select Filters */}
         <div 
-          className="rounded-lg p-4"
-          style={{
-            background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-            border: '1px solid rgba(0, 0, 0, 0.1)'
-          }}
+          className="rounded-lg p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
+          style={theme === 'dark' 
+            ? {
+                background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }
+            : {
+                background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                border: '1px solid rgba(0, 0, 0, 0.1)'
+              }
+          }
         >
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <MultiSelectFilter
               label="Year"
@@ -321,30 +329,29 @@ const RootCauseAnalysis = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Root Cause</p>
+                        <p className="text-xs text-gray-600 mb-1">Root Cause</p>
                         <p className="text-sm text-gray-900">{issue.rootCause}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Impact</p>
+                        <p className="text-xs text-gray-600 mb-1">Impact</p>
                         <p className="text-sm font-semibold text-gray-900">{issue.impact}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Status</p>
+                        <p className="text-xs text-gray-600 mb-1">Status</p>
                         <p className="text-sm text-gray-900 capitalize">{issue.status}</p>
                       </div>
                     </div>
 
                     <div 
-                      className="rounded-lg p-3"
-                      style={{ background: '#fef3c7' }}
+                      className="rounded-lg p-3 bg-yellow-50 border border-yellow-200"
                     >
                       <div className="flex items-start gap-2">
                         <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#f59e0b' }} />
                         <div>
-                          <p className="text-xs font-semibold mb-1" style={{ color: '#92400e' }}>
+                          <p className="text-xs font-semibold mb-1 text-yellow-800">
                             AI Recommendation:
                           </p>
-                          <p className="text-xs" style={{ color: '#92400e', whiteSpace: 'pre-line' }}>
+                          <p className="text-xs text-yellow-800" style={{ whiteSpace: 'pre-line' }}>
                             {Array.isArray(issue.recommendation)
                               ? issue.recommendation.join('\n')
                               : issue.recommendation}
@@ -402,7 +409,7 @@ const RootCauseAnalysis = () => {
                 }}
               />
             ) : (
-              <p className="text-center text-gray-500 py-8">No data available</p>
+              <p className="text-center text-gray-500 dark:text-gray-400 py-8">No data available</p>
             )}
           </div>
         </div>

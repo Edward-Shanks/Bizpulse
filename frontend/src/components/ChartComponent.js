@@ -1,15 +1,23 @@
 import React, { useEffect, useRef } from 'react';
 import { Chart as ChartJS } from 'chart.js/auto';
 
-const ChartComponent = ({ type, data, options }) => {
+const ChartComponent = ({ type, data, options, height = 280 }) => {
   const chartRef = useRef(null);
   const chartInstanceRef = useRef(null);
 
   useEffect(() => {
-    if (chartRef.current && data && data.labels && data.datasets) {
+    // For scatter charts, we don't need labels - only datasets
+    // For other chart types, we need both labels and datasets
+    const hasValidData = data && data.datasets && Array.isArray(data.datasets) && data.datasets.length > 0 && (
+      type === 'scatter' || 
+      (data.labels && Array.isArray(data.labels))
+    );
+    
+    if (chartRef.current && hasValidData) {
       // Destroy previous chart instance
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
       }
 
       // Create new chart
@@ -17,7 +25,11 @@ const ChartComponent = ({ type, data, options }) => {
       chartInstanceRef.current = new ChartJS(ctx, {
         type: type,
         data: data,
-        options: options || {},
+        options: {
+          ...options,
+          responsive: options?.responsive !== undefined ? options.responsive : true,
+          maintainAspectRatio: options?.maintainAspectRatio !== undefined ? options.maintainAspectRatio : false
+        },
       });
     }
 
@@ -25,12 +37,13 @@ const ChartComponent = ({ type, data, options }) => {
     return () => {
       if (chartInstanceRef.current) {
         chartInstanceRef.current.destroy();
+        chartInstanceRef.current = null;
       }
     };
   }, [type, data, options]);
 
   return (
-    <div style={{ position: 'relative', height: '280px', width: '100%' }}>
+    <div style={{ position: 'relative', height: `${height}px`, width: '100%' }}>
       <canvas ref={chartRef} />
     </div>
   );

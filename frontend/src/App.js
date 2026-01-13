@@ -21,6 +21,7 @@ import Signup from '@/pages/Signup';
 import ForgotPassword from '@/pages/ForgotPassword';
 import UserManagement from '@/pages/UserManagement';
 import { Toaster } from '@/components/ui/sonner';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 export const API = `${BACKEND_URL}/api`;
@@ -246,8 +247,9 @@ const PrivateRoute = ({ children }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/login-variations" element={<LoginVariations />} />
@@ -376,6 +378,7 @@ function App() {
         <Toaster position="top-right" />
       </BrowserRouter>
     </AuthProvider>
+    </ThemeProvider>
   );
 }
 

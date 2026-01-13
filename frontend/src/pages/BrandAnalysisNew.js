@@ -6,12 +6,14 @@ import InsightModal from '@/components/InsightModal';
 import { formatNumber } from '@/utils/formatters';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
+import { useTheme } from '@/contexts/ThemeContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { Tag, TrendingUp, Euro, Lightbulb } from 'lucide-react';
 
 const BrandAnalysis = () => {
   const { token } = useAuth();
+  const { theme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(null);
@@ -328,7 +330,7 @@ const BrandAnalysis = () => {
           {/* KPI Cards Skeleton */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <Skeleton className="h-4 w-24 mb-3" />
@@ -362,7 +364,7 @@ const BrandAnalysis = () => {
     return (
       <Layout>
         <div className="text-center py-12">
-          <p className="text-gray-600">No data available</p>
+          <p className="text-gray-600 dark:text-gray-400">No data available</p>
         </div>
       </Layout>
     );
@@ -581,7 +583,7 @@ const BrandAnalysis = () => {
         </div>
         
         {/* Chart Filters - Show merged filter values (individual overrides global) */}
-        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
           <select
             value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
             onChange={async (e) => {
@@ -592,7 +594,7 @@ const BrandAnalysis = () => {
                 await handleChartFilterChange(chartId, 'years', [Number(value)]);
               }
             }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
           >
             <option value="all">All Years</option>
             {filters?.years?.map(year => (
@@ -610,7 +612,7 @@ const BrandAnalysis = () => {
                 await handleChartFilterChange(chartId, 'months', [value]);
               }
             }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
           >
             <option value="all">All Months</option>
             {filters?.months?.map(month => (
@@ -628,7 +630,7 @@ const BrandAnalysis = () => {
                 await handleChartFilterChange(chartId, 'businesses', [value]);
               }
             }}
-            className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+            className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
           >
             <option value="all">All Businesses</option>
             {filters?.businesses?.map(business => (
@@ -647,8 +649,8 @@ const BrandAnalysis = () => {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Brand Analysis</h1>
-          <p className="text-gray-600">Brand performance metrics and insights</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Brand Analysis</h1>
+          <p className="text-gray-600 dark:text-gray-400">Brand performance metrics and insights</p>
         </div>
 
         <div 
@@ -658,7 +660,7 @@ const BrandAnalysis = () => {
             border: '1px solid rgba(0, 0, 0, 0.1)'
           }}
         >
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <MultiSelectFilter
               label="Year"
@@ -1097,8 +1099,8 @@ const BrandAnalysis = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left py-2 px-3 text-gray-700 font-semibold text-xs">Brand</th>
+                <tr className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                  <th className="text-left py-2 px-3 text-gray-700 dark:text-gray-300 font-semibold text-xs">Brand</th>
                   <th className="text-left py-2 px-3 text-gray-700 font-semibold text-xs">Business</th>
                   <th className="text-right py-2 px-3 text-gray-700 font-semibold text-xs">Revenue</th>
                   <th className="text-right py-2 px-3 text-gray-700 font-semibold text-xs">Gross Profit</th>

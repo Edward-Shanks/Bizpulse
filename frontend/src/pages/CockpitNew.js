@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/contexts/ThemeContext';
 import { 
   TrendingUp, 
   Euro, 
@@ -28,6 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 const Cockpit = () => {
   const navigate = useNavigate();
   const { token } = useAuth();
+  const { theme } = useTheme();
   const [activeTab, setActiveTab] = useState('recommended');
   const [loadingActionItems, setLoadingActionItems] = useState(true);
 
@@ -141,7 +143,7 @@ const Cockpit = () => {
 
   // Skeleton loader component for action items
   const ActionItemSkeleton = () => (
-    <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
       <div className="flex items-center gap-3 flex-1">
         <Skeleton className="w-4 h-4" />
         <div className="flex-1">
@@ -366,13 +368,13 @@ const Cockpit = () => {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Business Cockpit</h1>
-          <p className="text-gray-600">AI-powered Business and Revenue and Campaign Management</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Business Cockpit</h1>
+          <p className="text-gray-600 dark:text-gray-400">AI-powered Business and Revenue and Campaign Management</p>
         </div>
 
         {/* Key Insights - 4 cards with gradient backgrounds matching Figma */}
         <div>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Key Insights</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Key Insights</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {insights.map((insight, idx) => {
               return (
@@ -422,16 +424,16 @@ const Cockpit = () => {
 
         {/* Top Action Items - Two Columns */}
         <div>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Top Action Items</h2>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Top Action Items</h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Critical Column */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-gray-900">Critical</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Critical</h3>
                 <select
                   value={criticalPriorityFilter}
                   onChange={(e) => setCriticalPriorityFilter(e.target.value)}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 >
                   <option value="all">Priority</option>
                   <option value="high">High</option>
@@ -439,7 +441,7 @@ const Cockpit = () => {
                   <option value="low">Low</option>
                 </select>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 {loadingActionItems ? (
                   <>
                     <ActionItemSkeleton />
@@ -449,7 +451,7 @@ const Cockpit = () => {
                     <ActionItemSkeleton />
                   </>
                 ) : getFilteredItems(actionItems.critical, criticalPriorityFilter).length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">
+                  <div className="p-8 text-center text-gray-500 dark:text-gray-400">
                     <p className="text-sm">No critical action items found</p>
                   </div>
                 ) : (
@@ -457,22 +459,22 @@ const Cockpit = () => {
                   <div
                     key={`critical-${item.id}-${idx}`}
                     className={`flex items-center justify-between p-4 ${
-                      idx !== arr.length - 1 ? 'border-b border-gray-200' : ''
+                      idx !== arr.length - 1 ? 'border-b border-gray-200 dark:border-gray-700' : ''
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <FileText className="w-4 h-4 text-gray-400" />
+                      <FileText className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                       <div>
-                        <h4 className="font-medium text-gray-900 text-sm">{item.title}</h4>
-                        <p className="text-xs text-gray-500">Due: {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                        <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm">{item.title}</h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Due: {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       </div>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       item.priority === 'high' 
-                        ? 'bg-red-100 text-red-700' 
+                        ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                         : item.priority === 'medium'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-700'
+                        ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                     }`}>
                       {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
                     </span>
@@ -485,11 +487,11 @@ const Cockpit = () => {
             {/* Impact Column */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-gray-900">Impact</h3>
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Impact</h3>
                 <select
                   value={impactPriorityFilter}
                   onChange={(e) => setImpactPriorityFilter(e.target.value)}
-                  className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 >
                   <option value="all">Priority</option>
                   <option value="high">High</option>
@@ -497,7 +499,7 @@ const Cockpit = () => {
                   <option value="low">Low</option>
                 </select>
               </div>
-              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
                 {loadingActionItems ? (
                   <>
                     <ActionItemSkeleton />
@@ -507,7 +509,7 @@ const Cockpit = () => {
                     <ActionItemSkeleton />
                   </>
                 ) : getFilteredItems(actionItems.impact, impactPriorityFilter).length === 0 ? (
-                  <div className="p-8 text-center text-gray-500">
+                  <div className="p-8 text-center text-gray-500 dark:text-gray-400">
                     <p className="text-sm">No impact action items found</p>
                   </div>
                 ) : (
@@ -515,22 +517,22 @@ const Cockpit = () => {
                   <div
                     key={`impact-${item.id}-${idx}`}
                     className={`flex items-center justify-between p-4 ${
-                      idx !== arr.length - 1 ? 'border-b border-gray-200' : ''
+                      idx !== arr.length - 1 ? 'border-b border-gray-200 dark:border-gray-700' : ''
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <FileText className="w-4 h-4 text-gray-400" />
+                      <FileText className="w-4 h-4 text-gray-400 dark:text-gray-500" />
                       <div>
-                        <h4 className="font-medium text-gray-900 text-sm">{item.title}</h4>
-                        <p className="text-xs text-gray-500">Due: {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                        <h4 className="font-medium text-gray-900 dark:text-gray-100 text-sm">{item.title}</h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Due: {new Date(item.dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                       </div>
                     </div>
                     <span className={`px-2 py-1 rounded text-xs font-semibold ${
                       item.priority === 'high' 
-                        ? 'bg-red-100 text-red-700' 
+                        ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' 
                         : item.priority === 'medium'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-700'
+                        ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                     }`}>
                       {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
                     </span>
@@ -555,8 +557,8 @@ const Cockpit = () => {
                 onClick={() => setActiveTab(tab.key)}
                 className={`px-4 py-2 rounded-lg font-medium transition ${
                   activeTab === tab.key
-                    ? 'bg-amber-100 text-amber-900'
-                    : 'text-gray-600 hover:bg-gray-100'
+                    ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-900 dark:text-amber-300'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
               >
                 {tab.label} ({tab.count})
@@ -569,7 +571,7 @@ const Cockpit = () => {
             {loadingCampaigns ? (
               // Skeleton loaders for campaigns
               Array.from({ length: 6 }).map((_, idx) => (
-                <div key={idx} className="rounded-[10px] border border-gray-200 p-6 bg-gray-50">
+                <div key={idx} className="rounded-[10px] border border-gray-200 dark:border-gray-700 p-6 bg-gray-50 dark:bg-gray-800">
                   <Skeleton className="h-6 w-3/4 mb-2" />
                   <Skeleton className="h-4 w-full mb-4" />
                   <Skeleton className="h-8 w-16 mb-4" />
@@ -578,29 +580,35 @@ const Cockpit = () => {
                 </div>
               ))
             ) : currentCampaigns.length === 0 ? (
-              <div className="col-span-2 p-8 text-center text-gray-500">
+              <div className="col-span-2 p-8 text-center text-gray-500 dark:text-gray-400">
                 <p className="text-sm">No {activeTab} campaigns found</p>
               </div>
             ) : (
               currentCampaigns.map((campaign) => (
                 <div 
                   key={`${activeTab}-${campaign.id}`} 
-                  className="rounded-[10px] border border-gray-200 p-6"
-                  style={{
-                    background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                    border: '1px solid rgba(0, 0, 0, 0.1)'
-                  }}
+                  className="rounded-[10px] border p-6"
+                  style={theme === 'dark' 
+                    ? {
+                        background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                        borderColor: 'rgba(255, 255, 255, 0.1)'
+                      }
+                    : {
+                        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                        borderColor: 'rgba(0, 0, 0, 0.1)'
+                      }
+                  }
                 >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">{campaign.name}</h3>
-                    <p className="text-sm text-gray-600 mb-4">{campaign.description}</p>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">{campaign.name}</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{campaign.description}</p>
                   </div>
                   {/* AI Score on Right Side */}
                   <div className="flex flex-col items-end flex-shrink-0 ml-4">
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-gray-900">{campaign.aiScore}%</p>
-                      <p className="text-xs text-gray-500 mt-1">AI Score</p>
+                      <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{campaign.aiScore}%</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">AI Score</p>
                     </div>
                   </div>
                 </div>
@@ -608,13 +616,13 @@ const Cockpit = () => {
                 {/* Row 1: Channels and Budget */}
                 <div className="flex items-center justify-between gap-4 mb-3">
                   {/* Channels - White Card */}
-                  <div className="flex-1 bg-white rounded-lg p-3 border border-gray-200">
-                    <p className="text-sm font-medium text-gray-900 mb-2">{campaign.channels.length} Channels</p>
+                  <div className="flex-1 bg-white dark:bg-gray-700 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-2">{campaign.channels.length} Channels</p>
                     <div className="flex flex-wrap items-center gap-2">
                       {campaign.channels.map((channel, idx) => (
                         <span 
                           key={idx} 
-                          className="px-2 py-1 bg-gray-100 text-gray-700 text-xs font-medium rounded"
+                          className="px-2 py-1 bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs font-medium rounded"
                         >
                           {channel}
                         </span>
@@ -624,8 +632,8 @@ const Cockpit = () => {
 
                   {/* Budget on Right */}
                   <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
-                    <p className="text-lg font-semibold text-gray-900">{campaign.budget}</p>
-                    <p className="text-xs text-gray-500 mt-1">Budget</p>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{campaign.budget}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Budget</p>
                   </div>
                 </div>
 
@@ -635,12 +643,15 @@ const Cockpit = () => {
                     {/* AI Recommendation - Light Beige Background */}
                     <div 
                       className="flex-1 rounded-lg p-3"
-                      style={{ background: '#F2E9DB' }}
+                      style={theme === 'dark' 
+                        ? { background: 'rgba(242, 233, 219, 0.1)' }
+                        : { background: '#F2E9DB' }
+                      }
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
-                          <h4 className="text-sm font-semibold text-gray-900 mb-1">AI Recommendation</h4>
-                          <p className="text-xs text-gray-700 leading-relaxed">
+                          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">AI Recommendation</h4>
+                          <p className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed">
                             {campaign.aiRecommendation}
                           </p>
                         </div>
@@ -650,10 +661,10 @@ const Cockpit = () => {
 
                     {/* Expected ROI on Right */}
                     <div className="flex flex-col items-end flex-shrink-0" style={{ minWidth: '100px' }}>
-                      <p className="text-lg font-semibold text-gray-900">
+                      <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">
                         {campaign.growth && campaign.growth !== '0%' ? campaign.growth : 'N/A'}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">Expected ROI</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Expected ROI</p>
                     </div>
                   </div>
                 )}
@@ -661,15 +672,15 @@ const Cockpit = () => {
 
                 {activeTab === 'active' && (
                   <div className="mb-4">
-                    <p className="text-xs text-gray-500 mb-1">Start Date</p>
-                    <p className="text-sm font-medium text-gray-900">{campaign.startDate}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Start Date</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{campaign.startDate}</p>
                   </div>
                 )}
 
                 {activeTab === 'archived' && (
                   <div className="mb-4">
-                    <p className="text-xs text-gray-500 mb-1">End Date</p>
-                    <p className="text-sm font-medium text-gray-900">{campaign.endDate}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">End Date</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{campaign.endDate}</p>
                   </div>
                 )}
 
@@ -686,7 +697,7 @@ const Cockpit = () => {
                     </Button>
                     <Button
                       onClick={() => handleArchive(campaign.id, campaign.name)}
-                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 border-0 rounded-lg"
+                      className="flex-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 border-0 rounded-lg"
                     >
                       <Archive className="w-4 h-4 mr-2" />
                       Archive
@@ -705,7 +716,7 @@ const Cockpit = () => {
                     </Button>
                     <Button
                       onClick={() => handleArchive(campaign.id, campaign.name, 'active')}
-                      className="flex-1 bg-white hover:bg-gray-50 text-gray-700 border border-gray-300"
+                      className="flex-1 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600"
                       variant="outline"
                     >
                       <Archive className="w-4 h-4 mr-2" />

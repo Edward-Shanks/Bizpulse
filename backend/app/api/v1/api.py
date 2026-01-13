@@ -68,6 +68,12 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.api.v1.routes import marketing_strategy
+    api_router.include_router(marketing_strategy.router, tags=["Marketing Strategy"])
+except ImportError:
+    pass
+
 # Debug endpoints (for checking system status)
 try:
     from app.api import debug

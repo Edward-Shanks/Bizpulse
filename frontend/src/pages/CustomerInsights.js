@@ -6,12 +6,14 @@ import MultiSelectFilter from '@/components/MultiSelectFilter';
 import { formatNumber, formatCurrency, formatUnits } from '@/utils/formatters';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
+import { useTheme } from '@/contexts/ThemeContext';
 import { toast } from 'sonner';
 import { Users, ShoppingCart, TrendingUp, MapPin, Globe, Mail, Euro, Eye, Clock, Package, Calendar, AlertTriangle, MessageSquare, Lightbulb } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const CustomerInsights = () => {
   const { token } = useAuth();
+  const { theme } = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(null);
@@ -248,6 +250,7 @@ const CustomerInsights = () => {
   };
 
   const ChartCard = ({ title, children, onViewInsight, icon: Icon, chartId, renderChart }) => {
+    const { theme } = useTheme();
     const mergedFilters = chartId ? getMergedFilters(chartId) : { years: selectedYears, months: selectedMonths };
     
     // Get chart-specific data arrays if chartId is provided
@@ -279,7 +282,7 @@ const CustomerInsights = () => {
         
         {/* Chart Filters - Show merged filter values (individual overrides global) - Only show if chartId is provided */}
         {chartId && (
-          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 rounded-lg">
+          <div className="flex flex-wrap items-center gap-3 mb-4 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
             <select
               value={mergedFilters.years.length === 1 ? mergedFilters.years[0] : mergedFilters.years.length > 1 ? 'multiple' : 'all'}
               onChange={async (e) => {
@@ -290,7 +293,7 @@ const CustomerInsights = () => {
                   await handleChartFilterChange(chartId, 'years', [value]);
                 }
               }}
-              className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+              className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
             >
               <option value="all">All Years</option>
               {filters?.years?.map(year => (
@@ -308,7 +311,7 @@ const CustomerInsights = () => {
                   await handleChartFilterChange(chartId, 'months', [value]);
                 }
               }}
-              className="text-sm border border-gray-300 rounded px-3 py-1.5 bg-white flex-shrink-0"
+              className="text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-shrink-0"
             >
               <option value="all">All Months</option>
               {filters?.months?.map(month => (
@@ -337,7 +340,7 @@ const CustomerInsights = () => {
           {/* Summary Cards Skeleton */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-5">
                 <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <Skeleton className="h-4 w-24 mb-3" />
@@ -352,7 +355,7 @@ const CustomerInsights = () => {
           {/* Chart Cards Skeleton */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <div key={i} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Skeleton className="w-5 h-5 rounded" />
@@ -366,7 +369,7 @@ const CustomerInsights = () => {
           </div>
 
           {/* Additional Section Skeleton */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <Skeleton className="h-6 w-48 mb-4" />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[1, 2, 3].map((i) => (
@@ -1089,8 +1092,8 @@ const CustomerInsights = () => {
     <Layout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Customer Deep Intelligence</h1>
-          <p className="text-gray-600 text-sm mt-1">Deep dive into customer behavior and Shopify analytics</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Customer Deep Intelligence</h1>
+          <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Deep dive into customer behavior and Shopify analytics</p>
         </div>
 
         {/* Filters */}
@@ -1101,7 +1104,7 @@ const CustomerInsights = () => {
             border: '1px solid rgba(0, 0, 0, 0.1)'
           }}
         >
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">Filters</h3>
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Filters</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <MultiSelectFilter
               label="Year"
@@ -1125,7 +1128,7 @@ const CustomerInsights = () => {
             />
           </div>
           {(selectedYears.length > 0 || selectedMonths.length > 0) && (
-            <div className="mt-3 p-2 bg-blue-50 rounded text-xs text-blue-800">
+            <div className="mt-3 p-2 bg-blue-50 dark:bg-blue-900/30 rounded text-xs text-blue-800 dark:text-blue-300">
               <strong>Active Filters:</strong>{' '}
               {selectedYears.length > 0 && `Years: ${selectedYears.join(', ')}`}
               {selectedYears.length > 0 && selectedMonths.length > 0 && ' | '}
@@ -1576,28 +1579,28 @@ const CustomerInsights = () => {
             border: '1px solid rgba(0, 0, 0, 0.1)'
           }}
         >
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top 20 Customers by Sales</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Top 20 Customers by Sales</h3>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50 dark:bg-gray-800">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Sales</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Orders</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Lifetime Orders</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Customer Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Total Sales</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Orders</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Lifetime Orders</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
                 {topCustomers.map((customer, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900">{customer.name || 'N/A'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{customer.email || 'N/A'}</td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
+                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-800">
+                    <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">{customer.name || 'N/A'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{customer.email || 'N/A'}</td>
+                    <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900 dark:text-gray-100">
                       {formatCurrency(customer.total_sales || 0)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-600">{customer.total_orders || 0}</td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-600">{customer.lifetime_orders || 0}</td>
+                    <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400">{customer.total_orders || 0}</td>
+                    <td className="px-4 py-3 text-sm text-right text-gray-600 dark:text-gray-400">{customer.lifetime_orders || 0}</td>
                   </tr>
                 ))}
               </tbody>
