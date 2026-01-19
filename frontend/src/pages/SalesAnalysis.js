@@ -626,11 +626,17 @@ const SalesAnalysis = () => {
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      intersect: false,
+      mode: 'index',
+    },
     plugins: {
       legend: { display: true, position: 'top' },
       tooltip: {
         enabled: true,
         displayColors: true,
+        intersect: false,
+        mode: 'index',
         callbacks: {
           label: (context) => {
             const label = context.dataset.label || '';
