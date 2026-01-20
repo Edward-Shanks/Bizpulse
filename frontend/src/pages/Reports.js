@@ -14,6 +14,8 @@ const Reports = () => {
   const [filters, setFilters] = useState(null);
   const [selectedFilters, setSelectedFilters] = useState({});
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(null);
 
   useEffect(() => {
     fetchFilters();
@@ -32,8 +34,97 @@ const Reports = () => {
     }
   };
 
-  const handleGenerateReport = () => {
-    toast.success('Report generation feature coming soon!');
+  const downloadFile = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
+  const handleGenerateReport = async () => {
+    setGenerating(true);
+    try {
+      // Build query parameters
+      const params = new URLSearchParams();
+      if (selectedFilters.year) params.append('years', selectedFilters.year);
+      if (selectedFilters.business) params.append('businesses', selectedFilters.business);
+      if (selectedFilters.brand) params.append('brands', selectedFilters.brand);
+      if (selectedFilters.channel) params.append('channels', selectedFilters.channel);
+      if (selectedFilters.category) params.append('categories', selectedFilters.category);
+      params.append('format', 'excel');
+
+      const response = await axios.get(`${API}/reports/generate?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      // Extract filename from Content-Disposition header or use default
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'custom_report.xlsx';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      downloadFile(response.data, filename);
+      toast.success('Report generated successfully!');
+    } catch (error) {
+      console.error('Error generating report:', error);
+      toast.error(error.response?.data?.detail || 'Failed to generate report');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handlePredefinedReport = async (reportType, reportName) => {
+    setGeneratingReport(reportType);
+    try {
+      const params = new URLSearchParams();
+      
+      // Add basic filters that apply to all reports
+      if (selectedFilters.year) params.append('years', selectedFilters.year);
+      if (selectedFilters.business) params.append('businesses', selectedFilters.business);
+      
+      // Add report-specific filters
+      if (reportType === 'customer-performance' && selectedFilters.channel) {
+        params.append('channels', selectedFilters.channel);
+      }
+      if (reportType === 'brand-analysis' && selectedFilters.brand) {
+        params.append('brands', selectedFilters.brand);
+      }
+      if (reportType === 'category-insights' && selectedFilters.category) {
+        params.append('categories', selectedFilters.category);
+      }
+
+      const response = await axios.get(`${API}/reports/${reportType}?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `${reportType}.xlsx`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="?(.+)"?/i);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+
+      downloadFile(response.data, filename);
+      toast.success(`${reportName} downloaded successfully!`);
+    } catch (error) {
+      console.error(`Error generating ${reportName}:`, error);
+      toast.error(error.response?.data?.detail || `Failed to generate ${reportName}`);
+    } finally {
+      setGeneratingReport(null);
+    }
   };
 
   if (loading) {
@@ -171,12 +262,22 @@ const Reports = () => {
 
           <Button
             onClick={handleGenerateReport}
-            className="w-full md:w-auto text-white hover:opacity-90"
+            className="w-full md:w-auto text-white hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: '#184464' }}
             data-testid="generate-report-button"
+            disabled={generating}
           >
-            <Download className="mr-2 w-5 h-5" />
-            Generate Report
+            {generating ? (
+              <>
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Generating...
+              </>
+            ) : (
+              <>
+                <Download className="mr-2 w-5 h-5" />
+                Generate Report
+              </>
+            )}
           </Button>
         </div>
 
@@ -187,33 +288,44 @@ const Reports = () => {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
-              'Executive Summary Report',
-              'Customer Performance Report',
-              'Brand Analysis Report',
-              'Category Insights Report',
-              'YoY Comparison Report',
-              'Monthly Trends Report'
-            ].map((report) => (
-              <div
-                key={report}
-                className="p-6 cursor-pointer hover:shadow-lg transition rounded-[10px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700"
-                style={theme === 'dark' 
-                  ? {
-                      background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)'
-                    }
-                  : {
-                      background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                      border: '1px solid rgba(0, 0, 0, 0.1)'
-                    }
-                }
-                onClick={() => toast.info(`${report} will be available soon`)}
-              >
-                <FileText className="w-8 h-8 text-blue-600 mb-3" />
-                <h3 className="text-gray-900 dark:text-gray-100 font-semibold mb-2">{report}</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm">Download pre-configured report</p>
-              </div>
-            ))}
+              { name: 'Executive Summary Report', type: 'executive-summary' },
+              { name: 'Customer Performance Report', type: 'customer-performance' },
+              { name: 'Brand Analysis Report', type: 'brand-analysis' },
+              { name: 'Category Insights Report', type: 'category-insights' },
+              { name: 'YoY Comparison Report', type: 'yoy-comparison' },
+              { name: 'Monthly Trends Report', type: 'monthly-trends' }
+            ].map((report) => {
+              const isGenerating = generatingReport === report.type;
+              return (
+                <div
+                  key={report.type}
+                  className={`p-6 cursor-pointer hover:shadow-lg transition rounded-[10px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 ${isGenerating ? 'opacity-60' : ''}`}
+                  style={theme === 'dark' 
+                    ? {
+                        background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                        border: '1px solid rgba(255, 255, 255, 0.1)'
+                      }
+                    : {
+                        background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                        border: '1px solid rgba(0, 0, 0, 0.1)'
+                      }
+                  }
+                  onClick={() => !isGenerating && handlePredefinedReport(report.type, report.name)}
+                >
+                  {isGenerating ? (
+                    <div className="flex items-center justify-center mb-3">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                    </div>
+                  ) : (
+                    <FileText className="w-8 h-8 text-blue-600 mb-3" />
+                  )}
+                  <h3 className="text-gray-900 dark:text-gray-100 font-semibold mb-2">{report.name}</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm">
+                    {isGenerating ? 'Generating report...' : 'Download pre-configured report'}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

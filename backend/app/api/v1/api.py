@@ -74,6 +74,12 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.api.v1.routes import reports
+    api_router.include_router(reports.router, tags=["Reports"])
+except ImportError:
+    pass
+
 # Debug endpoints (for checking system status)
 try:
     from app.api import debug
