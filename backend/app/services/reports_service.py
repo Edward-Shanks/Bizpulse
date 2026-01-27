@@ -8,6 +8,7 @@ import pandas as pd
 import io
 from datetime import datetime
 import logging
+from app.utils.query_builder import apply_business_filter, build_analytics_query
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,30 @@ class ReportsService:
         if not filter_str:
             return None
         return [item.strip() for item in filter_str.split(',') if item.strip()]
+    
+    def _normalize_month_names(self, months: List[str]) -> List[str]:
+        """
+        Normalize month names to abbreviated format (Jan, Feb, Mar) to match database format.
+        Database stores months as: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
+        """
+        # Map full names to abbreviated format (database format)
+        month_map = {
+            'january': 'Jan', 'february': 'Feb', 'march': 'Mar',
+            'april': 'Apr', 'may': 'May', 'june': 'Jun',
+            'july': 'Jul', 'august': 'Aug', 'september': 'Sep',
+            'october': 'Oct', 'november': 'Nov', 'december': 'Dec',
+            # Also handle if already abbreviated (case-insensitive)
+            'jan': 'Jan', 'feb': 'Feb', 'mar': 'Mar',
+            'apr': 'Apr', 'jun': 'Jun', 'jul': 'Jul',
+            'aug': 'Aug', 'sep': 'Sep', 'oct': 'Oct',
+            'nov': 'Nov', 'dec': 'Dec'
+        }
+        normalized = []
+        for month in months:
+            # Normalize to abbreviated format (database format)
+            normalized_month = month_map.get(month.lower(), month)
+            normalized.append(normalized_month)
+        return normalized
 
     async def _get_filtered_data(
         self,
@@ -44,48 +69,39 @@ class ReportsService:
         categories: Optional[str] = None,
         customers: Optional[str] = None
     ) -> pd.DataFrame:
-        """Get filtered data from MongoDB"""
-        query = {}
+        """Get filtered data from MongoDB using same query builder as filter service"""
         
-        # Build query filters
-        if years:
-            year_list = self._parse_filter_string(years)
-            if year_list:
-                query['Year'] = {'$in': [int(y) for y in year_list]}
-        
+        # Normalize month names to abbreviated format (database format: Jan, Feb, Mar)
         if months:
             month_list = self._parse_filter_string(months)
             if month_list:
-                query['Month'] = {'$in': month_list}
+                normalized_months = self._normalize_month_names(month_list)
+                logger.info(f"Normalized months to database format: {month_list} -> {normalized_months}")
+                # Convert back to comma-separated string for build_analytics_query
+                months = ','.join(normalized_months)
         
+        # Use the same query builder as filter service and analytics
+        query = build_analytics_query(
+            years=years,
+            months=months,
+            channels=channels,
+            brands=brands,
+            categories=categories,
+            customers=customers
+        )
+        
+        # Apply business filter separately (handles commas in business names)
         if businesses:
-            business_list = self._parse_filter_string(businesses)
-            if business_list:
-                query['Business'] = {'$in': business_list}
+            query = await apply_business_filter(query, businesses, self.db)
         
-        if channels:
-            channel_list = self._parse_filter_string(channels)
-            if channel_list:
-                query['Channel'] = {'$in': channel_list}
-        
-        if brands:
-            brand_list = self._parse_filter_string(brands)
-            if brand_list:
-                query['Brand'] = {'$in': brand_list}
-        
-        if categories:
-            category_list = self._parse_filter_string(categories)
-            if category_list:
-                query['Category'] = {'$in': category_list}
-        
-        if customers:
-            customer_list = self._parse_filter_string(customers)
-            if customer_list:
-                query['Customer'] = {'$in': customer_list}
+        # Log the query for debugging
+        logger.info(f"MongoDB query: {query}")
         
         # Fetch data from MongoDB
         cursor = self.collection.find(query)
         data = await cursor.to_list(length=None)
+        
+        logger.info(f"Found {len(data)} documents matching filters")
         
         if not data:
             return pd.DataFrame()
@@ -204,7 +220,7 @@ class ReportsService:
             )
             
             if df.empty:
-                raise ValueError("No data found for the selected filters")
+                raise ValueError("No data found for the selected filters. Please try different filter combinations or clear filters to see all data.")
             
             # Generate summary statistics
             summary_df = self._generate_summary_statistics(df)
@@ -286,7 +302,7 @@ class ReportsService:
             df = await self._get_filtered_data(years=years, months=months, businesses=businesses)
             
             if df.empty:
-                raise ValueError("No data found for executive summary. Please adjust your filters or ensure data exists in the database.")
+                raise ValueError("No data found for executive summary. Try removing some filters or selecting different options.")
             
             # Ensure numeric columns
             numeric_cols = ['Revenue', 'Gross_Profit', 'Units']

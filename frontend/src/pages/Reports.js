@@ -3,8 +3,8 @@ import Layout from '@/components/Layout';
 import axios from 'axios';
 import { API, useAuth } from '@/App';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, FileText } from 'lucide-react';
+import MultiSelectFilter from '@/components/MultiSelectFilter';
+import { Download, FileText, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useTheme } from '@/contexts/ThemeContext';
 
@@ -12,26 +12,85 @@ const Reports = () => {
   const { token } = useAuth();
   const { theme } = useTheme();
   const [filters, setFilters] = useState(null);
-  const [selectedFilters, setSelectedFilters] = useState({});
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(null);
 
-  useEffect(() => {
-    fetchFilters();
-  }, []);
+  // Multi-select filter states
+  const [selectedYears, setSelectedYears] = useState([]);
+  const [selectedMonths, setSelectedMonths] = useState([]);
+  const [selectedBusinesses, setSelectedBusinesses] = useState([]);
+  const [selectedChannels, setSelectedChannels] = useState([]);
+  const [selectedBrands, setSelectedBrands] = useState([]);
+  const [selectedCategories, setSelectedCategories] = useState([]);
 
-  const fetchFilters = async () => {
+  // Fetch dynamic filters whenever any filter changes
+  useEffect(() => {
+    if (!token) return;
+    fetchDynamicFilters();
+  }, [token, selectedYears, selectedMonths, selectedBusinesses, selectedChannels, selectedBrands, selectedCategories]);
+
+  const fetchDynamicFilters = async () => {
     try {
-      const response = await axios.get(`${API}/filters/options`, {
+      // Build query params with current filter selections for dynamic filtering
+      const params = new URLSearchParams();
+      if (selectedYears.length) params.set('years', selectedYears.join(','));
+      if (selectedMonths.length) params.set('months', selectedMonths.join(','));
+      if (selectedBusinesses.length) params.set('businesses', selectedBusinesses.join(','));
+      if (selectedChannels.length) params.set('channels', selectedChannels.join(','));
+      if (selectedBrands.length) params.set('brands', selectedBrands.join(','));
+      if (selectedCategories.length) params.set('categories', selectedCategories.join(','));
+
+      const url = `${API}/filters/options${params.toString() ? `?${params.toString()}` : ''}`;
+      const response = await axios.get(url, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setFilters(response.data);
+      
+      const newFilters = response.data;
+      setFilters(newFilters);
+
+      // Remove invalid selections (selections that no longer exist in the filtered options)
+      if (selectedYears.length > 0) {
+        const validYears = selectedYears.filter(y => newFilters.years.includes(y));
+        if (validYears.length !== selectedYears.length) setSelectedYears(validYears);
+      }
+      if (selectedMonths.length > 0) {
+        const validMonths = selectedMonths.filter(m => newFilters.months.includes(m));
+        if (validMonths.length !== selectedMonths.length) setSelectedMonths(validMonths);
+      }
+      if (selectedBusinesses.length > 0) {
+        const validBusinesses = selectedBusinesses.filter(b => newFilters.businesses.includes(b));
+        if (validBusinesses.length !== selectedBusinesses.length) setSelectedBusinesses(validBusinesses);
+      }
+      if (selectedChannels.length > 0) {
+        const validChannels = selectedChannels.filter(c => newFilters.channels.includes(c));
+        if (validChannels.length !== selectedChannels.length) setSelectedChannels(validChannels);
+      }
+      if (selectedBrands.length > 0) {
+        const validBrands = selectedBrands.filter(b => newFilters.brands.includes(b));
+        if (validBrands.length !== selectedBrands.length) setSelectedBrands(validBrands);
+      }
+      if (selectedCategories.length > 0) {
+        const validCategories = selectedCategories.filter(c => newFilters.categories.includes(c));
+        if (validCategories.length !== selectedCategories.length) setSelectedCategories(validCategories);
+      }
     } catch (error) {
+      console.error('Failed to load filters', error);
       toast.error('Failed to load filter options');
+      setFilters({ years: [], months: [], businesses: [], channels: [], brands: [], categories: [] });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleClearFilters = () => {
+    setSelectedYears([]);
+    setSelectedMonths([]);
+    setSelectedBusinesses([]);
+    setSelectedChannels([]);
+    setSelectedBrands([]);
+    setSelectedCategories([]);
+    toast.success('Filters cleared');
   };
 
   const downloadFile = (blob, filename) => {
@@ -51,11 +110,12 @@ const Reports = () => {
     try {
       // Build query parameters
       const params = new URLSearchParams();
-      if (selectedFilters.year) params.append('years', selectedFilters.year);
-      if (selectedFilters.business) params.append('businesses', selectedFilters.business);
-      if (selectedFilters.brand) params.append('brands', selectedFilters.brand);
-      if (selectedFilters.channel) params.append('channels', selectedFilters.channel);
-      if (selectedFilters.category) params.append('categories', selectedFilters.category);
+      if (selectedYears.length) params.append('years', selectedYears.join(','));
+      if (selectedMonths.length) params.append('months', selectedMonths.join(','));
+      if (selectedBusinesses.length) params.append('businesses', selectedBusinesses.join(','));
+      if (selectedChannels.length) params.append('channels', selectedChannels.join(','));
+      if (selectedBrands.length) params.append('brands', selectedBrands.join(','));
+      if (selectedCategories.length) params.append('categories', selectedCategories.join(','));
       params.append('format', 'excel');
 
       const response = await axios.get(`${API}/reports/generate?${params.toString()}`, {
@@ -77,7 +137,14 @@ const Reports = () => {
       toast.success('Report generated successfully!');
     } catch (error) {
       console.error('Error generating report:', error);
-      toast.error(error.response?.data?.detail || 'Failed to generate report');
+      const errorMessage = error.response?.data?.detail || 'Failed to generate report';
+      
+      // Show more helpful error for empty data
+      if (errorMessage.includes('No data found')) {
+        toast.error(errorMessage, { duration: 5000 });
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setGenerating(false);
     }
@@ -88,20 +155,13 @@ const Reports = () => {
     try {
       const params = new URLSearchParams();
       
-      // Add basic filters that apply to all reports
-      if (selectedFilters.year) params.append('years', selectedFilters.year);
-      if (selectedFilters.business) params.append('businesses', selectedFilters.business);
-      
-      // Add report-specific filters
-      if (reportType === 'customer-performance' && selectedFilters.channel) {
-        params.append('channels', selectedFilters.channel);
-      }
-      if (reportType === 'brand-analysis' && selectedFilters.brand) {
-        params.append('brands', selectedFilters.brand);
-      }
-      if (reportType === 'category-insights' && selectedFilters.category) {
-        params.append('categories', selectedFilters.category);
-      }
+      // Add all filters
+      if (selectedYears.length) params.append('years', selectedYears.join(','));
+      if (selectedMonths.length) params.append('months', selectedMonths.join(','));
+      if (selectedBusinesses.length) params.append('businesses', selectedBusinesses.join(','));
+      if (selectedChannels.length) params.append('channels', selectedChannels.join(','));
+      if (selectedBrands.length) params.append('brands', selectedBrands.join(','));
+      if (selectedCategories.length) params.append('categories', selectedCategories.join(','));
 
       const response = await axios.get(`${API}/reports/${reportType}?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -121,7 +181,14 @@ const Reports = () => {
       toast.success(`${reportName} downloaded successfully!`);
     } catch (error) {
       console.error(`Error generating ${reportName}:`, error);
-      toast.error(error.response?.data?.detail || `Failed to generate ${reportName}`);
+      const errorMessage = error.response?.data?.detail || `Failed to generate ${reportName}`;
+      
+      // Show more helpful error for empty data
+      if (errorMessage.includes('No data found')) {
+        toast.error(errorMessage, { duration: 5000 });
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setGeneratingReport(null);
     }
@@ -173,91 +240,77 @@ const Reports = () => {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            {/* Year Filter */}
-            <div>
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-2 block font-medium">Year</label>
-              <Select onValueChange={(value) => setSelectedFilters({ ...selectedFilters, year: value })}>
-                <SelectTrigger className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
-                  <SelectValue placeholder="Select Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(filters?.years || []).map((year) => (
-                    <SelectItem key={year} value={year.toString()}>
-                      {year}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {/* Dynamic Multi-Select Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+            <MultiSelectFilter
+              label="Year"
+              options={filters?.years || []}
+              selectedValues={selectedYears}
+              onChange={setSelectedYears}
+              placeholder="All Years"
+            />
+            <MultiSelectFilter
+              label="Month"
+              options={filters?.months || []}
+              selectedValues={selectedMonths}
+              onChange={setSelectedMonths}
+              placeholder="All Months"
+            />
+            <MultiSelectFilter
+              label="Business"
+              options={filters?.businesses || []}
+              selectedValues={selectedBusinesses}
+              onChange={setSelectedBusinesses}
+              placeholder="All Businesses"
+            />
+            <MultiSelectFilter
+              label="Channel"
+              options={filters?.channels || []}
+              selectedValues={selectedChannels}
+              onChange={setSelectedChannels}
+              placeholder="All Channels"
+            />
+            <MultiSelectFilter
+              label="Brand"
+              options={filters?.brands || []}
+              selectedValues={selectedBrands}
+              onChange={setSelectedBrands}
+              placeholder="All Brands"
+            />
+            <MultiSelectFilter
+              label="Category"
+              options={filters?.categories || []}
+              selectedValues={selectedCategories}
+              onChange={setSelectedCategories}
+              placeholder="All Categories"
+            />
+          </div>
 
-            {/* Business Filter */}
-            <div>
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-2 block font-medium">Business</label>
-              <Select onValueChange={(value) => setSelectedFilters({ ...selectedFilters, business: value })}>
-                <SelectTrigger className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
-                  <SelectValue placeholder="Select Business" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(filters?.businesses || []).map((business) => (
-                    <SelectItem key={business} value={business}>
-                      {business}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Filter Info and Clear Button */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {(selectedYears.length + selectedMonths.length + selectedBusinesses.length + 
+                selectedChannels.length + selectedBrands.length + selectedCategories.length) > 0 ? (
+                <span>
+                  {selectedYears.length + selectedMonths.length + selectedBusinesses.length + 
+                   selectedChannels.length + selectedBrands.length + selectedCategories.length} filter(s) applied
+                </span>
+              ) : (
+                <span>No filters applied - showing all data</span>
+              )}
             </div>
-
-            {/* Brand Filter */}
-            <div>
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-2 block font-medium">Brand</label>
-              <Select onValueChange={(value) => setSelectedFilters({ ...selectedFilters, brand: value })}>
-                <SelectTrigger className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
-                  <SelectValue placeholder="Select Brand" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(filters?.brands || []).map((brand) => (
-                    <SelectItem key={brand} value={brand}>
-                      {brand}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Channel Filter */}
-            <div>
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-2 block font-medium">Channel</label>
-              <Select onValueChange={(value) => setSelectedFilters({ ...selectedFilters, channel: value })}>
-                <SelectTrigger className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
-                  <SelectValue placeholder="Select Channel" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(filters?.channels || []).map((channel) => (
-                    <SelectItem key={channel} value={channel}>
-                      {channel}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Category Filter */}
-            <div>
-              <label className="text-gray-700 dark:text-gray-300 text-sm mb-2 block font-medium">Category</label>
-              <Select onValueChange={(value) => setSelectedFilters({ ...selectedFilters, category: value })}>
-                <SelectTrigger className="bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600">
-                  <SelectValue placeholder="Select Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(filters?.categories || []).map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {(selectedYears.length + selectedMonths.length + selectedBusinesses.length + 
+              selectedChannels.length + selectedBrands.length + selectedCategories.length) > 0 && (
+              <Button
+                onClick={handleClearFilters}
+                variant="outline"
+                size="sm"
+                className="text-xs"
+              >
+                <X className="mr-1 w-3 h-3" />
+                Clear Filters
+              </Button>
+            )}
           </div>
 
           <Button

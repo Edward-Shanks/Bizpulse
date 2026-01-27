@@ -32,6 +32,7 @@ const ChartComponent = ({ type, data, options, height = 280 }) => {
         },
       });
     }
+    
 
     // Cleanup on unmount
     return () => {
