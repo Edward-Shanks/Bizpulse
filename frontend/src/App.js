@@ -20,6 +20,7 @@ import Kanban from '@/pages/Kanban';
 import Signup from '@/pages/Signup';
 import ForgotPassword from '@/pages/ForgotPassword';
 import UserManagement from '@/pages/UserManagement';
+import ExecutiveView from '@/pages/ExecutiveView';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 
@@ -283,6 +284,14 @@ function App() {
             element={
               <PrivateRoute>
                 <Kanban />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/executive-view"
+            element={
+              <PrivateRoute>
+                <ExecutiveView />
               </PrivateRoute>
             }
           />

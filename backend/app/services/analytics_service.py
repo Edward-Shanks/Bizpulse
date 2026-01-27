@@ -556,6 +556,77 @@ class AnalyticsService:
             "total_units": safe_float(totals.get("total_units", 0)),
             "active_categories": active_categories,
         }
+    
+    async def get_sales_by_month(
+        self,
+        years: Optional[str] = None,
+        months: Optional[str] = None,
+        businesses: Optional[str] = None,
+        channels: Optional[str] = None,
+        brands: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get gross sales data aggregated by month and year for time series chart"""
+        logger.info("🔍 Getting sales by month")
+        
+        # Build query
+        query = build_analytics_query(years=years, months=months, channels=channels, brands=brands)
+        
+        if businesses:
+            query = await apply_business_filter(query, businesses, self.db)
+        
+        match_stage = {"$match": query} if query else {"$match": {}}
+        
+        # Aggregate by Year and Month_Name
+        pipeline = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": {
+                        "year": "$Year",
+                        "month": "$Month_Name"
+                    },
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "gross_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            },
+            {
+                "$sort": {
+                    "_id.year": 1,
+                    "_id.month": 1
+                }
+            }
+        ]
+        
+        results = await self.business_data_repo.aggregate(pipeline)
+        
+        # Transform results
+        data_list = []
+        for item in results:
+            year = item['_id']['year']
+            month = item['_id']['month']
+            
+            data_list.append({
+                "year": int(year) if year else 0,
+                "month_name": str(month) if month else "Unknown",
+                "revenue": safe_float(item.get('revenue', 0)),
+                "gross_profit": safe_float(item.get('gross_profit', 0)),
+                "units": safe_float(item.get('units', 0))
+            })
+        
+        # Sort by year and then by month (chronological order)
+        # Month order: Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec
+        month_order = {
+            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+            'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        }
+        
+        data_list.sort(key=lambda x: (x['year'], month_order.get(x['month_name'], 99)))
+        
+        return {
+            "data": data_list,
+            "count": len(data_list)
+        }
 
 # Factory function
 def get_analytics_service(db: AsyncIOMotorDatabase) -> AnalyticsService:

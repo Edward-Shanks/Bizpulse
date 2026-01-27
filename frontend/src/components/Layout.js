@@ -24,7 +24,8 @@ import {
   BarChart3,
   Moon,
   Sun,
-  LogOut
+  LogOut,
+  Activity
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -58,6 +59,7 @@ const Layout = ({ children }) => {
     { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
     { path: '/strategic-deployment', icon: FolderKanban, label: 'Strategy Deployment' },
     { path: '/kanban', icon: Trello, label: 'Revenue Sentinel' },
+    { path: '/executive-view', icon: Activity, label: 'Executive' },
     {
       path: '/compass',
       icon: LayoutDashboard,
