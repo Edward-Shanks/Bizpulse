@@ -140,5 +140,29 @@ async def get_sales_by_month(
         logger.error(f"Sales by month error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/analytics/executive-dashboard")
+async def get_executive_dashboard(
+    years: Optional[str] = Query(None),
+    months: Optional[str] = Query(None),
+    businesses: Optional[str] = Query(None),
+    channels: Optional[str] = Query(None),
+    brands: Optional[str] = Query(None),
+    email: str = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database)
+):
+    """Executive Dashboard - Comprehensive executive metrics and insights"""
+    try:
+        analytics_service = AnalyticsService(db)
+        return await analytics_service.get_executive_dashboard(
+            years=years,
+            months=months,
+            businesses=businesses,
+            channels=channels,
+            brands=brands
+        )
+    except Exception as e:
+        logger.error(f"Executive dashboard error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 

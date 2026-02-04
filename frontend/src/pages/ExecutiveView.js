@@ -8,15 +8,17 @@ import { API, useAuth } from '@/App';
 import { useTheme } from '@/contexts/ThemeContext';
 import { 
   TrendingUp, TrendingDown, Euro,
-  Calendar, BarChart3, Activity
+  Calendar, BarChart3, Activity, Users,
+  AlertTriangle, ShoppingBag, DollarSign, Percent
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 const ExecutiveView = () => {
   const { theme } = useTheme();
-  const [salesData, setSalesData] = useState(null);
+  const [dashboardData, setDashboardData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(null);
+  const [activeTab, setActiveTab] = useState('customers');
   
   // Page-level multi-select filters
   const [selectedYears, setSelectedYears] = useState([]);
@@ -40,9 +42,9 @@ const ExecutiveView = () => {
     fetchFilters();
   }, []);
 
-  // Fetch sales data
+  // Fetch dashboard data
   useEffect(() => {
-    const fetchSalesData = async () => {
+    const fetchDashboardData = async () => {
       setLoading(true);
       try {
         const params = {};
@@ -53,72 +55,38 @@ const ExecutiveView = () => {
         if (selectedBrands.length > 0) params.brands = selectedBrands.join(',');
         if (selectedChannels.length > 0) params.channels = selectedChannels.join(',');
 
-        const response = await axios.get(`${API}/analytics/sales-by-month`, { params });
-        setSalesData(response.data);
+        const response = await axios.get(`${API}/analytics/executive-dashboard`, { params });
+        setDashboardData(response.data);
       } catch (error) {
-        console.error('Error fetching sales data:', error);
+        console.error('Error fetching dashboard data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSalesData();
+    fetchDashboardData();
   }, [selectedYears, selectedMonths, selectedBusinesses, selectedBrands, selectedChannels]);
 
-  // Calculate summary metrics
-  const calculateMetrics = () => {
-    if (!salesData || !salesData.data || salesData.data.length === 0) {
-      return {
-        totalSales: 0,
-        avgMonthlySales: 0,
-        highestMonth: 'N/A',
-        highestSales: 0,
-        growth: 0
-      };
-    }
-
-    const data = salesData.data;
-    const totalSales = data.reduce((sum, item) => sum + (item.revenue || 0), 0);
-    const avgMonthlySales = totalSales / data.length;
-    
-    const highestEntry = data.reduce((max, item) => 
-      (item.revenue || 0) > (max.revenue || 0) ? item : max
-    , data[0]);
-    
-    // Calculate growth (compare first and last data points)
-    const firstValue = data[0]?.revenue || 0;
-    const lastValue = data[data.length - 1]?.revenue || 0;
-    const growth = firstValue > 0 ? ((lastValue - firstValue) / firstValue) * 100 : 0;
-
-    return {
-      totalSales,
-      avgMonthlySales,
-      highestMonth: `${highestEntry.month_name || ''} ${highestEntry.year || ''}`,
-      highestSales: highestEntry.revenue || 0,
-      growth
-    };
+  // Get summary metrics from dashboard data
+  const summary = dashboardData?.summary || {
+    gross_sales: 0,
+    gross_profit: 0,
+    transfer_cost: 0,
+    margin_pct: 0
   };
-
-  const metrics = calculateMetrics();
 
   // Prepare chart data
   const prepareChartData = () => {
-    if (!salesData || !salesData.data || salesData.data.length === 0) {
+    if (!dashboardData || !dashboardData.monthly_trend || dashboardData.monthly_trend.length === 0) {
       return {
         labels: [],
         datasets: []
       };
     }
 
-    // Sort data by year and month
-    const sortedData = [...salesData.data].sort((a, b) => {
-      if (a.year !== b.year) return a.year - b.year;
-      const monthOrder = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return monthOrder.indexOf(a.month_name) - monthOrder.indexOf(b.month_name);
-    });
-
-    const labels = sortedData.map(item => `${item.month_name} ${item.year}`);
-    const revenueData = sortedData.map(item => item.revenue || 0);
+    const monthlyData = dashboardData.monthly_trend;
+    const labels = monthlyData.map(item => `${item.month} ${item.year}`);
+    const revenueData = monthlyData.map(item => item.revenue || 0);
 
     return {
       labels,
@@ -126,7 +94,7 @@ const ExecutiveView = () => {
         {
           label: 'Gross Sales (€)',
           data: revenueData,
-          borderColor: '#ef4444', // Red color similar to screenshot
+          borderColor: '#ef4444',
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           borderWidth: 2,
           fill: true,
@@ -142,6 +110,12 @@ const ExecutiveView = () => {
   };
 
   const chartData = prepareChartData();
+  
+  // Get top contributors based on active tab
+  const getTopContributors = () => {
+    if (!dashboardData || !dashboardData.top_contributors) return [];
+    return dashboardData.top_contributors[activeTab] || [];
+  };
 
   const chartOptions = {
     responsive: true,
@@ -243,7 +217,7 @@ const ExecutiveView = () => {
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Executive</h1>
-            <p className="text-gray-600 dark:text-gray-400">High-level overview of gross sales performance over time</p>
+            <p className="text-gray-600 dark:text-gray-400">Comprehensive business performance metrics and insights</p>
           </div>
         </div>
 
@@ -306,7 +280,7 @@ const ExecutiveView = () => {
 
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
-          {/* Total Sales */}
+          {/* Gross Sales */}
           <div 
             className="rounded-lg p-4"
             style={theme === 'dark' 
@@ -321,19 +295,19 @@ const ExecutiveView = () => {
             }
           >
             <div className="flex items-center gap-2 mb-2">
-              <Euro className="w-4 h-4 text-blue-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Total Sales</span>
+              <DollarSign className="w-4 h-4 text-blue-600" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">Gross Sales</span>
             </div>
             {loading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                {formatNumber(metrics.totalSales)}
+                {formatNumber(summary.gross_sales)}
               </p>
             )}
           </div>
 
-          {/* Average Monthly Sales */}
+          {/* Gross Profit */}
           <div 
             className="rounded-lg p-4"
             style={theme === 'dark' 
@@ -348,19 +322,19 @@ const ExecutiveView = () => {
             }
           >
             <div className="flex items-center gap-2 mb-2">
-              <BarChart3 className="w-4 h-4 text-green-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Avg Monthly Sales</span>
+              <TrendingUp className="w-4 h-4 text-green-600" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">Gross Profit</span>
             </div>
             {loading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                {formatNumber(metrics.avgMonthlySales)}
+                {formatNumber(summary.gross_profit)}
               </p>
             )}
           </div>
 
-          {/* Highest Month */}
+          {/* Transfer Cost */}
           <div 
             className="rounded-lg p-4"
             style={theme === 'dark' 
@@ -375,24 +349,19 @@ const ExecutiveView = () => {
             }
           >
             <div className="flex items-center gap-2 mb-2">
-              <Calendar className="w-4 h-4 text-purple-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Highest Month</span>
+              <ShoppingBag className="w-4 h-4 text-orange-600" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">Transfer Cost</span>
             </div>
             {loading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <>
-                <p className="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">
-                  {metrics.highestMonth}
-                </p>
-                <p className="text-xs text-gray-600 dark:text-gray-400">
-                  {formatNumber(metrics.highestSales)}
-                </p>
-              </>
+              <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                {formatNumber(summary.transfer_cost)}
+              </p>
             )}
           </div>
 
-          {/* Growth Rate */}
+          {/* Margin % */}
           <div 
             className="rounded-lg p-4"
             style={theme === 'dark' 
@@ -407,27 +376,165 @@ const ExecutiveView = () => {
             }
           >
             <div className="flex items-center gap-2 mb-2">
-              {metrics.growth >= 0 ? (
-                <TrendingUp className="w-4 h-4 text-green-600" />
-              ) : (
-                <TrendingDown className="w-4 h-4 text-red-600" />
-              )}
-              <span className="text-xs text-gray-600 dark:text-gray-400">Growth Rate</span>
+              <Percent className="w-4 h-4 text-purple-600" />
+              <span className="text-xs text-gray-600 dark:text-gray-400">Margin %</span>
             </div>
             {loading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <>
-                <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                  {metrics.growth >= 0 ? '+' : ''}{metrics.growth.toFixed(2)}%
-                </p>
-                <p className={`text-xs flex items-center gap-1 ${metrics.growth >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {metrics.growth >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                  Period Trend
-                </p>
-              </>
+              <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                {summary.margin_pct.toFixed(2)}%
+              </p>
             )}
           </div>
+        </div>
+
+        {/* Exception Highlights */}
+        {dashboardData && dashboardData.exceptions && dashboardData.exceptions.length > 0 && (
+          <div 
+            className="rounded-lg p-5"
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Exception Highlights</h2>
+            </div>
+            <div className="space-y-3">
+              {dashboardData.exceptions.map((exception, index) => (
+                <div 
+                  key={index}
+                  className={`p-3 rounded-lg ${
+                    exception.severity === 'high' 
+                      ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' 
+                      : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                        {exception.period}
+                      </p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        {exception.message}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                      exception.severity === 'high'
+                        ? 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
+                        : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100'
+                    }`}>
+                      {exception.severity.toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Top 10 Contributors */}
+        <div 
+          className="rounded-lg p-5"
+          style={theme === 'dark' 
+            ? {
+                background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }
+            : {
+                background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                border: '1px solid rgba(0, 0, 0, 0.1)'
+              }
+          }
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Users className="w-5 h-5 text-blue-600" />
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Top 10 Contributors</h2>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setActiveTab('customers')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'customers'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+            >
+              Customers
+            </button>
+            <button
+              onClick={() => setActiveTab('brands')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'brands'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+            >
+              Brands
+            </button>
+            <button
+              onClick={() => setActiveTab('channels')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'channels'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+            >
+              Channels
+            </button>
+          </div>
+
+          {/* Contributors Table */}
+          {loading ? (
+            <Skeleton className="h-64 w-full" />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-300 dark:border-gray-600">
+                    <th className="text-left py-2 px-3 text-xs font-semibold text-gray-600 dark:text-gray-400">#</th>
+                    <th className="text-left py-2 px-3 text-xs font-semibold text-gray-600 dark:text-gray-400">Name</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-gray-600 dark:text-gray-400">Revenue</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-gray-600 dark:text-gray-400">Profit</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-gray-600 dark:text-gray-400">Margin %</th>
+                    <th className="text-right py-2 px-3 text-xs font-semibold text-gray-600 dark:text-gray-400">Units</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {getTopContributors().map((item, index) => (
+                    <tr 
+                      key={index}
+                      className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                    >
+                      <td className="py-2 px-3 text-sm text-gray-600 dark:text-gray-400">{index + 1}</td>
+                      <td className="py-2 px-3 text-sm font-medium text-gray-900 dark:text-gray-100">{item.name}</td>
+                      <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-gray-100">{formatNumber(item.revenue)}</td>
+                      <td className="py-2 px-3 text-sm text-right text-gray-900 dark:text-gray-100">{formatNumber(item.profit)}</td>
+                      <td className="py-2 px-3 text-sm text-right font-medium text-gray-900 dark:text-gray-100">{item.margin_pct}%</td>
+                      <td className="py-2 px-3 text-sm text-right text-gray-600 dark:text-gray-400">{formatNumber(item.units)}</td>
+                    </tr>
+                  ))}
+                  {getTopContributors().length === 0 && (
+                    <tr>
+                      <td colSpan="6" className="py-8 text-center text-gray-500 dark:text-gray-400">
+                        No data available
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Gross Sales Chart */}
@@ -446,7 +553,7 @@ const ExecutiveView = () => {
         >
           <div className="mb-4">
             <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-              Gross Sales by Month Year
+              Gross Sales Trend
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Track gross sales performance over time

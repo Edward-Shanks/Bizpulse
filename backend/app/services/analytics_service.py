@@ -627,6 +627,223 @@ class AnalyticsService:
             "data": data_list,
             "count": len(data_list)
         }
+    
+    async def get_executive_dashboard(
+        self,
+        years: Optional[str] = None,
+        months: Optional[str] = None,
+        businesses: Optional[str] = None,
+        channels: Optional[str] = None,
+        brands: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get comprehensive executive dashboard data"""
+        logger.info("🔍 Getting executive dashboard data")
+        
+        # Build query
+        query = build_analytics_query(years=years, months=months, channels=channels, brands=brands)
+        
+        if businesses:
+            query = await apply_business_filter(query, businesses, self.db)
+        
+        match_stage = {"$match": query} if query else {"$match": {}}
+        
+        # Get summary metrics (Gross Sales, Gross Profit, Margin%, Transfer Cost)
+        pipeline_summary = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": None,
+                    "gross_sales": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "gross_profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "transfer_cost": {"$sum": {"$toDouble": {"$ifNull": ["$Cost_of_Goods", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            }
+        ]
+        summary_result = await self.business_data_repo.aggregate(pipeline_summary)
+        summary = summary_result[0] if summary_result else {}
+        
+        gross_sales = safe_float(summary.get('gross_sales', 0))
+        gross_profit = safe_float(summary.get('gross_profit', 0))
+        transfer_cost = safe_float(summary.get('transfer_cost', 0))
+        units = safe_float(summary.get('units', 0))
+        margin_pct = (gross_profit / gross_sales * 100) if gross_sales > 0 else 0
+        
+        # Get top 10 customers
+        pipeline_customers = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$Customer",
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            },
+            {"$sort": {"revenue": -1}},
+            {"$limit": 10}
+        ]
+        customers_result = await self.business_data_repo.aggregate(pipeline_customers)
+        
+        top_customers = []
+        for item in customers_result:
+            revenue = safe_float(item.get('revenue', 0))
+            profit = safe_float(item.get('profit', 0))
+            customer_margin = (profit / revenue * 100) if revenue > 0 else 0
+            top_customers.append({
+                "name": str(item['_id']) if item['_id'] else "Unknown",
+                "revenue": revenue,
+                "profit": profit,
+                "margin_pct": round(customer_margin, 2),
+                "units": safe_float(item.get('units', 0))
+            })
+        
+        # Get top 10 brands
+        pipeline_brands = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$Brand",
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            },
+            {"$sort": {"revenue": -1}},
+            {"$limit": 10}
+        ]
+        brands_result = await self.business_data_repo.aggregate(pipeline_brands)
+        
+        top_brands = []
+        for item in brands_result:
+            revenue = safe_float(item.get('revenue', 0))
+            profit = safe_float(item.get('profit', 0))
+            brand_margin = (profit / revenue * 100) if revenue > 0 else 0
+            top_brands.append({
+                "name": str(item['_id']) if item['_id'] else "Unknown",
+                "revenue": revenue,
+                "profit": profit,
+                "margin_pct": round(brand_margin, 2),
+                "units": safe_float(item.get('units', 0))
+            })
+        
+        # Get top 10 channels
+        pipeline_channels = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$Channel",
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            },
+            {"$sort": {"revenue": -1}},
+            {"$limit": 10}
+        ]
+        channels_result = await self.business_data_repo.aggregate(pipeline_channels)
+        
+        top_channels = []
+        for item in channels_result:
+            revenue = safe_float(item.get('revenue', 0))
+            profit = safe_float(item.get('profit', 0))
+            channel_margin = (profit / revenue * 100) if revenue > 0 else 0
+            top_channels.append({
+                "name": str(item['_id']) if item['_id'] else "Unknown",
+                "revenue": revenue,
+                "profit": profit,
+                "margin_pct": round(channel_margin, 2),
+                "units": safe_float(item.get('units', 0))
+            })
+        
+        # Get exception highlights (month-over-month comparisons)
+        pipeline_monthly = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": {
+                        "year": "$Year",
+                        "month": "$Month_Name"
+                    },
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}}
+                }
+            },
+            {"$sort": {"_id.year": 1, "_id.month": 1}}
+        ]
+        monthly_result = await self.business_data_repo.aggregate(pipeline_monthly)
+        
+        # Sort and analyze exceptions
+        month_order = {
+            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+            'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        }
+        
+        monthly_data = []
+        for item in monthly_result:
+            year = item['_id']['year']
+            month = item['_id']['month']
+            revenue = safe_float(item.get('revenue', 0))
+            profit = safe_float(item.get('profit', 0))
+            monthly_data.append({
+                "year": int(year) if year else 0,
+                "month": str(month) if month else "Unknown",
+                "month_order": month_order.get(str(month), 99),
+                "revenue": revenue,
+                "profit": profit,
+                "margin_pct": (profit / revenue * 100) if revenue > 0 else 0
+            })
+        
+        monthly_data.sort(key=lambda x: (x['year'], x['month_order']))
+        
+        # Find exceptions (significant changes > 15%)
+        exceptions = []
+        for i in range(1, len(monthly_data)):
+            prev = monthly_data[i-1]
+            curr = monthly_data[i]
+            
+            # Revenue change
+            if prev['revenue'] > 0:
+                rev_change = ((curr['revenue'] - prev['revenue']) / prev['revenue']) * 100
+                if abs(rev_change) > 15:
+                    exceptions.append({
+                        "type": "revenue_change",
+                        "severity": "high" if abs(rev_change) > 25 else "medium",
+                        "period": f"{curr['month']} {curr['year']}",
+                        "message": f"Revenue {'increased' if rev_change > 0 else 'decreased'} by {abs(rev_change):.1f}% vs previous month",
+                        "value": rev_change
+                    })
+            
+            # Margin change
+            margin_change = curr['margin_pct'] - prev['margin_pct']
+            if abs(margin_change) > 3:
+                exceptions.append({
+                    "type": "margin_change",
+                    "severity": "high" if abs(margin_change) > 5 else "medium",
+                    "period": f"{curr['month']} {curr['year']}",
+                    "message": f"Margin {'improved' if margin_change > 0 else 'declined'} by {abs(margin_change):.1f} percentage points",
+                    "value": margin_change
+                })
+        
+        # Limit to top 5 most recent exceptions
+        exceptions = sorted(exceptions, key=lambda x: x.get('value', 0), reverse=True)[:5]
+        
+        return {
+            "summary": {
+                "gross_sales": gross_sales,
+                "gross_profit": gross_profit,
+                "transfer_cost": transfer_cost,
+                "margin_pct": round(margin_pct, 2),
+                "units": units
+            },
+            "top_contributors": {
+                "customers": top_customers,
+                "brands": top_brands,
+                "channels": top_channels
+            },
+            "exceptions": exceptions,
+            "monthly_trend": monthly_data
+        }
 
 # Factory function
 def get_analytics_service(db: AsyncIOMotorDatabase) -> AnalyticsService:
