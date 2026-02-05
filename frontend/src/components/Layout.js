@@ -56,9 +56,12 @@ const Layout = ({ children }) => {
   }, [location.pathname]);
 
   const menuItems = [
-    { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
-    { path: '/strategic-deployment', icon: FolderKanban, label: 'Strategy Deployment' },
-    { path: '/kanban', icon: Trello, label: 'Revenue Sentinel' },
+    // Phase 1 - Hidden for now
+    // { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
+    // { path: '/strategic-deployment', icon: FolderKanban, label: 'Strategy Deployment' },
+    // { path: '/kanban', icon: Trello, label: 'Revenue Sentinel' },
+    
+    // Phase 1 - Active Screens
     { path: '/executive-view', icon: Activity, label: 'Executive' },
     {
       path: '/compass',
@@ -72,10 +75,12 @@ const Layout = ({ children }) => {
         { path: '/sales-analysis', icon: TrendingUp, label: 'Sales Analysis' },
       ]
     },
-    { path: '/customer-insights', icon: BarChart3, label: 'Customer Deep Intelligence' },
-    { path: '/root-cause-analysis', icon: AlertCircle, label: 'Root Cause Analysis' },
-    { path: '/projects', icon: FolderKanban, label: 'Projects' },
     { path: '/reports', icon: FileText, label: 'Reports' },
+    
+    // Phase 1 - Hidden for now
+    // { path: '/customer-insights', icon: BarChart3, label: 'Customer Deep Intelligence' },
+    // { path: '/root-cause-analysis', icon: AlertCircle, label: 'Root Cause Analysis' },
+    // { path: '/projects', icon: FolderKanban, label: 'Projects' },
   ];
 
   return (
