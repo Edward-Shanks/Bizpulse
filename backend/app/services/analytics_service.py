@@ -756,6 +756,64 @@ class AnalyticsService:
                 "units": safe_float(item.get('units', 0))
             })
         
+        # Get top 10 categories
+        pipeline_categories = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$Category",
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            },
+            {"$sort": {"revenue": -1}},
+            {"$limit": 10}
+        ]
+        categories_result = await self.business_data_repo.aggregate(pipeline_categories)
+        
+        top_categories = []
+        for item in categories_result:
+            revenue = safe_float(item.get('revenue', 0))
+            profit = safe_float(item.get('profit', 0))
+            category_margin = (profit / revenue * 100) if revenue > 0 else 0
+            top_categories.append({
+                "name": str(item['_id']) if item['_id'] else "Unknown",
+                "revenue": revenue,
+                "profit": profit,
+                "margin_pct": round(category_margin, 2),
+                "units": safe_float(item.get('units', 0))
+            })
+        
+        # Get top 10 businesses
+        pipeline_businesses = [
+            match_stage,
+            {
+                "$group": {
+                    "_id": "$Business",
+                    "revenue": {"$sum": {"$toDouble": {"$ifNull": ["$Revenue", 0]}}},
+                    "profit": {"$sum": {"$toDouble": {"$ifNull": ["$Gross_Profit", 0]}}},
+                    "units": {"$sum": {"$toDouble": {"$ifNull": ["$Units", 0]}}}
+                }
+            },
+            {"$sort": {"revenue": -1}},
+            {"$limit": 10}
+        ]
+        businesses_result = await self.business_data_repo.aggregate(pipeline_businesses)
+        
+        top_businesses = []
+        for item in businesses_result:
+            revenue = safe_float(item.get('revenue', 0))
+            profit = safe_float(item.get('profit', 0))
+            business_margin = (profit / revenue * 100) if revenue > 0 else 0
+            top_businesses.append({
+                "name": str(item['_id']) if item['_id'] else "Unknown",
+                "revenue": revenue,
+                "profit": profit,
+                "margin_pct": round(business_margin, 2),
+                "units": safe_float(item.get('units', 0))
+            })
+        
         # Get exception highlights (month-over-month comparisons)
         pipeline_monthly = [
             match_stage,
@@ -839,7 +897,9 @@ class AnalyticsService:
             "top_contributors": {
                 "customers": top_customers,
                 "brands": top_brands,
-                "channels": top_channels
+                "channels": top_channels,
+                "categories": top_categories,
+                "businesses": top_businesses
             },
             "exceptions": exceptions,
             "monthly_trend": monthly_data

@@ -9,7 +9,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { 
   TrendingUp, TrendingDown, Euro,
   Calendar, BarChart3, Activity, Users,
-  AlertTriangle, ShoppingBag, DollarSign, Percent
+  AlertTriangle, ShoppingBag, DollarSign, Percent, Target
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -87,23 +87,34 @@ const ExecutiveView = () => {
     const monthlyData = dashboardData.monthly_trend;
     const labels = monthlyData.map(item => `${item.month} ${item.year}`);
     const revenueData = monthlyData.map(item => item.revenue || 0);
+    const profitData = monthlyData.map(item => item.profit || 0);
 
     return {
       labels,
       datasets: [
         {
+          type: 'bar',
           label: 'Gross Sales (€)',
           data: revenueData,
-          borderColor: '#ef4444',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
-          borderWidth: 2,
-          fill: true,
+          backgroundColor: theme === 'dark' ? '#60a5fa' : '#1e293b',
+          borderRadius: 6,
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Gross Profit (€)',
+          data: profitData,
+          borderColor: '#EDD5B1',
+          backgroundColor: 'rgba(237, 213, 177, 0.1)',
+          borderWidth: 3,
+          fill: false,
           tension: 0.4,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          pointBackgroundColor: '#ef4444',
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          pointBackgroundColor: '#EDD5B1',
           pointBorderColor: '#fff',
           pointBorderWidth: 2,
+          order: 1,
         }
       ]
     };
@@ -115,6 +126,36 @@ const ExecutiveView = () => {
   const getTopContributors = () => {
     if (!dashboardData || !dashboardData.top_contributors) return [];
     return dashboardData.top_contributors[activeTab] || [];
+  };
+
+  // Prepare chart data for Top 10 charts (both as bar charts)
+  const prepareTop10ChartData = (type) => {
+    if (!dashboardData || !dashboardData.top_contributors || !dashboardData.top_contributors[type]) {
+      return { labels: [], datasets: [] };
+    }
+
+    const data = dashboardData.top_contributors[type];
+    const labels = data.map(item => item.name);
+    const revenueData = data.map(item => item.revenue || 0);
+    const profitData = data.map(item => item.profit || 0);
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: 'Revenue',
+          data: revenueData,
+          backgroundColor: theme === 'dark' ? '#60a5fa' : '#1e293b',
+          borderRadius: 6,
+        },
+        {
+          label: 'Profit',
+          data: profitData,
+          backgroundColor: '#EDD5B1',
+          borderRadius: 6,
+        },
+      ],
+    };
   };
 
   const chartOptions = {
@@ -210,6 +251,79 @@ const ExecutiveView = () => {
     }
   };
 
+  // Chart options for Top 10 charts (bar + line combo)
+  const top10ChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: {
+          color: theme === 'dark' ? '#e5e7eb' : '#1f2937',
+          usePointStyle: true,
+          padding: 15,
+          font: {
+            size: 12,
+            weight: 'bold'
+          }
+        }
+      },
+      tooltip: {
+        enabled: true,
+        backgroundColor: theme === 'dark' ? '#1f2937' : '#fff',
+        titleColor: theme === 'dark' ? '#fff' : '#1f2937',
+        bodyColor: theme === 'dark' ? '#e5e7eb' : '#4b5563',
+        borderColor: theme === 'dark' ? '#374151' : '#e5e7eb',
+        borderWidth: 1,
+        padding: 12,
+        displayColors: true,
+        intersect: false,
+        mode: 'index',
+        callbacks: {
+          label: function(context) {
+            return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: {
+          display: false,
+        },
+        ticks: {
+          color: theme === 'dark' ? '#9ca3af' : '#6b7280',
+          maxRotation: 45,
+          minRotation: 45,
+          font: {
+            size: 10
+          }
+        }
+      },
+      y: {
+        beginAtZero: true,
+        grid: {
+          display: true,
+          color: theme === 'dark' ? '#374151' : '#e5e7eb',
+        },
+        ticks: {
+          color: theme === 'dark' ? '#9ca3af' : '#6b7280',
+          callback: function(value) {
+            return formatNumber(value);
+          },
+          font: {
+            size: 11
+          }
+        }
+      }
+    }
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -278,121 +392,234 @@ const ExecutiveView = () => {
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3">
-          {/* Gross Sales */}
-          <div 
-            className="rounded-lg p-4"
-            style={theme === 'dark' 
-              ? {
-                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }
-              : {
-                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)'
-                }
-            }
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <DollarSign className="w-4 h-4 text-blue-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Gross Sales</span>
+        {/* KPI Cards & Exception Highlights - Horizontal Layout */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Side - Summary Cards Container */}
+          <div className="lg:col-span-6">
+            <div 
+              className="rounded-lg p-5 h-full"
+              style={theme === 'dark' 
+                ? {
+                    background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                  }
+                : {
+                    background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                    border: '1px solid rgba(0, 0, 0, 0.1)'
+                  }
+              }
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="w-5 h-5 text-blue-600" />
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Key Metrics</h2>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {/* Gross Sales */}
+                <div 
+                  className="rounded-lg p-4 bg-white dark:bg-gray-800/50"
+                  style={{
+                    border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <DollarSign className="w-4 h-4 text-blue-600" />
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Gross Sales</span>
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                      {formatNumber(summary.gross_sales)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Gross Profit */}
+                <div 
+                  className="rounded-lg p-4 bg-white dark:bg-gray-800/50"
+                  style={{
+                    border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="w-4 h-4 text-green-600" />
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Gross Profit</span>
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                      {formatNumber(summary.gross_profit)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Transfer Cost */}
+                <div 
+                  className="rounded-lg p-4 bg-white dark:bg-gray-800/50"
+                  style={{
+                    border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShoppingBag className="w-4 h-4 text-orange-600" />
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Transfer Cost</span>
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                      {formatNumber(summary.transfer_cost)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Margin % */}
+                <div 
+                  className="rounded-lg p-4 bg-white dark:bg-gray-800/50"
+                  style={{
+                    border: theme === 'dark' ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid rgba(0, 0, 0, 0.08)'
+                  }}
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <Percent className="w-4 h-4 text-purple-600" />
+                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Margin %</span>
+                  </div>
+                  {loading ? (
+                    <Skeleton className="h-8 w-32" />
+                  ) : (
+                    <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                      {summary.margin_pct.toFixed(2)}%
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
-            {loading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                {formatNumber(summary.gross_sales)}
-              </p>
-            )}
           </div>
 
-          {/* Gross Profit */}
-          <div 
-            className="rounded-lg p-4"
-            style={theme === 'dark' 
-              ? {
-                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }
-              : {
-                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)'
-                }
-            }
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="w-4 h-4 text-green-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Gross Profit</span>
+          {/* Right Side - Exception Highlights (Scrollable) */}
+          <div className="lg:col-span-6">
+            <div 
+              className="rounded-lg p-5 h-full"
+              style={theme === 'dark' 
+                ? {
+                    background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                  }
+                : {
+                    background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                    border: '1px solid rgba(0, 0, 0, 0.1)'
+                  }
+              }
+            >
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Exception Highlights</h2>
+              </div>
+              
+              {loading ? (
+                <div className="space-y-3">
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                  <Skeleton className="h-20 w-full" />
+                </div>
+              ) : dashboardData && dashboardData.exceptions && dashboardData.exceptions.length > 0 ? (
+                <div className="space-y-3 overflow-y-auto" style={{ maxHeight: '400px', paddingRight: '8px' }}>
+                  {dashboardData.exceptions.map((exception, index) => (
+                    <div 
+                      key={index}
+                      className={`p-3 rounded-lg ${
+                        exception.severity === 'high' 
+                          ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' 
+                          : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                            {exception.period}
+                          </p>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                            {exception.message}
+                          </p>
+                        </div>
+                        <span className={`px-2 py-1 text-xs font-medium rounded ${
+                          exception.severity === 'high'
+                            ? 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
+                            : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100'
+                        }`}>
+                          {exception.severity.toUpperCase()}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <AlertTriangle className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+                    <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                      No exceptions to highlight
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-            {loading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                {formatNumber(summary.gross_profit)}
-              </p>
-            )}
-          </div>
-
-          {/* Transfer Cost */}
-          <div 
-            className="rounded-lg p-4"
-            style={theme === 'dark' 
-              ? {
-                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }
-              : {
-                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)'
-                }
-            }
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <ShoppingBag className="w-4 h-4 text-orange-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Transfer Cost</span>
-            </div>
-            {loading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                {formatNumber(summary.transfer_cost)}
-              </p>
-            )}
-          </div>
-
-          {/* Margin % */}
-          <div 
-            className="rounded-lg p-4"
-            style={theme === 'dark' 
-              ? {
-                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)'
-                }
-              : {
-                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                  border: '1px solid rgba(0, 0, 0, 0.1)'
-                }
-            }
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <Percent className="w-4 h-4 text-purple-600" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Margin %</span>
-            </div>
-            {loading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <p className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                {summary.margin_pct.toFixed(2)}%
-              </p>
-            )}
           </div>
         </div>
 
-        {/* Exception Highlights */}
-        {dashboardData && dashboardData.exceptions && dashboardData.exceptions.length > 0 && (
+        {/* Gross Sales & Profit Trend Chart */}
+        <div 
+          className="rounded-lg p-6"
+          style={theme === 'dark' 
+            ? {
+                background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                border: '1px solid rgba(255, 255, 255, 0.1)'
+              }
+            : {
+                background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                border: '1px solid rgba(0, 0, 0, 0.1)'
+              }
+          }
+        >
+          <div className="mb-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              Gross Sales & Profit Trend
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Track gross sales and profit performance over time
+            </p>
+          </div>
+          
+          {loading ? (
+            <div className="flex items-center justify-center" style={{ height: '400px' }}>
+              <Skeleton className="w-full h-full" />
+            </div>
+          ) : chartData.labels.length === 0 ? (
+            <div className="flex items-center justify-center" style={{ height: '400px' }}>
+              <div className="text-center">
+                <Activity className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+                <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                  No data available for the selected filters
+                </p>
+              </div>
+            </div>
+          ) : (
+            <ChartComponent
+              type="line"
+              data={chartData}
+              options={chartOptions}
+              height={400}
+            />
+          )}
+        </div>
+
+        {/* Top 10 Charts - Grid Layout (2 per row) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Top 10 Customers Chart */}
           <div 
-            className="rounded-lg p-5"
+            className="rounded-lg p-6"
             style={theme === 'dark' 
               ? {
                   background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
@@ -404,42 +631,176 @@ const ExecutiveView = () => {
                 }
             }
           >
-            <div className="flex items-center gap-2 mb-4">
-              <AlertTriangle className="w-5 h-5 text-yellow-600" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Exception Highlights</h2>
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Top 10 Customers
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Revenue and Profit by customer
+              </p>
             </div>
-            <div className="space-y-3">
-              {dashboardData.exceptions.map((exception, index) => (
-                <div 
-                  key={index}
-                  className={`p-3 rounded-lg ${
-                    exception.severity === 'high' 
-                      ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800' 
-                      : 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                        {exception.period}
-                      </p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {exception.message}
-                      </p>
-                    </div>
-                    <span className={`px-2 py-1 text-xs font-medium rounded ${
-                      exception.severity === 'high'
-                        ? 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
-                        : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100'
-                    }`}>
-                      {exception.severity.toUpperCase()}
-                    </span>
-                  </div>
+            
+            {loading ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <Skeleton className="w-full h-full" />
+              </div>
+            ) : prepareTop10ChartData('customers').labels.length === 0 ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <div className="text-center">
+                  <Users className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+                  <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                    No customer data available
+                  </p>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <ChartComponent
+                type="bar"
+                data={prepareTop10ChartData('customers')}
+                options={top10ChartOptions}
+                height={400}
+              />
+            )}
           </div>
-        )}
+
+          {/* Top 10 Brands Chart */}
+          <div 
+            className="rounded-lg p-6"
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
+          >
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Top 10 Brands
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Revenue and Profit by brand
+              </p>
+            </div>
+            
+            {loading ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <Skeleton className="w-full h-full" />
+              </div>
+            ) : prepareTop10ChartData('brands').labels.length === 0 ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <div className="text-center">
+                  <Target className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+                  <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                    No brand data available
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <ChartComponent
+                type="bar"
+                data={prepareTop10ChartData('brands')}
+                options={top10ChartOptions}
+                height={400}
+              />
+            )}
+          </div>
+
+          {/* Top 10 Categories Chart */}
+          <div 
+            className="rounded-lg p-6"
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
+          >
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Top 10 Categories
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Revenue and Profit by category
+              </p>
+            </div>
+            
+            {loading ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <Skeleton className="w-full h-full" />
+              </div>
+            ) : prepareTop10ChartData('categories').labels.length === 0 ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <div className="text-center">
+                  <BarChart3 className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+                  <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                    No category data available
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <ChartComponent
+                type="bar"
+                data={prepareTop10ChartData('categories')}
+                options={top10ChartOptions}
+                height={400}
+              />
+            )}
+          </div>
+
+          {/* Top 10 Channels Chart */}
+          <div 
+            className="rounded-lg p-6"
+            style={theme === 'dark' 
+              ? {
+                  background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)'
+                }
+              : {
+                  background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
+                  border: '1px solid rgba(0, 0, 0, 0.1)'
+                }
+            }
+          >
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                Top 10 Channels
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Revenue and Profit by channel
+              </p>
+            </div>
+            
+            {loading ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <Skeleton className="w-full h-full" />
+              </div>
+            ) : prepareTop10ChartData('channels').labels.length === 0 ? (
+              <div className="flex items-center justify-center" style={{ height: '400px' }}>
+                <div className="text-center">
+                  <Activity className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+                  <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
+                    No channel data available
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <ChartComponent
+                type="bar"
+                data={prepareTop10ChartData('channels')}
+                options={top10ChartOptions}
+                height={400}
+              />
+            )}
+          </div>
+        </div>
 
         {/* Top 10 Contributors */}
         <div 
@@ -461,7 +822,7 @@ const ExecutiveView = () => {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 flex-wrap">
             <button
               onClick={() => setActiveTab('customers')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
@@ -481,6 +842,26 @@ const ExecutiveView = () => {
               }`}
             >
               Brands
+            </button>
+            <button
+              onClick={() => setActiveTab('businesses')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'businesses'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+            >
+              Businesses
+            </button>
+            <button
+              onClick={() => setActiveTab('categories')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                activeTab === 'categories'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+              }`}
+            >
+              Categories
             </button>
             <button
               onClick={() => setActiveTab('channels')}
@@ -534,52 +915,6 @@ const ExecutiveView = () => {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-
-        {/* Gross Sales Chart */}
-        <div 
-          className="rounded-lg p-6"
-          style={theme === 'dark' 
-            ? {
-                background: 'linear-gradient(180deg, #1e293b 0%, #334155 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.1)'
-              }
-            : {
-                background: 'linear-gradient(180deg, #F6FAFF 0%, #AAB8CC 100%)',
-                border: '1px solid rgba(0, 0, 0, 0.1)'
-              }
-          }
-        >
-          <div className="mb-4">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-              Gross Sales Trend
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Track gross sales performance over time
-            </p>
-          </div>
-          
-          {loading ? (
-            <div className="flex items-center justify-center" style={{ height: '400px' }}>
-              <Skeleton className="w-full h-full" />
-            </div>
-          ) : chartData.labels.length === 0 ? (
-            <div className="flex items-center justify-center" style={{ height: '400px' }}>
-              <div className="text-center">
-                <Activity className={`w-12 h-12 mx-auto mb-2 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-                <p className={theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}>
-                  No data available for the selected filters
-                </p>
-              </div>
-            </div>
-          ) : (
-            <ChartComponent
-              type="line"
-              data={chartData}
-              options={chartOptions}
-              height={400}
-            />
           )}
         </div>
       </div>

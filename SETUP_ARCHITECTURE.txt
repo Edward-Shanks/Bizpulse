@@ -1,0 +1,247 @@
+════════════════════════════════════════════════════════════════════════
+                    YOUR ACTUAL SETUP ARCHITECTURE
+════════════════════════════════════════════════════════════════════════
+
+
+┌───────────────────────────────────────────────────────────────────────┐
+│                                                                       │
+│  💻 YOUR LAPTOP (Windows)                                            │
+│  Location: C:\Users\Sumit Mishra\Documents\Bizpulse                  │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  📁 Your Code                                                │   │
+│  │     - Backend (FastAPI)                                      │   │
+│  │     - Frontend (React)                                       │   │
+│  │     - MongoDB (Local)                                        │   │
+│  │     - SQL files (create_schema.sql, setup_rbac.sql)        │   │
+│  │     - Python scripts (migration, testing)                    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  │
+                        SSH Connection + Network
+                                  │
+                                  ↓
+┌───────────────────────────────────────────────────────────────────────┐
+│                                                                       │
+│  🖥️  MAC STUDIO (512GB RAM)                                          │
+│  Access: ssh user@macstudio                                          │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  🐳 Docker Container: clickhouse-prod                        │   │
+│  │     - Port 9000: ClickHouse native protocol                  │   │
+│  │     - Port 18123: ClickHouse HTTP API                        │   │
+│  │     - Database: bizpulse                                      │   │
+│  │     - Tables & Views (RBAC)                                   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                       │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  🤖 Qwen:32b LLM                                             │   │
+│  │     - Local LLM for AI chatbot                               │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════
+                        WHAT RUNS WHERE
+════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ ON YOUR LAPTOP (Windows)                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ✅ Edit code                                                       │
+│  ✅ Run: python migrate_to_clickhouse.py (from laptop)            │
+│  ✅ Run: python test_rbac.py (from laptop)                        │
+│  ✅ Run: uvicorn app.main:app --reload (from laptop)              │
+│  ✅ MongoDB queries (local)                                        │
+│  ✅ Frontend development                                           │
+│                                                                     │
+│  ⚙️  Configuration:                                                 │
+│     .env file with Mac Studio IP address                           │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│ ON MAC STUDIO (via SSH)                                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ✅ Run: docker exec -i clickhouse-prod clickhouse-client ...     │
+│  ✅ Create database & tables (once)                                │
+│  ✅ Set up RBAC users & views (once)                               │
+│  ✅ Monitor ClickHouse: docker logs clickhouse-prod                │
+│  ✅ ClickHouse CLI for queries                                     │
+│                                                                     │
+│  ⚠️  NO CODE EDITING (code is on laptop)                           │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════
+                          DATA FLOW
+════════════════════════════════════════════════════════════════════════
+
+MIGRATION:
+┌──────────┐         ┌──────────┐         ┌──────────────┐
+│ MongoDB  │ ──────→ │  Python  │ ──────→ │ ClickHouse   │
+│ (Laptop) │         │ (Laptop) │  SSH    │ (Mac Studio) │
+└──────────┘         └──────────┘         └──────────────┘
+
+QUERY (from FastAPI):
+┌──────────┐         ┌──────────┐         ┌──────────────┐
+│ FastAPI  │ ──────→ │  Python  │ ──────→ │ ClickHouse   │
+│ (Laptop) │         │  Client  │  9000   │ (Mac Studio) │
+└──────────┘         └──────────┘         └──────────────┘
+
+
+════════════════════════════════════════════════════════════════════════
+                    STEP-BY-STEP SETUP PROCESS
+════════════════════════════════════════════════════════════════════════
+
+PHASE 1: TRANSFER FILES TO MAC STUDIO
+──────────────────────────────────────────────────────────────────────
+
+From Laptop (Windows PowerShell):
+┌─────────────────────────────────────────────────────────────────────┐
+│ scp backend/scripts/create_schema.sql user@macstudio:/tmp/         │
+│ scp backend/scripts/setup_rbac.sql user@macstudio:/tmp/            │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+PHASE 2: CREATE DATABASE ON MAC STUDIO
+──────────────────────────────────────────────────────────────────────
+
+SSH into Mac Studio:
+┌─────────────────────────────────────────────────────────────────────┐
+│ ssh user@macstudio                                                  │
+│                                                                     │
+│ # Create database                                                   │
+│ docker exec -i clickhouse-prod clickhouse-client \                 │
+│     < /tmp/create_schema.sql                                        │
+│                                                                     │
+│ # Set up RBAC                                                       │
+│ docker exec -i clickhouse-prod clickhouse-client \                 │
+│     < /tmp/setup_rbac.sql                                           │
+│                                                                     │
+│ # Verify                                                            │
+│ docker exec -it clickhouse-prod clickhouse-client \                │
+│     --database=bizpulse --query="SHOW TABLES"                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+PHASE 3: CONFIGURE LAPTOP
+──────────────────────────────────────────────────────────────────────
+
+Edit .env on Laptop:
+┌─────────────────────────────────────────────────────────────────────┐
+│ # File: C:\Users\Sumit Mishra\Documents\Bizpulse\.env              │
+│                                                                     │
+│ CLICKHOUSE_HOST=192.168.1.100  # ← Your Mac Studio IP              │
+│ CLICKHOUSE_PORT=9000                                                │
+│ CLICKHOUSE_DB=bizpulse                                              │
+│ CLICKHOUSE_USER=bizpulse_admin                                      │
+│ CLICKHOUSE_PASSWORD=Admin@123!Secure                                │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+PHASE 4: TEST CONNECTION FROM LAPTOP
+──────────────────────────────────────────────────────────────────────
+
+From Laptop:
+┌─────────────────────────────────────────────────────────────────────┐
+│ cd C:\Users\Sumit Mishra\Documents\Bizpulse                         │
+│ python backend/test_clickhouse_connection.py                        │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+PHASE 5: MIGRATE DATA
+──────────────────────────────────────────────────────────────────────
+
+From Laptop (reads local MongoDB, writes to remote ClickHouse):
+┌─────────────────────────────────────────────────────────────────────┐
+│ cd C:\Users\Sumit Mishra\Documents\Bizpulse\backend                │
+│ python scripts/migrate_to_clickhouse.py                             │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════
+                    IMPORTANT CONFIGURATIONS
+════════════════════════════════════════════════════════════════════════
+
+✅ Python scripts automatically read .env file
+✅ No need to manually specify Mac Studio IP in each script
+✅ Just update .env once, everything works!
+
+Files that AUTO-CONNECT to Mac Studio (when you set .env):
+  - backend/scripts/migrate_to_clickhouse.py
+  - backend/scripts/test_rbac.py
+  - backend/app/database/clickhouse_client.py
+  - backend/test_clickhouse_connection.py
+
+
+════════════════════════════════════════════════════════════════════════
+                         COMMON COMMANDS
+════════════════════════════════════════════════════════════════════════
+
+ON YOUR LAPTOP:
+┌─────────────────────────────────────────────────────────────────────┐
+│ # Test connection                                                   │
+│ python backend/test_clickhouse_connection.py                        │
+│                                                                     │
+│ # Migrate data                                                      │
+│ python backend/scripts/migrate_to_clickhouse.py                     │
+│                                                                     │
+│ # Test RBAC                                                         │
+│ python backend/scripts/test_rbac.py                                 │
+│                                                                     │
+│ # Run FastAPI                                                       │
+│ cd backend                                                          │
+│ uvicorn app.main:app --reload                                       │
+└─────────────────────────────────────────────────────────────────────┘
+
+ON MAC STUDIO (via SSH):
+┌─────────────────────────────────────────────────────────────────────┐
+│ # Connect to Mac Studio                                             │
+│ ssh user@macstudio                                                  │
+│                                                                     │
+│ # Access ClickHouse CLI                                             │
+│ docker exec -it clickhouse-prod clickhouse-client --database=bizpulse│
+│                                                                     │
+│ # Check status                                                      │
+│ docker ps | grep clickhouse                                         │
+│                                                                     │
+│ # View logs                                                         │
+│ docker logs clickhouse-prod --tail 50                               │
+│                                                                     │
+│ # Restart if needed                                                 │
+│ docker restart clickhouse-prod                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+
+════════════════════════════════════════════════════════════════════════
+                         KEY FILES TO READ
+════════════════════════════════════════════════════════════════════════
+
+READ THIS FIRST:
+  📖 CLICKHOUSE_REMOTE_SETUP_GUIDE.md
+     Complete guide for your laptop + Mac Studio setup
+
+THEN READ:
+  📖 CLICKHOUSE_SETUP_README.md
+     General setup guide (use with remote guide)
+
+FOR REFERENCE:
+  📖 CLICKHOUSE_QUICK_REFERENCE.md
+     Daily commands and troubleshooting
+
+
+════════════════════════════════════════════════════════════════════════
+
+✅ Your setup is: Laptop (Code + MongoDB) → Mac Studio (ClickHouse)
+✅ SQL commands: Run on Mac Studio via SSH
+✅ Python scripts: Run on Laptop (connect remotely)
+✅ No code transfer needed to Mac Studio!
+
+════════════════════════════════════════════════════════════════════════
