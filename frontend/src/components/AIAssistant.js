@@ -194,10 +194,12 @@ const AIAssistant = () => {
         conversation_history: conversationHistory,
         selected_previous_question_id: selectedQuestionId || null
       };
+      const clickhousePayload = { question: msgToSend };
 
-      // CRITICAL: Use non-streaming endpoint when streaming is disabled
-      let useStreaming = false; // TEMPORARILY DISABLED - Streaming has extraction issues, using non-streaming for reliable responses
-      const endpoint = useStreaming ? `${API}/insights/chat/stream` : `${API}/insights/chat`;
+      // Use ClickHouse AI chatbot endpoint for the main AI Assistant flow.
+      // This ensures answers come from Mac Studio ClickHouse, not MongoDB insights endpoint.
+      let useStreaming = false; // Streaming path is for /insights/chat/stream; keep disabled for ClickHouse endpoint.
+      const endpoint = `${API}/ai/chatbot/chat`;
       
       if (useStreaming) {
         try {
@@ -352,7 +354,7 @@ const AIAssistant = () => {
       const cancelToken = axios.CancelToken.source();
       axiosCancelTokenRef.current = cancelToken; // Store for cancellation
       
-      const response = await axios.post(`${API}/insights/chat`, payload, {
+      const response = await axios.post(endpoint, clickhousePayload, {
         headers: { Authorization: `Bearer ${token}` },
         cancelToken: cancelToken.token
       });

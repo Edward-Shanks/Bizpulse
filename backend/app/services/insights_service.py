@@ -15,6 +15,7 @@ from typing import Optional, List
 import logging
 import re
 import json
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,8 @@ class InsightsService:
         MongoDB-based View Insights Chatbot for all screens
         Supports: Business Compass, Brands, Customers, Categories, Sales Analysis
         """
+        t_start = time.perf_counter()
+        logger.info("DATA_SOURCE=MongoDB | View Insights Chat — analytics data from MongoDB Atlas (business_data)")
         try:
             logger.info(f"📊 View Insights Chat Request - Chart: {request.chart_title}, Message: {request.message[:100]}")
             
@@ -326,7 +329,8 @@ class InsightsService:
                     logger.info(f"✅ Generated emergency suggestions: {suggested_questions}")
                 
                 # Always return clarification when unclear
-                logger.info(f"❓ Question needs clarification. Returning {len(suggested_questions)} suggestions: {suggested_questions}")
+                response_ms = int((time.perf_counter() - t_start) * 1000)
+                logger.info(f"DATA_SOURCE=MongoDB | response_ms={response_ms} | returning clarification (no data query)")
                 return InsightsChatResponse(
                     response=(
                         "I want to make sure I understand your question correctly. "
@@ -334,7 +338,7 @@ class InsightsService:
                     ),
                     needs_clarification=True,
                     suggested_questions=suggested_questions,
-                    data={}
+                    data={"data_source": "MongoDB", "response_ms": response_ms}
                 )
             
             # STEP 2: Process the question normally if it's clear
@@ -1624,7 +1628,12 @@ class InsightsService:
             
             # CRITICAL: Log response data structure
             logger.info(f"📊 RESPONSE DATA - pivot_table length: {len(response_data['pivot_table'])}, columns: {response_data['columns']}")
-            
+
+            response_ms = int((time.perf_counter() - t_start) * 1000)
+            response_data["data_source"] = "MongoDB"
+            response_data["response_ms"] = response_ms
+            logger.info(f"DATA_SOURCE=MongoDB | response_ms={response_ms} | returning response (data from MongoDB Atlas)")
+
             return InsightsChatResponse(
                 response=ai_response,
                 timestamp=timestamp,

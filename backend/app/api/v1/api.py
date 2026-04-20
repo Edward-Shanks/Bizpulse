@@ -80,6 +80,12 @@ try:
 except ImportError:
     pass
 
+try:
+    from app.api.v1.routes import ai_chatbot
+    api_router.include_router(ai_chatbot.router, tags=["AI Chatbot"])
+except ImportError:
+    pass
+
 # Debug endpoints (for checking system status)
 try:
     from app.api import debug

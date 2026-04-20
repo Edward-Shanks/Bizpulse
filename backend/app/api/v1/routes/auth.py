@@ -122,9 +122,15 @@ async def list_users(
     db: AsyncIOMotorDatabase = Depends(get_database),
     email: str = Depends(get_current_user)
 ):
-    """List all users with passwords (development only) - requires authentication"""
-    if not settings.is_development:
-        raise HTTPException(status_code=403, detail="This endpoint is only available in development mode")
+    """
+    List all users for admin management.
+    
+    Only admins (e.g. role 'VP' or 'admin') can access this endpoint.
+    """
+    # Admin check
+    admin_doc = await db.users.find_one({"email": email})
+    if not admin_doc or str(admin_doc.get("role", "")).lower() not in {"vp", "admin"}:
+        raise HTTPException(status_code=403, detail="Only admin users can manage users")
     try:
         # Get all users directly from database
         # Exclude MongoDB's internal _id field to avoid serialization issues
@@ -151,7 +157,7 @@ async def list_users(
             else:
                 created_at = None
             
-            # In dev mode, we can show password hashes (but not plain passwords)
+            # Admin view: do NOT expose password hashes; include access config
             user_list.append({
                 "id": user_id or "",
                 "email": user.get("email", ""),
@@ -159,8 +165,8 @@ async def list_users(
                 "department": user.get("department"),
                 "role": user.get("role"),
                 "status": user.get("status", "active"),
-                "password_hash": user.get("password_hash", ""),  # For dev reference
-                "created_at": created_at
+                "created_at": created_at,
+                "access": user.get("access", {})
             })
         
         logger.info(f"Retrieved {len(user_list)} users for management")
@@ -178,9 +184,15 @@ async def update_user(
     db: AsyncIOMotorDatabase = Depends(get_database),
     current_user_email: str = Depends(get_current_user)
 ):
-    """Update user details (development only) - requires authentication"""
-    if not settings.is_development:
-        raise HTTPException(status_code=403, detail="This endpoint is only available in development mode")
+    """
+    Update user details and RBAC access (admin only).
+    
+    Only admins (e.g. role 'VP' or 'admin') can update users.
+    """
+    # Admin check
+    admin_doc = await db.users.find_one({"email": current_user_email})
+    if not admin_doc or str(admin_doc.get("role", "")).lower() not in {"vp", "admin"}:
+        raise HTTPException(status_code=403, detail="Only admin users can update users")
     try:
         email_lower = user_email.lower().strip()
         
@@ -199,6 +211,9 @@ async def update_user(
             update_data["role"] = request.role
         if request.status is not None:
             update_data["status"] = request.status
+        # Allow updating access (RBAC) config
+        if request.access is not None:
+            update_data["access"] = request.access
         
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
@@ -218,7 +233,7 @@ async def update_user(
             {"_id": 0}
         )
         
-        # Format response
+        # Format response (no password hash; include access)
         user_dict = {
             "id": updated_user.get("id", ""),
             "email": updated_user.get("email", ""),
@@ -226,8 +241,8 @@ async def update_user(
             "department": updated_user.get("department"),
             "role": updated_user.get("role"),
             "status": updated_user.get("status", "active"),
-            "password_hash": updated_user.get("password_hash", ""),
-            "created_at": updated_user.get("created_at").isoformat() if updated_user.get("created_at") and hasattr(updated_user.get("created_at"), 'isoformat') else (updated_user.get("created_at") if isinstance(updated_user.get("created_at"), str) else None)
+            "created_at": updated_user.get("created_at").isoformat() if updated_user.get("created_at") and hasattr(updated_user.get("created_at"), 'isoformat') else (updated_user.get("created_at") if isinstance(updated_user.get("created_at"), str) else None),
+            "access": updated_user.get("access", {})
         }
         
         logger.info(f"User updated: {email_lower}")
@@ -246,9 +261,15 @@ async def delete_user(
     db: AsyncIOMotorDatabase = Depends(get_database),
     current_user_email: str = Depends(get_current_user)
 ):
-    """Delete user (development only) - requires authentication"""
-    if not settings.is_development:
-        raise HTTPException(status_code=403, detail="This endpoint is only available in development mode")
+    """
+    Delete user (admin only) - requires authentication.
+    
+    Only admins (e.g. role 'VP' or 'admin') can delete users.
+    """
+    # Admin check
+    admin_doc = await db.users.find_one({"email": current_user_email})
+    if not admin_doc or str(admin_doc.get("role", "")).lower() not in {"vp", "admin"}:
+        raise HTTPException(status_code=403, detail="Only admin users can delete users")
     try:
         email_lower = user_email.lower().strip()
         

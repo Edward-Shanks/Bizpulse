@@ -2,13 +2,13 @@ import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/App';
 import { useTheme } from '@/contexts/ThemeContext';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Tag, 
-  Layers, 
-  FileText, 
-  Target, 
+import {
+  LayoutDashboard,
+  Users,
+  Tag,
+  Layers,
+  FileText,
+  Target,
   FolderKanban,
   Lightbulb,
   Bell,
@@ -57,10 +57,10 @@ const Layout = ({ children }) => {
 
   const menuItems = [
     // Phase 1 - Hidden for now
-    // { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
-    // { path: '/strategic-deployment', icon: FolderKanban, label: 'Strategy Deployment' },
-    // { path: '/kanban', icon: Trello, label: 'Revenue Sentinel' },
-    
+    { path: '/', icon: Target, label: 'Cockpit', color: '#f59e0b' },
+    { path: '/strategic-deployment', icon: FolderKanban, label: 'Strategy Deployment' },
+    { path: '/kanban', icon: Trello, label: 'Revenue Sentinel' },
+
     // Phase 1 - Active Screens
     { path: '/executive-view', icon: Activity, label: 'Executive' },
     {
@@ -76,11 +76,11 @@ const Layout = ({ children }) => {
       ]
     },
     { path: '/reports', icon: FileText, label: 'Reports' },
-    
+
     // Phase 1 - Hidden for now
-    // { path: '/customer-insights', icon: BarChart3, label: 'Customer Deep Intelligence' },
-    // { path: '/root-cause-analysis', icon: AlertCircle, label: 'Root Cause Analysis' },
-    // { path: '/projects', icon: FolderKanban, label: 'Projects' },
+    { path: '/customer-insights', icon: BarChart3, label: 'Customer Deep Intelligence' },
+    { path: '/root-cause-analysis', icon: AlertCircle, label: 'Root Cause Analysis' },
+    { path: '/projects', icon: FolderKanban, label: 'Projects' },
   ];
 
   return (
@@ -89,9 +89,9 @@ const Layout = ({ children }) => {
       <header className={`h-16 fixed top-0 left-0 right-0 z-50 ${theme === 'dark' ? 'bg-gray-950 border-b border-gray-800' : ''}`} style={theme === 'dark' ? { background: '#030712' } : { background: '#184464' }}>
         <div className="h-full px-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img 
-              src="/vector_logo_white.svg" 
-              alt="Vector AI Studio Logo" 
+            <img
+              src="/vector_logo_white.svg"
+              alt="Vector AI Studio Logo"
               className="h-14 w-auto"
             />
             <div>
@@ -101,13 +101,13 @@ const Layout = ({ children }) => {
               <p className="text-xs text-gray-300">by Vector AI Studio</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <button className={`relative p-2 rounded-lg transition ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-blue-700'}`}>
               <Bell className="w-5 h-5 text-white" />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </button>
-            
+
             {/* Settings Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -138,8 +138,8 @@ const Layout = ({ children }) => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            
-            <button 
+
+            <button
               className={`p-2 rounded-lg transition ${theme === 'dark' ? 'hover:bg-gray-800' : 'hover:bg-blue-700'}`}
               title="User Profile"
             >
@@ -151,14 +151,12 @@ const Layout = ({ children }) => {
 
       <div className="flex pt-16">
         {/* Sidebar */}
-        <aside 
-          className={`fixed left-0 top-16 bottom-0 border-r transition-all duration-300 ${
-            theme === 'dark' 
-              ? 'bg-gray-800 border-gray-700' 
-              : 'bg-white border-gray-200'
-          } ${
-            sidebarCollapsed ? 'w-20' : 'w-64'
-          }`}
+        <aside
+          className={`fixed left-0 top-16 bottom-0 border-r transition-all duration-300 ${theme === 'dark'
+            ? 'bg-gray-800 border-gray-700'
+            : 'bg-white border-gray-200'
+            } ${sidebarCollapsed ? 'w-20' : 'w-64'
+            }`}
         >
           <div className="h-full flex flex-col">
             {/* Collapse Button */}
@@ -176,9 +174,8 @@ const Layout = ({ children }) => {
             {/* Navigation Title */}
             {!sidebarCollapsed && (
               <div className="px-4 py-4">
-                <h3 className={`text-xs font-semibold uppercase tracking-wider ${
-                  theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                }`}>
+                <h3 className={`text-xs font-semibold uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
                   Navigation
                 </h3>
               </div>
@@ -191,22 +188,21 @@ const Layout = ({ children }) => {
                 const isActive = location.pathname === item.path;
                 const hasSubmenu = item.hasSubmenu && item.submenu;
                 const isParentActive = hasSubmenu && item.submenu.some(sub => sub.path === location.pathname);
-                
+
                 // For Business Compass, check if it or any sub-item is active
                 const isItemActive = isActive || (item.path === '/compass' && isBusinessCompassActive);
-                
+
                 return (
                   <div key={item.path}>
                     <div
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all ${
-                        isItemActive || isParentActive
-                          ? theme === 'dark'
-                            ? 'bg-amber-900/30 text-amber-300 font-medium'
-                            : 'bg-amber-50 text-amber-900 font-medium'
-                          : theme === 'dark'
-                            ? 'text-gray-300 hover:bg-gray-700'
-                            : 'text-gray-700 hover:bg-gray-50'
-                      }`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 mb-1 rounded-lg transition-all ${isItemActive || isParentActive
+                        ? theme === 'dark'
+                          ? 'bg-amber-900/30 text-amber-300 font-medium'
+                          : 'bg-amber-50 text-amber-900 font-medium'
+                        : theme === 'dark'
+                          ? 'text-gray-300 hover:bg-gray-700'
+                          : 'text-gray-700 hover:bg-gray-50'
+                        }`}
                       style={(isItemActive || isParentActive) ? { borderLeft: '3px solid #f59e0b' } : {}}
                     >
                       <button
@@ -224,12 +220,11 @@ const Layout = ({ children }) => {
                         }}
                         className="flex items-center gap-3 flex-1 text-left"
                       >
-                        <Icon 
-                          className={`w-5 h-5 flex-shrink-0 ${
-                            isItemActive || isParentActive 
-                              ? 'text-amber-600' 
-                              : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                          }`} 
+                        <Icon
+                          className={`w-5 h-5 flex-shrink-0 ${isItemActive || isParentActive
+                            ? 'text-amber-600'
+                            : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                            }`}
                         />
                         {!sidebarCollapsed && (
                           <span className="text-sm">{item.label}</span>
@@ -256,35 +251,33 @@ const Layout = ({ children }) => {
                         </button>
                       )}
                     </div>
-                    
+
                     {/* Submenu Items */}
                     {hasSubmenu && !sidebarCollapsed && businessCompassOpen && (
                       <div className="ml-4 mb-1 space-y-1">
                         {item.submenu.map((subItem) => {
                           const SubIcon = subItem.icon;
                           const isSubActive = location.pathname === subItem.path;
-                          
+
                           return (
                             <button
                               key={subItem.path}
                               onClick={() => navigate(subItem.path)}
-                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
-                                isSubActive
-                                  ? theme === 'dark'
-                                    ? 'bg-amber-900/30 text-amber-300 font-medium'
-                                    : 'bg-amber-50 text-amber-900 font-medium'
-                                  : theme === 'dark'
-                                    ? 'text-gray-400 hover:bg-gray-700'
-                                    : 'text-gray-600 hover:bg-gray-50'
-                              }`}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${isSubActive
+                                ? theme === 'dark'
+                                  ? 'bg-amber-900/30 text-amber-300 font-medium'
+                                  : 'bg-amber-50 text-amber-900 font-medium'
+                                : theme === 'dark'
+                                  ? 'text-gray-400 hover:bg-gray-700'
+                                  : 'text-gray-600 hover:bg-gray-50'
+                                }`}
                               style={isSubActive ? { borderLeft: '3px solid #f59e0b' } : {}}
                             >
-                              <SubIcon 
-                                className={`w-4 h-4 flex-shrink-0 ${
-                                  isSubActive 
-                                    ? 'text-amber-600' 
-                                    : theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
-                                }`} 
+                              <SubIcon
+                                className={`w-4 h-4 flex-shrink-0 ${isSubActive
+                                  ? 'text-amber-600'
+                                  : theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                                  }`}
                               />
                               <span className="text-sm">{subItem.label}</span>
                             </button>
@@ -299,12 +292,10 @@ const Layout = ({ children }) => {
 
             {/* Footer */}
             {!sidebarCollapsed && (
-              <div className={`p-4 border-t ${
-                theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
-              }`}>
-                <p className={`text-xs text-center ${
-                  theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+              <div className={`p-4 border-t ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
                 }`}>
+                <p className={`text-xs text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
                   BeaconIQ by Vector AI Studio
                 </p>
               </div>
@@ -313,10 +304,9 @@ const Layout = ({ children }) => {
         </aside>
 
         {/* Main Content */}
-        <main 
-          className={`flex-1 transition-all duration-300 ${
-            sidebarCollapsed ? 'ml-20' : 'ml-64'
-          } ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}
+        <main
+          className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'ml-20' : 'ml-64'
+            } ${theme === 'dark' ? 'bg-gray-900' : 'bg-gray-50'}`}
         >
           <div className={`p-8 ${theme === 'dark' ? 'bg-gray-900 text-gray-100' : ''}`}>
             {children || <Outlet />}

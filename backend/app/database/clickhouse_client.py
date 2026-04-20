@@ -9,6 +9,7 @@ import os
 from datetime import datetime, date, timedelta
 import re
 import logging
+import time
 from dotenv import load_dotenv
 
 # CRITICAL: Load .env file BEFORE reading environment variables
@@ -235,6 +236,7 @@ class ClickHouseClient:
             r'\byear\s+IN\s*\(',         # year IN (...)
             r'\bmonth\s*=',              # month =
             r'\bquarter\s*=',            # quarter =
+            r'\bquarter\s+IN\s*\(',     # quarter IN (...)
             r'\byear_month\s*=',         # year_month =
             r'toYYYYMM\s*\(',            # toYYYYMM(...)
             r'toStartOfMonth\s*\(',      # toStartOfMonth(...)
@@ -342,13 +344,16 @@ class ClickHouseClient:
             query = self._add_default_time_filter(query)
         
         try:
-            logger.debug(f"Executing query: {query[:100]}...")
+            logger.info(f"DATA_SOURCE=ClickHouse | executing query at {self.host}:{self.port} (Mac Studio)")
+            t0 = time.perf_counter()
             result = self.client.execute(
                 query,
                 params,
                 with_column_types=with_column_types
             )
-            logger.debug(f"Query returned {len(result) if not with_column_types else len(result[0])} rows")
+            query_ms = int((time.perf_counter() - t0) * 1000)
+            row_count = len(result) if not with_column_types else len(result[0])
+            logger.info(f"DATA_SOURCE=ClickHouse | query_ms={query_ms} | rows={row_count}")
             return result
         except Exception as e:
             logger.error(f"Query execution failed: {e}")

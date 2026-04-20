@@ -2,7 +2,7 @@
 User-related Pydantic models
 """
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 import uuid
 
@@ -81,6 +81,10 @@ class UpdateUserRequest(BaseModel):
     department: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+    # Optional access config for RBAC (businesses, brands, channels, categories, customers, etc.)
+    # Shape matches MongoDB user.access: keys like "businesses", "brands", "channels", "categories",
+    # "sub_categories", "customers", "allowed_metrics" with values "all" or list[str].
+    access: Optional[Dict[str, Any]] = None
 
 class UpdateUserResponse(BaseModel):
     """Update user response model"""

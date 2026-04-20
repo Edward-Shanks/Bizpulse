@@ -6,6 +6,8 @@ This folder contains critical project documentation, architecture decisions, and
 ## Contents
 
 ### System Architecture & Flow
+- **MONGODB_CLICKHOUSE_COMPLETE_SETUP_REF.md**: Points to `backend/MONGODB_CLICKHOUSE_SETUP_UNDERSTANDING_AND_ARCHITECTURE.md` — full understanding and architecture for MongoDB + ClickHouse complete setup (from ChatGPT discussion; aligned with FastAPI/Python codebase).
+- **MONGODB_CLICKHOUSE_AI_IMPLEMENTATION.md**: Implementation summary for MongoDB + ClickHouse + AI chatbot system with permission-aware caching, RBAC enforcement, and intent-based query generation.
 - **COMPLETE_SYSTEM_FLOW_AND_DATABASE_RECOMMENDATIONS.md**: Comprehensive documentation of:
   - Complete dashboard data flow
   - AI Assistant chatbot architecture (6-step process)

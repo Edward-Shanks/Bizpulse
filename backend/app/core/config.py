@@ -58,6 +58,18 @@ class Settings:
     _ollama_endpoints_str = os.getenv('OLLAMA_ENDPOINTS', None)
     OLLAMA_ENDPOINTS: List[str] = [url.strip() for url in _ollama_endpoints_str.split(',') if url.strip()] if _ollama_endpoints_str else []
     
+    # ClickHouse Configuration
+    CLICKHOUSE_HOST: str = os.getenv('CLICKHOUSE_HOST', 'localhost')
+    CLICKHOUSE_PORT: int = int(os.getenv('CLICKHOUSE_PORT', 9000))
+    CLICKHOUSE_DB: str = os.getenv('CLICKHOUSE_DB', 'bizpulse')
+    CLICKHOUSE_USER: str = os.getenv('CLICKHOUSE_USER', 'default')
+    CLICKHOUSE_PASSWORD: str = os.getenv('CLICKHOUSE_PASSWORD', '')
+    TENANT_ID: str = os.getenv('TENANT_ID', 'client_001')
+    
+    # Default time filter (in months) - applied when user doesn't specify time range
+    # Change this in .env to adjust default time window (e.g., 12 for 12 months, 36 for 36 months)
+    DEFAULT_TIME_MONTHS: int = int(os.getenv('DEFAULT_TIME_MONTHS', '24'))
+    
     @property
     def is_development(self) -> bool:
         """Check if running in development mode"""

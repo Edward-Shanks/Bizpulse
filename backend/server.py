@@ -255,7 +255,14 @@ async def load_data_from_azure_blob() -> int:
 async def lifespan(app: FastAPI):
     # Startup: Initialize default user only
     logger.info("Application startup...")
-    
+    # Initialize app.core.database so v1 routes (e.g. AI chatbot ClickHouse) can use get_database()
+    try:
+        from app.core.database import connect_to_mongo
+        await connect_to_mongo()
+        logger.info("App core database initialized for v1 API routes")
+    except Exception as e:
+        logger.warning("App core database init skipped (v1 routes may 404): %s", e)
+
     # Log all registered routes for debugging
     try:
         routes = []
@@ -7845,6 +7852,14 @@ async def insights_chat(
 
 # Include the router in the main app
 app.include_router(api_router)
+
+# Include v1 API router (AI chatbot with ClickHouse at POST /api/ai/chatbot/chat)
+try:
+    from app.api.v1.api import api_router as v1_router
+    app.include_router(v1_router, prefix="/api")
+    logger.info("Registered v1 API routes (e.g. POST /api/ai/chatbot/chat for ClickHouse AI chatbot)")
+except Exception as e:
+    logger.warning("Could not include v1 API router (AI chatbot): %s", e)
 
 # Add a catch-all exception handler to see what's happening
 from starlette.requests import Request as StarletteRequest
