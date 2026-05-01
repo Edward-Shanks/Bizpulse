@@ -1598,8 +1598,7 @@ class InsightsService:
                 ai_response = f"I apologize, but I encountered an error while processing your request. Please try rephrasing your question or contact support if the issue persists. Error: {str(e)}"
             
             # Pivot table was already generated before building the prompt (see line 1169)
-            # No need to regenerate it here
-            else:
+            if not pivot_table:
                 logger.warning(f"⚠️ WARNING: Pivot table is EMPTY! Message: '{request.message}', Chart: '{request.chart_title}'")
             
             # Get total row count

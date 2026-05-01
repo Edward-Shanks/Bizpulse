@@ -49,6 +49,27 @@ def get_ollama_endpoint() -> str:
         _endpoint_index = (_endpoint_index + 1) % len(_ollama_endpoints)
         return endpoint
 
+
+def get_endpoints_for_failover() -> List[str]:
+    """
+    Ordered list for a single request: round-robin primary first, then other instances.
+    Used when the busy instance times out so we try another Ollama port/process.
+    """
+    if not _ollama_endpoints:
+        _initialize_ollama_endpoints()
+    if not _ollama_endpoints:
+        return [settings.OLLAMA_BASE_URL]
+    primary = get_ollama_endpoint()
+    rest = [e for e in _ollama_endpoints if e != primary]
+    ordered = [primary] + rest
+    seen = set()
+    unique: List[str] = []
+    for url in ordered:
+        if url not in seen:
+            seen.add(url)
+            unique.append(url)
+    return unique
+
 class OllamaProvider(LLMProvider):
     """Ollama provider implementation for local LLM with load balancing support"""
     
@@ -60,14 +81,13 @@ class OllamaProvider(LLMProvider):
         self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.model = os.getenv("OLLAMA_MODEL", "qwen2.5:32b-instruct")  # Use your existing model
         self.fallback_model = os.getenv("OLLAMA_FALLBACK_MODEL", "llama3:70b")
-        self.timeout = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+        read_timeout = float(os.getenv("OLLAMA_TIMEOUT", str(settings.OLLAMA_TIMEOUT)))
+        # Long read timeout for large local models (32B+); connect stays short for fast failover
+        self.timeout = httpx.Timeout(connect=15.0, read=read_timeout, write=120.0, pool=10.0)
         # CRITICAL: Configure AsyncClient with limits for true parallelism
-        # This allows multiple concurrent requests to Ollama
         self.client = httpx.AsyncClient(
             timeout=self.timeout,
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=100)
-            # Note: http2=True removed - requires 'h2' package: pip install httpx[http2]
-            # HTTP/1.1 with connection pooling is sufficient for concurrency
         )
         self.is_remote = "localhost" not in self.base_url and "127.0.0.1" not in self.base_url
         
@@ -100,36 +120,20 @@ class OllamaProvider(LLMProvider):
         max_tokens: int = 4000,
         **kwargs
     ) -> str:
-        """Generate response using Ollama with load balancing"""
-        # Get endpoint from load balancer
-        target_url = get_ollama_endpoint()
-        
-        logger.info(f"🦙 OLLAMA: Starting generation request")
-        logger.info(f"🦙 OLLAMA: Selected endpoint: {target_url}")
+        """Generate response using Ollama with load balancing and cross-endpoint failover."""
         logger.info(f"🦙 OLLAMA: Model: {self.model}")
         logger.info(f"🦙 OLLAMA: Temperature: {temperature}, Max Tokens: {max_tokens}")
-        
-        # Check availability on selected endpoint
-        is_avail = await self._check_endpoint_availability(target_url)
-        logger.info(f"🦙 OLLAMA: Service available: {is_avail}")
-        
-        if not is_avail:
-            logger.error(f"🦙 OLLAMA: Service not available at {target_url}")
-            raise HTTPException(
-                status_code=503,
-                detail=f"Ollama service not available at {target_url}"
-            )
-        
-        # Build messages
+
+        # Build messages once
         messages = []
         if custom_system_message:
             messages.append({"role": "system", "content": custom_system_message})
-        
+
         if conversation_history:
             messages.extend(conversation_history)
-        
+
         messages.append({"role": "user", "content": prompt})
-        
+
         payload = {
             "model": self.model,
             "messages": messages,
@@ -139,61 +143,74 @@ class OllamaProvider(LLMProvider):
                 "num_predict": max_tokens
             }
         }
-        
+
+        endpoints = get_endpoints_for_failover()
         max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = await self.client.post(
-                    f"{target_url}/api/chat",
-                    json=payload
-                )
-                response.raise_for_status()
-                result = response.json()
-                content = result.get("message", {}).get("content", "")
-                
-                if not content and attempt < max_retries - 1:
-                    # Try fallback model
-                    logger.warning(f"Empty response from {self.model}, trying fallback {self.fallback_model}")
-                    payload["model"] = self.fallback_model
-                    continue
-                
-                logger.info(f"Ollama response generated successfully (model: {payload['model']})")
-                return content
-                
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 404:
-                    # Model not found, try fallback
-                    if payload["model"] != self.fallback_model:
-                        logger.warning(f"Model {self.model} not found, trying fallback {self.fallback_model}")
+        last_error: Optional[Exception] = None
+
+        for target_url in endpoints:
+            payload["model"] = self.model
+            logger.info(f"🦙 OLLAMA: Starting generation request")
+            logger.info(f"🦙 OLLAMA: Selected endpoint: {target_url}")
+
+            is_avail = await self._check_endpoint_availability(target_url)
+            logger.info(f"🦙 OLLAMA: Service available: {is_avail}")
+            if not is_avail:
+                logger.warning(f"🦙 OLLAMA: Skipping unavailable endpoint: {target_url}")
+                continue
+
+            for attempt in range(max_retries):
+                try:
+                    response = await self.client.post(
+                        f"{target_url}/api/chat",
+                        json=payload
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    content = result.get("message", {}).get("content", "")
+
+                    if not content and attempt < max_retries - 1:
+                        logger.warning(f"Empty response from {payload['model']}, trying fallback {self.fallback_model}")
                         payload["model"] = self.fallback_model
                         continue
-                
-                if attempt < max_retries - 1:
-                    logger.warning(f"Ollama error on attempt {attempt + 1}: {str(e)}")
-                    await asyncio.sleep(1)
-                    continue
-                else:
-                    logger.error(f"Ollama failed after {max_retries} attempts: {str(e)}")
-                    raise HTTPException(
-                        status_code=e.response.status_code,
-                        detail=f"Ollama API error: {str(e)}"
+
+                    logger.info(f"Ollama response generated successfully (model: {payload['model']})")
+                    return content
+
+                except httpx.HTTPStatusError as e:
+                    last_error = e
+                    if e.response.status_code == 404:
+                        if payload["model"] != self.fallback_model:
+                            logger.warning(f"Model {self.model} not found, trying fallback {self.fallback_model}")
+                            payload["model"] = self.fallback_model
+                            continue
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Ollama HTTP error on {target_url} attempt {attempt + 1}: {str(e)}")
+                        await asyncio.sleep(1)
+                        continue
+                    logger.warning(f"Ollama HTTP errors exhausted on {target_url}, trying next endpoint")
+                    break
+
+                except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+                    last_error = e
+                    logger.warning(
+                        f"Ollama timeout/connection on {target_url} (attempt {attempt + 1}): {type(e).__name__}: {e}"
                     )
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"Ollama error on attempt {attempt + 1}: {str(e)}")
-                    await asyncio.sleep(1)
-                    continue
-                else:
-                    logger.error(f"Ollama failed after {max_retries} attempts: {str(e)}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"Ollama error: {str(e)}"
-                    )
-        
-        raise HTTPException(
-            status_code=500,
-            detail="Ollama generation failed after all retries"
-        )
+                    # Busy GPU / overloaded instance — try another endpoint instead of hammering the same one
+                    break
+
+                except Exception as e:
+                    last_error = e
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Ollama error on {target_url} attempt {attempt + 1}: {str(e)}")
+                        await asyncio.sleep(1)
+                        continue
+                    logger.warning(f"Ollama failed on {target_url} after {max_retries} attempts: {str(e)}")
+                    break
+
+        detail = f"Ollama error: {last_error!s}" if last_error else "All Ollama endpoints failed or unavailable"
+        logger.error(detail)
+        raise HTTPException(status_code=503 if last_error and isinstance(last_error, (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError)) else 500, detail=detail)
     
     async def stream(
         self,

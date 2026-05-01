@@ -738,7 +738,6 @@ async def get_comprehensive_data_context(
             logger.info(f"🔍 Data context - Fetching brand breakdown with query: {brand_query}")
             brand_match_stage = {"$match": brand_query} if brand_query else {"$match": {}}
             # Determine limit from query (e.g., "top 10" = 10, "top 15" = 15, default = 20)
-            import re
             top_match = re.search(r'top\s+(\d+)', user_msg_lower)
             brand_limit = int(top_match.group(1)) if top_match else 20
             
@@ -804,7 +803,6 @@ async def get_comprehensive_data_context(
         )
         if is_asking_for_businesses:
             # Determine limit from query (e.g., "top 10" = 10, "top 15" = 15, default = 20)
-            import re
             top_match = re.search(r'top\s+(\d+)', user_msg_lower)
             business_limit = int(top_match.group(1)) if top_match else 20
             
