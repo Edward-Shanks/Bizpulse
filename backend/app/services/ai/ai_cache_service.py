@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 # Response cache TTL (same question + same data = reuse explanation)
 RESPONSE_CACHE_TTL_SECONDS = 86400  # 24 hours
 
+# Bump this string whenever backend logic that affects cached results changes
+# (RBAC rules, SQL builder, intent shape, narrative generator, post-processing, etc.).
+# All previously stored cache entries become invisible after a bump, forcing fresh
+# queries on the next request. This avoids manual MongoDB cleanup after bug fixes.
+CACHE_SCHEMA_VERSION = "v2"
+
 
 class AICacheService:
     """
@@ -96,6 +102,7 @@ class AICacheService:
                 "permissions_hash": permissions_hash,
                 "intent_hash": intent_hash,
                 "data_version": data_version.isoformat(),  # Store as ISO string
+                "cache_schema_version": CACHE_SCHEMA_VERSION,
                 "expires_at": {"$gt": datetime.utcnow()}  # Not expired
             })
             
@@ -139,6 +146,7 @@ class AICacheService:
                 "permissions_hash": permissions_hash,
                 "intent_hash": intent_hash,
                 "data_version": data_version.isoformat(),
+                "cache_schema_version": CACHE_SCHEMA_VERSION,
                 "result": safe_result,
                 "created_at": created_at,
                 "expires_at": expires_at
@@ -150,7 +158,8 @@ class AICacheService:
                     "tenant_id": tenant_id,
                     "permissions_hash": permissions_hash,
                     "intent_hash": intent_hash,
-                    "data_version": data_version.isoformat()
+                    "data_version": data_version.isoformat(),
+                    "cache_schema_version": CACHE_SCHEMA_VERSION
                 },
                 cache_doc,
                 upsert=True
@@ -181,6 +190,7 @@ class AICacheService:
                 "intent_hash": intent_hash,
                 "result_hash": result_hash,
                 "question_hash": question_hash,
+                "cache_schema_version": CACHE_SCHEMA_VERSION,
                 "expires_at": {"$gt": datetime.utcnow()}
             })
             if doc:
@@ -212,6 +222,7 @@ class AICacheService:
                     "intent_hash": intent_hash,
                     "result_hash": result_hash,
                     "question_hash": question_hash,
+                    "cache_schema_version": CACHE_SCHEMA_VERSION,
                 },
                 {
                     "tenant_id": tenant_id,
@@ -219,6 +230,7 @@ class AICacheService:
                     "intent_hash": intent_hash,
                     "result_hash": result_hash,
                     "question_hash": question_hash,
+                    "cache_schema_version": CACHE_SCHEMA_VERSION,
                     "response_text": response_text,
                     "created_at": now,
                     "expires_at": expires_at,

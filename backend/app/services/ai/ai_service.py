@@ -18,6 +18,8 @@ from app.services.ai.ai_response_service import AIResponseService
 from app.services.ai.ai_clarity_service import AIClarityService
 from app.services.ai.utils.permission_hash import generate_permissions_hash
 from app.services.ai.utils.intent_hash import generate_intent_hash
+from app.services.ai.utils.access import is_wildcard_access
+from app.utils.narrative_generator import generate_narrative
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +180,7 @@ class AIService:
                 "customer": "customers",
                 "sku": "sku",
             }
+
             for dimension, access_key in access_key_map.items():
                 requested = intent_filters.get(dimension) or []
                 if not requested:
@@ -185,7 +188,8 @@ class AIService:
                 allowed = access.get(access_key)
                 if allowed is None:
                     allowed = []
-                if isinstance(allowed, str) and allowed.lower() in ("all", "*"):
+                # Wildcard access (e.g. admin with businesses=["*"] or "all") — skip the deny check
+                if is_wildcard_access(allowed):
                     continue
                 if not isinstance(allowed, list):
                     allowed = []
@@ -392,7 +396,14 @@ class AIService:
             
             # STEP 7: Build pivot_table for frontend charts/tables (same shape as live insights)
             pivot_table = self._data_to_pivot_table(result_data)
-            
+
+            # STEP 7b: Storytelling Mode — build a short, deterministic narrative from the data
+            try:
+                narrative = generate_narrative(pivot_table)
+            except Exception as nar_err:  # narrative must never break the response
+                logger.warning("Narrative generation failed: %s", nar_err)
+                narrative = []
+
             # STEP 8: Return response
             response_ms = int((time.perf_counter() - t_start) * 1000)
             logger.info(f"DATA_SOURCE=ClickHouse | response_ms={response_ms} | returning response (data from ClickHouse)")
@@ -400,6 +411,7 @@ class AIService:
                 "response": explanation,
                 "data": result_data,
                 "pivot_table": pivot_table,
+                "narrative": narrative,
                 "cached": cached,
                 "intent": intent,  # Include for debugging
                 "debug": debug_info,

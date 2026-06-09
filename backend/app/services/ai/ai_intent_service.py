@@ -64,6 +64,7 @@ Rules:
 15. "Before and after January 2024" or "sales before and after [month] [year]": To return comparable data, set time_range to last_n_months 24 (or 12) and include "month_name" in dimensions so the answer can show before/after breakdown. Do not leave time_range empty.
 16. Specific month or year: If the user asks for a particular month (e.g. "in January", "January 2024", "Jan", "for March", "first month", "1st month", "month 1"), set filters.month_name to the abbreviated month (Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sep, Oct, Nov, Dec). If they mention a year (e.g. 2024), set filters.year to [that year]. Use time_range.type = "lifetime" when filtering by a specific month so the query uses year + month_name filters. "First month" or "month 1" = January (Jan), "second month" = February (Feb), etc.
 17. Quarter: If the user says "Q1", "Q2", "quarter 1", "quarter1", "quarter 2", "quarter two", "quarter one", set filters.quarter to [1], [2], [3], or [4] accordingly. If they mention a year, set filters.year. Use time_range.type = "lifetime" when quarter is set so only year/quarter filters apply. "Top 5 business in Q1" = dimensions ["business"], limit 5, filters.quarter [1], and year if mentioned.
+18. CRITICAL — Natural "X and Y business" phrases (NOT compare): If the user asks "how X and Y business performs", "how X, Y and Z business is doing", "tell me X and Y business in 2024", "show X business and Y business", or any similar phrasing where the word IMMEDIATELY before "business" / "businesses" is an entity list, those entities are BUSINESS filter values. Set filters.business = [X, Y, Z], include "business" in dimensions. Do NOT classify them as brands. Do NOT include "brand" in dimensions and do NOT set filters.brand unless the user EXPLICITLY uses the word "brand" or "brands". Same rule for "X and Y channel" → filters.channel; "X and Y category" → filters.category; "X and Y customer" → filters.customer.
 
 Return ONLY valid JSON, no explanation.
 
@@ -332,6 +333,54 @@ Intent JSON:"""
                 normalized["filters"]["channel"] = channel_list
                 normalized["limit"] = min(normalized.get("limit", 1000), len(channel_list) + 5)
 
+        # NATURAL "X and Y business" / "X, Y and Z category" rescue:
+        # The LLM frequently mis-classifies these as brands when the question doesn't
+        # use the word "compare". We detect them deterministically here and override.
+        # Only runs when: the suffix word ("business", "category", etc.) appears in the
+        # question, the matching filter is still empty, AND the question is not a
+        # "compare ... with other ..." (those are handled above).
+        question_lower_full = (question or "").lower()
+        is_compare_question = "compare" in question_lower_full
+        natural_targets = [
+            ("business", r"business(?:es)?", "business", "brand"),
+            ("category", r"categor(?:y|ies)", "category", None),
+            ("channel", r"channels?", "channel", None),
+            ("customer", r"customers?", "customer", None),
+        ]
+        for word, suffix_regex, filter_key, conflicting_dim in natural_targets:
+            if word not in question_lower_full:
+                continue
+            if is_compare_question:
+                continue  # handled by the compare path
+            existing = normalized.get("filters", {}).get(filter_key) or []
+            if existing:
+                continue
+            parsed = self._parse_multiple_entities_in_natural_phrase(
+                question, suffix_regex
+            )
+            if not parsed:
+                continue
+            normalized["filters"][filter_key] = parsed
+            if filter_key not in normalized["dimensions"]:
+                normalized["dimensions"].append(filter_key)
+            # If the LLM mistakenly added a conflicting dimension that the user
+            # never mentioned, remove it. Example: user says "X and Y business"
+            # but LLM returns dimensions=["brand"] — drop "brand".
+            if (
+                conflicting_dim
+                and conflicting_dim in normalized["dimensions"]
+                and conflicting_dim not in question_lower_full
+            ):
+                normalized["dimensions"].remove(conflicting_dim)
+                # Also clear the conflicting filter if it's empty/stale
+                if not normalized.get("filters", {}).get(conflicting_dim):
+                    normalized["filters"][conflicting_dim] = []
+            # Tighten limit when we have a small named list
+            if len(parsed) >= 2:
+                normalized["limit"] = min(
+                    normalized.get("limit", 1000), max(20, len(parsed) + 5)
+                )
+
         return normalized
 
     # Stop words to drop when extracting entity names from "Compare Q2 2023 revenue of A, B and C brands"
@@ -555,6 +604,86 @@ Intent JSON:"""
             "Calli": "Cali Cali",  # live suggested question may say "Calli" only
         }
         return self._parse_multiple_entities_from_question(question, r"brands?", "brand", normalizations)
+
+    # Common verbs and filler words that should NEVER be treated as an entity name
+    # when parsing "<entities> business/channel/category..." phrases.
+    _ENTITY_FILLER_WORDS = frozenset({
+        "tell", "show", "give", "list", "me", "us", "please", "kindly",
+        "how", "what", "which", "where", "when",
+        "is", "are", "was", "were", "be", "been", "being",
+        "do", "does", "did",
+        "perform", "performs", "performed", "performing", "performance",
+        "run", "runs", "running", "doing", "say", "saying", "tells", "showing",
+        "the", "a", "an", "this", "that", "these", "those",
+        "in", "on", "for", "of", "at", "by", "from", "to", "with", "without",
+    })
+
+    def _parse_multiple_entities_in_natural_phrase(
+        self,
+        question: Optional[str],
+        suffix_word_regex: str,
+        normalizations: Optional[Dict[str, str]] = None,
+    ) -> list:
+        """
+        Parse entity names from a NATURAL (non-compare) phrase like:
+          - "how brillo and cali cali business performs in 2024"
+          - "show food, snacks and household business"
+          - "for X channel and Y channel"
+
+        We capture the segment ending just before the suffix word (e.g. "business"),
+        then split on commas / "and" / "&". Stop words and 4-digit years are dropped.
+
+        Returns a deduped list of cleaned entity names (Title Case), or [] when nothing
+        confident was found. NEVER more than 10 names (cap for safety).
+        """
+        if not question or not question.strip():
+            return []
+        normalizations = normalizations or {}
+        q = question.strip()
+
+        patterns = [
+            # "how/for/of/in <segment> business[es]"  — caller usually says intent verb first
+            rf"(?:\bhow\b|\bof\b|\bfor\b|\bin\b)\s+(.+?)\s+{suffix_word_regex}\b",
+            # "show/tell me <segment> business[es]"
+            rf"(?:\bshow\b|\btell\b)(?:\s+me)?\s+(.+?)\s+{suffix_word_regex}\b",
+            # "<segment> business[es] <verb>"  — e.g. "X and Y business performs"
+            rf"\b([A-Za-z][A-Za-z0-9&\-\s,]+?)\s+{suffix_word_regex}\s+(?:perform|performs|performed|performing|performance|do|does|did|run|runs|is|are|was|were|in|for)\b",
+        ]
+        segment: Optional[str] = None
+        for pat in patterns:
+            m = re.search(pat, q, re.IGNORECASE | re.DOTALL)
+            if m:
+                segment = m.group(1).strip()
+                break
+        if not segment:
+            return []
+
+        parts = re.split(r"\s*,\s*|\s+and\s+|\s+&\s+", segment, flags=re.IGNORECASE)
+        entities: list = []
+        seen: set = set()
+        for p in parts:
+            p = p.strip()
+            if not p:
+                continue
+            tokens = p.split()
+            kept = [
+                t for t in tokens
+                if t.lower() not in self._ENTITY_STOP_WORDS
+                and t.lower() not in self._ENTITY_FILLER_WORDS
+                and not re.match(r"^20\d{2}$", t)
+                and not re.match(r"^q[1-4]$", t.lower())
+            ]
+            name = " ".join(kept).strip().title()
+            if not name:
+                continue
+            name = normalizations.get(name, name)
+            if name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            entities.append(name)
+            if len(entities) >= 10:
+                break
+        return entities
 
     def _parse_brands_from_revenue_phrase(self, question: Optional[str]) -> list:
         """Extract brand names from 'revenue of X, Y and Z' or 'revenue for X and Y and Z' (no 'compare')."""

@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Any, List, Optional, Union
 
 from app.core.config import settings
+from app.services.ai.utils.access import is_wildcard_access
 
 logger = logging.getLogger(__name__)
 
@@ -231,21 +232,17 @@ class AIQueryBuilder:
             "sku": "sku"
         }
 
-        def _has_full_access(allowed_values: Union[List[str], str, None]) -> bool:
-            if allowed_values is None:
-                return False
-            if allowed_values in ("*", "all"):
-                return True
-            if isinstance(allowed_values, list) and (allowed_values == ["*"] or "all" in allowed_values):
-                return True
-            return False
+        # Wildcard detection is centralised in app.services.ai.utils.access
+        # so the chat pre-check (ai_service.STEP 2.5) and the SQL builder here
+        # can never disagree on what "full access" means for any user.
+        _has_full_access = is_wildcard_access
 
         def _normalize_allowed(allowed_values: Any) -> List[str]:
             if allowed_values is None:
                 return []
             if isinstance(allowed_values, list):
                 return allowed_values
-            if allowed_values in ("*", "all"):
+            if isinstance(allowed_values, str) and allowed_values.strip().lower() in ("*", "all"):
                 return ["*"]
             return []
 
@@ -292,13 +289,27 @@ class AIQueryBuilder:
                     f"lowerUTF8({dimension}) IN ({self._format_values(intent_values, lowercase=True)})"
                 )
             elif isinstance(allowed_values, list) and len(allowed_values) > 0:
-                valid_values = [v for v in intent_values if v in allowed_values]
+                # CASE-INSENSITIVE access check. LLMs frequently lowercase entity
+                # names (e.g. "brillo") while MongoDB stores them in proper case
+                # ("Brillo"). Without this normalization a legitimate user would
+                # be falsely denied. The SQL itself already wraps the column in
+                # lowerUTF8() so case doesn't matter for the actual ClickHouse
+                # match — this gate just decides which values we let through.
+                allowed_lower_set = {
+                    str(v).strip().lower() for v in allowed_values if v not in (None, "")
+                }
+                valid_values = [
+                    v for v in intent_values
+                    if str(v).strip().lower() in allowed_lower_set
+                ]
                 if valid_values:
                     filters.append(
                         f"lowerUTF8({dimension}) IN ({self._format_values(valid_values, lowercase=True)})"
                     )
                 else:
-                    logger.warning(f"User requested {dimension}={intent_values} but only has access to {allowed_values}")
+                    logger.warning(
+                        f"User requested {dimension}={intent_values} but only has access to {allowed_values}"
+                    )
                     filters.append("1 = 0")
                     return filters
         return filters

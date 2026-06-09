@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.database import get_database
 from app.core.dependencies import get_current_user
 from app.services.ai import AIService
+from app.services.ai.ai_drill_service import AIDrillService
 from app.core.config import settings
 import logging
 from typing import Dict, Any
@@ -95,3 +96,87 @@ async def ai_chatbot_chat(
             )
         logger.error("AI chatbot error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing AI chatbot request: {str(e)}")
+
+
+@router.post("/ai/chatbot/drill-down")
+async def ai_chatbot_drill_down(
+    request: Dict[str, Any],
+    email: str = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+) -> Dict[str, Any]:
+    """
+    "Why this number?" drill-down endpoint.
+
+    Given a clicked pivot row (encoded as `filters`) and a `breakdown_by`
+    dimension, returns the top-N contributors at that lower level with
+    their share of the total. Identical RBAC rules as /ai/chatbot/chat.
+
+    Request body:
+    {
+        "breakdown_by": "customer",
+        "filters": {
+            "brand": ["Brillo"],
+            "year": [2024]
+        },
+        "measure": "gsales",   // optional, defaults to gsales (revenue)
+        "limit": 10            // optional, max 50
+    }
+
+    Response:
+    {
+        "breakdown_by": "customer",
+        "measure": "gsales",
+        "filters_applied": {...},
+        "total": 3950000.0,
+        "rows": [
+            {"Customer": "BWG", "Revenue": 2100000.0, "Gross_Profit": ..., "share_pct": 53.2},
+            ...
+        ],
+        "denied": false,
+        "message": null
+    }
+    """
+    try:
+        breakdown_by = request.get("breakdown_by")
+        if not breakdown_by:
+            raise HTTPException(status_code=400, detail="breakdown_by is required")
+        filters = request.get("filters") or {}
+        measure = request.get("measure")
+        limit = request.get("limit")
+
+        tenant_id = settings.TENANT_ID
+        drill_service = AIDrillService()
+        result = await drill_service.drill_down(
+            breakdown_by=breakdown_by,
+            filters=filters,
+            measure=measure,
+            limit=limit,
+            user_email=email,
+            tenant_id=tenant_id,
+        )
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except ClickHouseNetworkError as e:
+        logger.warning("ClickHouse unreachable (drill-down): %s", e)
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Analytics data is temporarily unavailable. "
+                "Please ensure ClickHouse is running and try again."
+            ),
+        )
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "connection" in err_msg and ("refused" in err_msg or "210" in str(e)):
+            logger.warning("ClickHouse connection error (drill-down): %s", e)
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Analytics data is temporarily unavailable. "
+                    "Please ensure ClickHouse is running and try again."
+                ),
+            )
+        logger.error("AI drill-down error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing drill-down request: {str(e)}")

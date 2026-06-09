@@ -4,7 +4,7 @@ import { API, useAuth } from '@/App';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, X, Send, Sparkles, RotateCcw, ArrowRight, History, CheckSquare } from 'lucide-react';
+import { Bot, X, Send, Sparkles, RotateCcw, ArrowRight, History, CheckSquare, Mic, MicOff, Volume2, VolumeX, Lightbulb, Search, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -32,6 +32,119 @@ const AIAssistant = () => {
   const [previousQuestions, setPreviousQuestions] = useState([]);
   const [selectedQuestionId, setSelectedQuestionId] = useState(null);
   const [showPreviousQuestions, setShowPreviousQuestions] = useState(false);
+
+  // Voice Q&A: speech-to-text + text-to-speech
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
+  const recognitionRef = useRef(null);
+  const speechSupportedRef = useRef(false);
+  const lastSpokenIndexRef = useRef(-1);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      speechSupportedRef.current = false;
+      return;
+    }
+    speechSupportedRef.current = true;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onresult = (event) => {
+      let transcript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      if (transcript) setInput(transcript);
+    };
+    recognition.onerror = (e) => {
+      console.warn('SpeechRecognition error:', e?.error || e);
+      setIsListening(false);
+    };
+    recognition.onend = () => setIsListening(false);
+    recognitionRef.current = recognition;
+
+    return () => {
+      try { recognition.stop(); } catch (e) { /* ignore */ }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (!speechSupportedRef.current || !recognitionRef.current) {
+      toast.error('Voice input is not supported in this browser. Please use Chrome.');
+      return;
+    }
+    if (isListening) {
+      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
+      setIsListening(false);
+      return;
+    }
+    try {
+      setInput('');
+      recognitionRef.current.start();
+      setIsListening(true);
+    } catch (e) {
+      console.warn('Could not start recognition:', e);
+      setIsListening(false);
+    }
+  };
+
+  // Strip markdown/symbols so the spoken text sounds natural
+  const cleanForSpeech = (text) => {
+    if (!text || typeof text !== 'string') return '';
+    return text
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/[*_#>|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const stopSpeaking = () => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    try { window.speechSynthesis.cancel(); } catch (e) { /* ignore */ }
+  };
+
+  const speak = (text) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const cleaned = cleanForSpeech(text);
+    if (!cleaned) return;
+    stopSpeaking();
+    const utter = new window.SpeechSynthesisUtterance(cleaned);
+    utter.lang = 'en-US';
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+    window.speechSynthesis.speak(utter);
+  };
+
+  // Auto-speak newest AI message when speaker is on
+  useEffect(() => {
+    if (!isSpeakerOn) return;
+    if (!messages || messages.length === 0) return;
+    const lastIdx = messages.length - 1;
+    const last = messages[lastIdx];
+    if (last?.role === 'ai' && lastSpokenIndexRef.current !== lastIdx) {
+      lastSpokenIndexRef.current = lastIdx;
+      speak(last.content);
+    }
+  }, [messages, isSpeakerOn]);
+
+  // Stop speaking when chat is closed or context is cleared
+  useEffect(() => {
+    if (!isOpen) stopSpeaking();
+  }, [isOpen]);
+
+  const toggleSpeaker = () => {
+    setIsSpeakerOn((prev) => {
+      const next = !prev;
+      if (!next) stopSpeaking();
+      return next;
+    });
+  };
   
   // Progressive loading states dictionary
   const loadingStates = [
@@ -448,6 +561,15 @@ const AIAssistant = () => {
       }
       
       const pivotArray = Array.isArray(pivot) ? pivot : [];
+
+      // Storytelling Mode: deterministic insight bullets from backend
+      let narrative = response?.data?.data?.narrative
+        ?? response?.data?.narrative
+        ?? response?.narrative
+        ?? [];
+      if (!Array.isArray(narrative)) {
+        narrative = [];
+      }
       
       // CRITICAL: Log pivot data for debugging
       console.log('🔍 AIAssistant - Pivot table extraction:', {
@@ -488,7 +610,8 @@ const AIAssistant = () => {
         content: safeContent,
         needs_clarification: needsClarification,
         suggested_questions: suggestedQuestions,
-        pivot_table: pivotArray
+        pivot_table: pivotArray,
+        narrative: narrative
       };
       
       console.log('🔍 AIAssistant - Adding message:', aiMessage);
@@ -590,7 +713,15 @@ const AIAssistant = () => {
     setLoading(false);
     setLoadingState('thinking');
     setStreamingMessage('');
-    
+
+    // Stop any ongoing voice playback / recognition
+    stopSpeaking();
+    if (isListening && recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) { /* ignore */ }
+      setIsListening(false);
+    }
+    lastSpokenIndexRef.current = -1;
+
     // CRITICAL: Reset messages to empty array immediately
     setMessages([]);
     
@@ -655,6 +786,15 @@ const AIAssistant = () => {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={toggleSpeaker}
+                className={`text-white rounded-lg p-2 transition flex items-center gap-2 ${isSpeakerOn ? 'bg-white/30' : 'hover:bg-white/20'}`}
+                title={isSpeakerOn ? 'Mute spoken answers' : 'Read answers aloud'}
+                data-testid="ai-speaker-toggle"
+              >
+                {isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+                <span className="text-sm hidden sm:inline">{isSpeakerOn ? 'Voice On' : 'Voice Off'}</span>
+              </button>
               <button
                 onClick={handleClearContext}
                 className="text-white hover:bg-white/20 rounded-lg p-2 transition flex items-center gap-2"
@@ -721,6 +861,31 @@ const AIAssistant = () => {
                         {typeof msg.content === 'string' ? msg.content : String(msg.content || '')}
                       </ReactMarkdown>
                       
+                      {/* Storytelling Mode: Key Insights card (deterministic, from data) */}
+                      {msg.narrative && Array.isArray(msg.narrative) && msg.narrative.length > 0 && idx === messages.length - 1 && (
+                        <div
+                          className="mt-4 p-3 rounded-lg border"
+                          style={{
+                            background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.08) 0%, rgba(249, 115, 22, 0.08) 100%)',
+                            borderColor: 'rgba(249, 115, 22, 0.25)'
+                          }}
+                          data-testid="ai-key-insights"
+                        >
+                          <div className="flex items-center gap-2 mb-2">
+                            <Lightbulb className="w-4 h-4 text-amber-600" />
+                            <h4 className="text-sm font-semibold text-gray-800">Key Insights</h4>
+                          </div>
+                          <ul className="space-y-1.5">
+                            {msg.narrative.map((bullet, bIdx) => (
+                              <li key={bIdx} className="text-sm text-gray-700 flex items-start gap-2">
+                                <span className="mt-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
+                                <span className="flex-1 break-words">{bullet}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
                       {/* Show pivot table if available for this message - only show for the last message to avoid duplicates */}
                       {msg.pivot_table && Array.isArray(msg.pivot_table) && msg.pivot_table.length > 0 && idx === messages.length - 1 && (
                         <div className="mt-4 pt-4 border-t border-gray-200">
@@ -855,11 +1020,29 @@ const AIAssistant = () => {
                   // Don't clear selection when user types - allow them to edit the appended text
                 }}
                 onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-                placeholder="Ask about your business data..."
+                placeholder={isListening ? 'Listening… speak now' : 'Ask about your business data...'}
                 disabled={loading}
                 className="flex-1 bg-white border-gray-300"
                 data-testid="ai-chat-input"
               />
+              <Button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  toggleListening();
+                }}
+                disabled={loading}
+                title={isListening ? 'Stop listening' : 'Speak your question'}
+                className={
+                  isListening
+                    ? 'bg-red-600 hover:bg-red-700 animate-pulse'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
+                }
+                data-testid="ai-mic-button"
+              >
+                {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              </Button>
               <Button
                 onClick={(e) => {
                   e.preventDefault();
@@ -886,8 +1069,156 @@ const AIAssistant = () => {
   );
 };
 
+// ---------------------------------------------------------------------------
+// Drill-down ("Why this number?") helpers
+// ---------------------------------------------------------------------------
+
+// Map pivot table column names → backend filter keys
+const PIVOT_TO_FILTER_KEY = {
+  Brand: 'brand',
+  Business: 'business',
+  Channel: 'channel',
+  Category: 'category',
+  Sub_Category: 'sub_category',
+  Customer: 'customer',
+  Sku: 'sku',
+  Year: 'year',
+  Month_Name: 'month_name',
+  Month: 'month_name',
+  Quarter: 'quarter',
+};
+
+// All dimensions a user could break down INTO. We filter out ones already
+// present in the clicked row at runtime (no point breaking down by Brand
+// when the row already pins Brand=Brillo).
+const ALL_BREAKDOWN_DIMS = [
+  { key: 'customer',     label: 'Customer' },
+  { key: 'channel',      label: 'Channel' },
+  { key: 'month_name',   label: 'Month' },
+  { key: 'sub_category', label: 'Sub-Category' },
+  { key: 'category',     label: 'Category' },
+  { key: 'business',     label: 'Business' },
+  { key: 'brand',        label: 'Brand' },
+];
+
+const MEASURE_KEYS = new Set(['Revenue', 'Gross_Profit', 'Cases', 'Units', 'Margin_%']);
+
+// Build a backend filters dict from a clicked pivot row.
+const rowToFilters = (row) => {
+  const filters = {};
+  if (!row) return filters;
+  Object.keys(row).forEach((colKey) => {
+    const filterKey = PIVOT_TO_FILTER_KEY[colKey];
+    if (!filterKey) return;
+    const rawValue = row[colKey];
+    if (rawValue === null || rawValue === undefined || rawValue === '') return;
+    if (filterKey === 'year' || filterKey === 'quarter') {
+      const n = Number(rawValue);
+      if (!Number.isNaN(n)) filters[filterKey] = [n];
+    } else {
+      filters[filterKey] = [String(rawValue)];
+    }
+  });
+  return filters;
+};
+
+// Format a number as €X.XXM / €XK / €X (matches existing AIDataVisuals look)
+const formatCurrencyShort = (value) => {
+  const num = Number(value);
+  if (Number.isNaN(num)) return '€0';
+  if (Math.abs(num) >= 1_000_000) return `€${(num / 1_000_000).toFixed(2)}M`;
+  if (Math.abs(num) >= 1_000) return `€${(num / 1_000).toFixed(0)}K`;
+  return `€${num.toLocaleString()}`;
+};
+
+// Describe the clicked row for the dialog header ("Brand: Brillo · Year: 2024")
+const describeClickedRow = (row) => {
+  if (!row) return '';
+  const parts = [];
+  Object.keys(row).forEach((k) => {
+    if (MEASURE_KEYS.has(k)) return;
+    const v = row[k];
+    if (v === null || v === undefined || v === '') return;
+    parts.push(`${k.replace(/_/g, ' ')}: ${v}`);
+  });
+  return parts.join('  ·  ');
+};
+
+// Pick the headline value to show in the dialog header
+const pickPrimaryMeasure = (row) => {
+  if (!row) return null;
+  for (const m of ['Revenue', 'Gross_Profit', 'Cases']) {
+    if (m in row && row[m] !== null && row[m] !== undefined && row[m] !== '') {
+      return { key: m, value: row[m] };
+    }
+  }
+  return null;
+};
+
 // Lightweight in-file component to render a table and a simple chart from pivot data
 const AIDataVisuals = ({ pivot }) => {
+  const { token } = useAuth();
+  const [drillRow, setDrillRow] = useState(null);
+  const [drillBreakdown, setDrillBreakdown] = useState(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillResult, setDrillResult] = useState(null);
+  const [drillError, setDrillError] = useState(null);
+
+  const openDrill = (rawRow) => {
+    setDrillRow(rawRow);
+    setDrillBreakdown(null);
+    setDrillResult(null);
+    setDrillError(null);
+  };
+  const closeDrill = () => {
+    setDrillRow(null);
+    setDrillBreakdown(null);
+    setDrillResult(null);
+    setDrillError(null);
+    setDrillLoading(false);
+  };
+
+  const runDrillDown = async (breakdownKey) => {
+    if (!drillRow) return;
+    setDrillBreakdown(breakdownKey);
+    setDrillLoading(true);
+    setDrillError(null);
+    setDrillResult(null);
+    try {
+      const filters = rowToFilters(drillRow);
+      const resp = await axios.post(
+        `${API}/ai/chatbot/drill-down`,
+        {
+          breakdown_by: breakdownKey,
+          filters,
+          measure: 'gsales',
+          limit: 10,
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setDrillResult(resp.data);
+    } catch (err) {
+      console.error('Drill-down error:', err);
+      setDrillError(
+        err.response?.data?.detail
+          || 'Could not load the breakdown. Please try again.'
+      );
+    } finally {
+      setDrillLoading(false);
+    }
+  };
+
+  // Pivot columns already pinned by the clicked row — hide them from the
+  // breakdown chooser since breaking down by a fixed value is pointless.
+  const drillUsedDims = drillRow
+    ? Object.keys(drillRow)
+        .map((k) => PIVOT_TO_FILTER_KEY[k])
+        .filter(Boolean)
+    : [];
+  const availableBreakdowns = ALL_BREAKDOWN_DIMS.filter(
+    (b) => !drillUsedDims.includes(b.key)
+  );
+
   const { labels, datasetLabel, datasetValues, chartType, secondaryDataset } = useMemo(() => {
     if (!pivot || pivot.length === 0) return { labels: [], datasetLabel: '', datasetValues: [], chartType: 'bar', secondaryDataset: null };
     const sample = pivot[0];
@@ -1118,6 +1449,9 @@ const AIDataVisuals = ({ pivot }) => {
       {/* Table */}
       {tableData.length > 0 && tableColumns.length > 0 && (
         <div className="overflow-x-auto">
+          <p className="text-xs text-gray-500 mb-2 italic">
+            Click any row to see <span className="font-medium text-amber-700">why this number?</span>
+          </p>
           <table className="min-w-full text-xs border-collapse">
             <thead>
               <tr className="bg-gray-100">
@@ -1126,22 +1460,244 @@ const AIDataVisuals = ({ pivot }) => {
                     {col.replace(/_/g, ' ')}
                   </th>
                 ))}
+                <th className="border border-gray-300 px-2 py-2 text-center font-semibold text-gray-700 w-8" aria-label="Drill" />
               </tr>
             </thead>
             <tbody>
               {tableData.map((row, rowIdx) => (
-                <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                <tr
+                  key={rowIdx}
+                  className={`${rowIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} cursor-pointer hover:bg-amber-50 transition`}
+                  onClick={() => openDrill(pivot[rowIdx])}
+                  title="Click to see breakdown"
+                  data-testid="ai-drill-row"
+                >
                   {tableColumns.map((col, colIdx) => (
                     <td key={colIdx} className="border border-gray-300 px-3 py-2 text-gray-700">
                       {row[col] !== undefined && row[col] !== null ? String(row[col]) : '-'}
                     </td>
                   ))}
+                  <td className="border border-gray-300 px-2 py-2 text-center text-amber-600">
+                    <Search className="w-3.5 h-3.5 inline-block" />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      {/* Drill-down dialog ("Why this number?") */}
+      {drillRow && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40"
+          onClick={closeDrill}
+          data-testid="ai-drill-overlay"
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="ai-drill-dialog"
+          >
+            {/* Header */}
+            <div
+              className="p-4 border-b flex items-start justify-between"
+              style={{ background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)' }}
+            >
+              <div className="text-white">
+                <div className="flex items-center gap-2 mb-1">
+                  <Search className="w-4 h-4" />
+                  <h3 className="text-base font-semibold">Why this number?</h3>
+                </div>
+                <p className="text-xs text-white/90 leading-snug">{describeClickedRow(drillRow)}</p>
+                {(() => {
+                  const primary = pickPrimaryMeasure(drillRow);
+                  if (!primary) return null;
+                  const label = primary.key.replace(/_/g, ' ');
+                  const display =
+                    primary.key === 'Revenue' || primary.key === 'Gross_Profit'
+                      ? formatCurrencyShort(primary.value)
+                      : (() => {
+                          const numVal = Number(primary.value);
+                          return Number.isNaN(numVal) ? String(primary.value) : numVal.toLocaleString();
+                        })();
+                  return (
+                    <p className="text-sm text-white font-semibold mt-1">
+                      {label}: {display}
+                    </p>
+                  );
+                })()}
+              </div>
+              <button
+                onClick={closeDrill}
+                className="text-white hover:bg-white/20 rounded-lg p-1.5 transition"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-sm font-medium text-gray-700 mb-2">Break this down by:</p>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {availableBreakdowns.length === 0 && (
+                  <p className="text-sm text-gray-500 italic">
+                    No further breakdown available for this row.
+                  </p>
+                )}
+                {availableBreakdowns.map((b) => (
+                  <button
+                    key={b.key}
+                    onClick={() => runDrillDown(b.key)}
+                    className={
+                      drillBreakdown === b.key
+                        ? 'px-3 py-1.5 text-sm rounded-full bg-amber-500 text-white border border-amber-600'
+                        : 'px-3 py-1.5 text-sm rounded-full bg-white text-gray-700 border border-gray-300 hover:bg-amber-50 hover:border-amber-400'
+                    }
+                    disabled={drillLoading}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+
+              {drillLoading && (
+                <div className="flex items-center gap-2 text-sm text-gray-600 py-6 justify-center">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading breakdown…
+                </div>
+              )}
+
+              {drillError && (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
+                  {drillError}
+                </div>
+              )}
+
+              {drillResult && !drillLoading && (
+                <DrillResultView result={drillResult} />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Renders the breakdown result returned by /ai/chatbot/drill-down
+const DrillResultView = ({ result }) => {
+  const rows = Array.isArray(result?.rows) ? result.rows : [];
+  if (!rows.length) {
+    return (
+      <p className="text-sm text-gray-600 italic py-4">
+        No breakdown data available for this slice.
+      </p>
+    );
+  }
+  // Determine which dimension column is the breakdown key (e.g. Customer)
+  const breakdownDim = (result.breakdown_by || '')
+    .replace(/_(.)/g, (_, c) => c.toUpperCase())
+    .replace(/^(.)/, (c) => c.toUpperCase());
+  const dimKey = Object.keys(rows[0]).find(
+    (k) => k.toLowerCase() === breakdownDim.toLowerCase()
+  ) || Object.keys(rows[0])[0];
+
+  // Pick a measure to show in the bar chart
+  const measureKey = ['Revenue', 'Gross_Profit', 'Cases'].find((m) => m in rows[0]) || null;
+
+  const total = Number(result.total) || 0;
+
+  return (
+    <div className="space-y-3">
+      {measureKey && total > 0 && (
+        <p className="text-xs text-gray-600">
+          Total {measureKey.replace(/_/g, ' ')}:{' '}
+          <span className="font-semibold text-gray-800">
+            {measureKey === 'Revenue' || measureKey === 'Gross_Profit'
+              ? formatCurrencyShort(total)
+              : total.toLocaleString()}
+          </span>
+        </p>
+      )}
+
+      {/* Horizontal bar list */}
+      {measureKey && (
+        <div className="space-y-1.5">
+          {rows.map((r, i) => {
+            const share = Number(r.share_pct) || 0;
+            const value = Number(r[measureKey]) || 0;
+            const display =
+              measureKey === 'Revenue' || measureKey === 'Gross_Profit'
+                ? formatCurrencyShort(value)
+                : value.toLocaleString();
+            return (
+              <div key={i} className="text-xs">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="font-medium text-gray-800 truncate pr-2" title={String(r[dimKey])}>
+                    {String(r[dimKey] ?? '—')}
+                  </span>
+                  <span className="text-gray-600 whitespace-nowrap">
+                    {display} <span className="text-gray-400">({share}%)</span>
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, share))}%`,
+                      background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)',
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Detail table */}
+      <div className="overflow-x-auto pt-2 border-t border-gray-100">
+        <table className="min-w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-gray-50">
+              {Object.keys(rows[0]).map((col, idx) => (
+                <th
+                  key={idx}
+                  className="border border-gray-200 px-2 py-1.5 text-left font-semibold text-gray-700"
+                >
+                  {col.replace(/_/g, ' ')}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                {Object.keys(rows[0]).map((col, ci) => {
+                  let cell = r[col];
+                  if ((col === 'Revenue' || col === 'Gross_Profit') && cell !== undefined && cell !== null) {
+                    cell = formatCurrencyShort(cell);
+                  } else if (col === 'Cases' && cell !== undefined && cell !== null) {
+                    const n = Number(cell);
+                    cell = Number.isNaN(n) ? cell : n.toLocaleString();
+                  } else if (col === 'Margin_%' && cell !== undefined && cell !== null) {
+                    cell = `${cell}%`;
+                  } else if (col === 'share_pct' && cell !== undefined && cell !== null) {
+                    cell = `${cell}%`;
+                  }
+                  return (
+                    <td key={ci} className="border border-gray-200 px-2 py-1.5 text-gray-700">
+                      {cell !== undefined && cell !== null ? String(cell) : '-'}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
